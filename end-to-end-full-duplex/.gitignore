@@ -1,0 +1,7 @@
+data/raw/*
+data/processed/*
+data/manifests/*
+checkpoints/*
+logs/*
+__pycache__/
+*.pyc

@@ -1,0 +1,23 @@
+# 端到端全双工模型基础配置
+seed: 42
+sample_rate: 24000
+num_channels: 2
+
+model:
+  name: end_to_end_full_duplex
+  audio_encoder: TBD
+  context_dim: 1024
+  decoder: TBD
+  causal: true
+
+training:
+  batch_size: 8
+  max_steps: 100000
+  learning_rate: 0.0001
+  gradient_clip_norm: 1.0
+  mixed_precision: bf16
+
+数据:
+  manifest_dir: data/manifests
+  train_manifest: train.jsonl
+  valid_manifest: valid.jsonl
