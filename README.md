@@ -1,5 +1,7 @@
 # Full-Duplex Model
 
+Cascaded Full-Duplex Model and End-to-End Full-Duplex Model.
+
 本项目包含两条全双工语音模型路线：
 
 - `cascaded-full-duplex/`：级联式全双工模型，迁移自 `TTS/speech-to-speech`，保留其 STT → LLM → TTS 的实时流水线。
