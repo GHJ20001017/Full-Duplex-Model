@@ -123,6 +123,8 @@ protocol layer. No custom SDK transport is used.
 
 Internal partial transcriptions are cumulative hypotheses. Before emitting `conversation.item.input_audio_transcription.delta`, the Realtime server compares consecutive hypotheses at normalized word boundaries and holds back the newest matching word. Only confirmed growth beyond the per-item committed prefix reaches the append-only wire stream; unstable casing and edge punctuation are left to the final transcript. If a later hypothesis revises a word that was already emitted, that partial is withheld because the protocol has no transcript-retraction event, but subsequent hypotheses can resume the stream when they extend the committed prefix. Clients should treat `conversation.item.input_audio_transcription.completed` as authoritative and replace any rendered partial for the same `item_id` with its final `transcript`. Turn metadata routes out-of-order completions to their originating item, and bundled clients retain each unresolved item's transcript until completion so later deltas and empty authoritative completions remain correct.
 
+A speculative reopen of a turn is a revision of the same utterance, so the reopened revision keeps the `item_id` that its earlier revision already published instead of allocating a new one. That item keeps its route for the lifetime of the revision, and after the item published a final the server withholds further deltas for it: re-streaming the revised hypothesis would repeat text the final already replaced. The item then publishes exactly one more final with the complete transcript of the utterance, which is the revision's authoritative text. Clients must therefore expect up to one extra `completed` event per `item_id`, treat the latest final for an item as authoritative, and render the utterance once rather than appending a second entry. A brand-new utterance starts a new item id and retires the finished item's route.
+
 ### Transcript event compatibility
 
 Assistant transcript chunks are emitted as `response.output_audio_transcript.delta`; concatenating their `delta` values reproduces the terminal `response.output_audio_transcript.done.transcript`. A response that produced transcript text emits exactly one transcript `done` after `response.output_audio.done` and before `response.done`, including when cancellation closes an incomplete assistant item.
@@ -260,6 +262,32 @@ await listen_and_play_realtime(config)
 ```
 
 Arguments are validated against the declared `parameters` JSON Schema before the callback runs. String outputs are sent unchanged; other outputs must be JSON-serializable. Callbacks receive normal task cancellation on disconnect or shutdown, so they should release their own resources in `finally` blocks.
+
+---
+
+## Conversation Window
+
+`talk` and `local` open an optional local browser window showing only the user and assistant transcript. It is a read-only view layered on top of the existing terminal renderer in `audio_client.py`; it owns no protocol state and is disabled with `--no-ui` (or `--no-local-audio-ui` for `local`).
+
+`conversation_window.py` serves one static page (`conversation_window.html`) plus an SSE stream:
+
+- `GET /` returns the page; `GET /events` streams `data: {...}` frames; `GET /health` is a probe.
+- The HTTP server is stdlib `http.server` on its own daemon thread and binds an ephemeral loopback port; `webbrowser.open` is best-effort, for example a headless machine still serves the page.
+- `_FriendlyEventRenderer` translates protocol events into the small display vocabulary below. `push` sends a transient delta; `push_message` also remembers it so a late-connecting or reloading tab replays recent finalized messages.
+
+| Event | Meaning |
+|---|---|
+| `{"event": "status", "value": ...}` | connection / speaking state for the header indicator |
+| `{"event": "transcript", "role": "user", "item_id": ..., "delta": ...}` | append streamed text to that input item's live bubble |
+| `{"event": "transcript", "role": "user", "item_id": ..., "final": true, "text": ...}` | finalize that input item's bubble with its authoritative text |
+| `{"event": "transcript", "role": "assistant", "delta": ...}` | append streamed text to the live assistant bubble |
+| `{"event": "transcript", "role": "assistant", "final": true, "text": ...}` | finalize the assistant bubble; a cancelled response omits `text` so the bubble keeps the deltas it already showed |
+| `{"event": "message", "role": ..., "text": ...}` | a complete message with no preceding stream |
+| `{"event": "system", "kind": "error", "text": ...}` | system notice (errors only) |
+
+User turns are keyed by `item_id`, so a reopened revision that revises the same sentence updates its existing bubble and the window shows the utterance once, with the latest (most complete) final replacing the earlier text. Without an `item_id` the renderer falls back to one live bubble per role.
+
+The window degrades to terminal-only if binding fails, so a busy port or a blocked browser never interrupts a session.
 
 ---
 

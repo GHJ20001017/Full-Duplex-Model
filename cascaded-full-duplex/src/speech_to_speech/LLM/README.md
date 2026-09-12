@@ -7,6 +7,7 @@ Runtime-supported values in `s2s_pipeline.py`:
 - `transformers` → `language_model.py` (Transformers backend)
 - `mlx-lm` → `language_model.py` (MLX backend)
 - `responses-api` → `responses_api_language_model.py`
+- `chat-completions` → `chat_completions_language_model.py`
 
 ## Usage
 
@@ -73,6 +74,45 @@ Common options:
 - `--chat_size`
 - `--init_chat_prompt`
 - `--user_role`
+
+### 4) OpenAI-compatible Chat Completions (`--llm_backend chat-completions`)
+
+- Handler: `ChatCompletionsApiModelHandler`
+- Typical use: providers and self-hosted servers that expose `/v1/chat/completions`
+  instead of `/v1/responses` (vLLM, llama.cpp, OpenRouter, most OpenAI-compatible
+  gateways), and the only API backend that accepts audio input directly.
+- Backend-specific args prefix: the same `--responses_api_*` connection flags as the
+  Responses API backend (`--responses_api_base_url`, `--responses_api_api_key`,
+  `--responses_api_stream`, `--responses_api_disable_thinking`).
+- Shared args (from base): `--model_name`, `--chat_size`, `--init_chat_prompt`, `--enable_lang_prompt`
+
+```bash
+speech-to-speech serve \
+  --llm_backend chat-completions \
+  --model_name Qwen/Qwen3-4B-Instruct-2507 \
+  --responses_api_base_url http://127.0.0.1:8000/v1 \
+  --responses_api_stream true
+```
+
+Common options:
+- `--responses_api_reasoning_effort none` to disable thinking on providers that
+  ignore `chat_template_kwargs.enable_thinking`
+- `--chat_size`
+- `--init_chat_prompt`
+- `--user_role`
+
+Tool calling, streaming, image input, and audio input are supported on this backend.
+With `--stt none` each complete VAD segment is sent straight to an audio-capable
+model, which skips the STT stage entirely:
+
+```bash
+speech-to-speech serve \
+  --stt none \
+  --llm_backend chat-completions \
+  --model_name "YOUR_AUDIO_CAPABLE_MODEL" \
+  --responses_api_base_url "https://provider.example/v1" \
+  --responses_api_api_key "$PROVIDER_API_KEY"
+```
 
 ## LLM Behavior
 

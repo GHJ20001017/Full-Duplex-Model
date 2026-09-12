@@ -19,6 +19,7 @@
 * [快速开始 Quickstart](#快速开始-quickstart)
 * [支持的组件 Supported Components](#支持的组件-supported-components)
 * [命令 Commands](#命令-commands)
+* [对话界面 Conversation Window](#对话界面-conversation-window)
 * [Realtime API](#realtime-api)
 * [多语言支持 Multi-Language Support](#多语言支持-multi-language-support)
 * [CLI 参考 CLI Reference](#cli-参考-cli-reference)
@@ -261,6 +262,30 @@ speech-to-speech serve \
 `serve` 默认绑定 `127.0.0.1`；需要对外暴露时显式传 `--host 0.0.0.0`。`local` 始终绑定 loopback，并把打包客户端连接到 `ws://127.0.0.1:<port>/v1/realtime`。
 
 > **端口变更**：本分支的默认 Realtime 端口为 **7869**（上游为 8765）。若沿用旧配置请显式传 `--port`。
+
+## 对话界面 Conversation Window
+
+`talk` / `local` 启动时会额外打开一个本地浏览器窗口，实时显示**用户转写**与**助手回复**，看起来像普通的聊天界面。它默认开启，终端输出保持不变。
+
+- 客户端在 loopback 上以随机端口起一个极小的 HTTP 服务（Python 标准库 `http.server`，无需新增依赖），并自动在默认浏览器打开页面；启动日志会打印实际地址，如 `Conversation window available at http://localhost:53210/`。
+- 页面通过 Server-Sent Events（`/events`）接收事件：用户与助手的流式转写在同一个气泡内逐字追加，轮次结束时定稿。刷新页面会重放最近的定稿消息，不会清空对话。
+- 页面**只展示用户与服务端返回的对话文本**，不显示工具调用、原始 JSON 或任何协议事件。
+- 界面为深色、单色画布，只在「角色回显」处借用状态色（用户＝青色、助手＝紫色），与服务端状态灯一致。
+
+关闭或调整：
+
+```bash
+# 完全关闭窗口，只用终端
+speech-to-speech talk --url ws://127.0.0.1:7869/v1/realtime --no-ui
+
+# 只起服务、不自动打开浏览器（自行访问打印出的地址）
+speech-to-speech talk --no-open-browser
+
+# local 命令：默认开启，用 --no-local-audio-ui 关闭
+speech-to-speech local --no-local-audio-ui
+```
+
+> 浏览器不可用或端口绑定失败时，客户端会打印一条告警并**自动退化为纯终端模式**，对话本身不受影响。
 
 ## Realtime API
 
