@@ -3665,7 +3665,14 @@ class TestDispatchPipelineEvent:
         assert second_partial[0].delta == "new"
         assert second_partial[0].content_index == 0
 
-    def test_reopened_completed_turn_starts_a_new_transcription_item(self, service, conn_id):
+    def test_reopened_completed_turn_reuses_its_item_and_holds_back_partials(self, service, conn_id):
+        """A reopened revision of a finalized turn updates that utterance in place.
+
+        Its item id is already on the wire with a final transcript, and the
+        client keys one entry per item id, so partials stay withheld and only the
+        revision's own final may replace what that entry displays.
+        """
+
         first_started = service.dispatch_pipeline_event(
             conn_id,
             SpeechStartedEvent(turn_id="turn_1", turn_revision=0),
@@ -3691,12 +3698,16 @@ class TestDispatchPipelineEvent:
             conn_id,
             PartialTranscriptionEvent(delta="hello again friend", turn_id="turn_1", turn_revision=1),
         )
+        completed = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="hello again friend", turn_id="turn_1", turn_revision=1),
+        )
 
-        assert reopened[0].item_id != first_started[0].item_id
+        assert reopened[0].item_id == first_started[0].item_id
         assert first_reopened_partial == []
-        assert continued[0].item_id == reopened[0].item_id
-        assert continued[0].delta == "hello"
-        assert continued[0].content_index == 0
+        assert continued == []
+        assert completed[0].item_id == first_started[0].item_id
+        assert completed[0].transcript == "hello again friend"
 
     def test_completed_input_item_does_not_emit_later_deltas(self, service, conn_id):
         service.dispatch_pipeline_event(conn_id, SpeechStartedEvent(turn_id="turn_1"))
@@ -3803,7 +3814,9 @@ class TestDispatchPipelineEvent:
         assert completed[0].item_id == current_item_id
         assert current_item_id not in state.input_items
         assert state.current_input_item_id is None
-        assert state.input_item_by_turn_revision == {}
+        # The route survives the final so a speculative reopen of the same turn
+        # reuses this item instead of publishing a second entry for the sentence.
+        assert state.input_item_by_turn_revision == {("turn_1", 0): current_item_id}
 
     # -- transcription_completed --
 
@@ -4128,13 +4141,89 @@ class TestDispatchPipelineEvent:
         state = service._state(conn_id)
         assert item_id not in state.input_items
         assert state.current_input_item_id is None
-        assert state.input_item_by_turn_revision == {}
+        # The reopened revision keeps the same route: a further reopen reuses
+        # this item id again instead of starting another one for the sentence.
+        assert state.input_item_by_turn_revision == {("turn_1", 1): item_id}
         assert state.response_usage.audio_duration_s == 2.0
         user_items = [item for item in runtime_config.chat.buffer if getattr(item, "role", None) == "user"]
         assert len(user_items) == 1
         assert user_items[0].content[0].text == "hello again"
         assert text_prompt_queue.get_nowait().turn_revision == 1
         assert text_prompt_queue.empty()
+        service.unregister(conn_id)
+
+    def test_finalized_item_is_reused_and_not_restreamed_after_reopen(self, runtime_config, should_listen):
+        """A reopened utterance keeps one item id and one authoritative final.
+
+        The earlier revision already published its final, so the reopened
+        revision reuses that item id, withholds its partials (the client would
+        otherwise repeat text the final already replaced), and publishes the
+        complete transcript as the item's latest final.
+        """
+
+        text_prompt_queue = Queue()
+        tracker = SpeculativeTurnTracker()
+        service = RealtimeService(
+            text_prompt_queue=text_prompt_queue,
+            should_listen=should_listen,
+            speculative_turns=tracker,
+        )
+        conn_id = service.register()
+        service._state(conn_id).runtime_config = runtime_config
+
+        first_started = service.dispatch_pipeline_event(
+            conn_id,
+            SpeechStartedEvent(turn_id="turn_1", turn_revision=0),
+        )
+        service.dispatch_pipeline_event(
+            conn_id,
+            PartialTranscriptionEvent(delta="hello", turn_id="turn_1", turn_revision=0),
+        )
+        service.dispatch_pipeline_event(
+            conn_id,
+            SpeechStoppedEvent(duration_s=1.0, turn_id="turn_1", turn_revision=0),
+        )
+        first_final = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="hello", turn_id="turn_1", turn_revision=0),
+        )
+
+        tracker.observe("turn_1", 1)
+        reopened = service.dispatch_pipeline_event(
+            conn_id,
+            SpeechStartedEvent(turn_id="turn_1", turn_revision=1, reopened=True),
+        )
+        reopened_partials = service.dispatch_pipeline_event(
+            conn_id,
+            PartialTranscriptionEvent(delta="hello again", turn_id="turn_1", turn_revision=1),
+        )
+        service.dispatch_pipeline_event(
+            conn_id,
+            SpeechStoppedEvent(duration_s=2.0, turn_id="turn_1", turn_revision=1),
+        )
+        second_final = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="hello again friend", turn_id="turn_1", turn_revision=1),
+        )
+
+        item_id = first_started[0].item_id
+        assert first_final[0].item_id == item_id
+        assert first_final[0].transcript == "hello"
+        assert reopened[0].item_id == item_id
+        assert reopened_partials == []
+        assert second_final[0].item_id == item_id
+        assert second_final[0].transcript == "hello again friend"
+        assert second_final[0].usage.seconds == 2.0
+        user_items = [item for item in runtime_config.chat.buffer if getattr(item, "role", None) == "user"]
+        assert [item.content[0].text for item in user_items] == ["hello again friend"]
+
+        # A new utterance starts a new item and drops the retired route.
+        newer_started = service.dispatch_pipeline_event(
+            conn_id,
+            SpeechStartedEvent(turn_id="turn_2", turn_revision=0),
+        )
+        assert newer_started[0].item_id != item_id
+        assert service._state(conn_id).input_item_by_turn_revision == {("turn_2", 0): newer_started[0].item_id}
         service.unregister(conn_id)
 
     def test_stale_transcription_revision_is_ignored(self, runtime_config, should_listen):

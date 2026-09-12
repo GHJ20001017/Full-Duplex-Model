@@ -258,6 +258,13 @@ class ConversationHandler(RealtimeBaseHandler):
         if input_item is None:
             logger.debug("Ignoring partial transcription for released item=%s", item_id)
             return []
+        if input_item.finalized:
+            # This item id already published a final for an earlier revision of
+            # a reopened turn. Deltas are append-only, so re-streaming the
+            # revised hypothesis would repeat text the client already replaced
+            # with that final. Only the next final may update the item.
+            logger.debug("Withholding reopened-revision partial transcription for item=%s", item_id)
+            return []
         hypothesis = event.delta.strip()
         if not hypothesis or hypothesis == input_item.latest_transcript:
             return []
@@ -303,19 +310,30 @@ class ConversationHandler(RealtimeBaseHandler):
         self,
         conn_id: str,
         item_id: str,
+        *,
+        keep_route: bool = False,
     ) -> tuple[str, float] | None:
-        """Release one input item's active transcript and routing state."""
+        """Release one input item's active transcript and routing state.
+
+        ``keep_route`` keeps the ``(turn_id, revision) -> item_id`` routing for
+        an authoritative final so that a speculative reopen of the same turn
+        reuses the same item id. The client then has one entry per utterance and
+        can replace its text with the later, complete transcript. A failed
+        transcription keeps no route, so a reopen starts a fresh item instead of
+        reusing an entry the client already reported as failed.
+        """
         st = self._state(conn_id)
         input_item = st.input_items.pop(item_id, None)
         if input_item is None:
             logger.debug("Ignoring input terminal for released item=%s", item_id)
             return None
         duration_s = input_item.audio_duration_s
-        st.input_item_by_turn_revision = {
-            turn: tracked_item_id
-            for turn, tracked_item_id in st.input_item_by_turn_revision.items()
-            if tracked_item_id != item_id
-        }
+        if not keep_route:
+            st.input_item_by_turn_revision = {
+                turn: tracked_item_id
+                for turn, tracked_item_id in st.input_item_by_turn_revision.items()
+                if tracked_item_id != item_id
+            }
         if st.current_input_item_id == item_id:
             st.current_input_item_id = None
         return item_id, duration_s
@@ -339,7 +357,12 @@ class ConversationHandler(RealtimeBaseHandler):
         conn_id: str,
         event: TranscriptionCompletedEvent,
     ) -> list[ConversationItemInputAudioTranscriptionCompletedEvent]:
-        """Terminalize one transcript item and emit its authoritative final event."""
+        """Terminalize one transcript item and emit its authoritative final event.
+
+        A reopened turn reuses its item id, so the same ``item_id`` can publish a
+        second final with the longer, complete transcript of the utterance; the
+        client treats the latest final as authoritative for that item.
+        """
         st = self._state(conn_id)
         item_id = self._completion_input_item_id(conn_id, event.turn_id, event.turn_revision)
         if item_id is None:
@@ -349,7 +372,7 @@ class ConversationHandler(RealtimeBaseHandler):
             item_id = self._service.response._current_item_id(conn_id)
             duration_s = st.input_audio_duration_s
         else:
-            terminal = self.terminalize_input_item(conn_id, item_id)
+            terminal = self.terminalize_input_item(conn_id, item_id, keep_route=True)
             if terminal is None:
                 return []
             item_id, duration_s = terminal

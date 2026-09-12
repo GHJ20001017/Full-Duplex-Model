@@ -42,6 +42,15 @@ class AudioHandler(RealtimeBaseHandler):
     ) -> str:
         response = self._service.response
         st = self._state(conn_id)
+        # Routing for an item whose transcript state is gone only exists so a
+        # speculative reopen could reuse its item id. A brand-new item means
+        # that window has closed, so drop the leftover routes here. They would
+        # otherwise accumulate for the lifetime of the connection.
+        st.input_item_by_turn_revision = {
+            turn: tracked_item_id
+            for turn, tracked_item_id in st.input_item_by_turn_revision.items()
+            if tracked_item_id in st.input_items
+        }
         if not preserve_active_response:
             item_id = response._start_item(conn_id)
         else:
@@ -77,6 +86,13 @@ class AudioHandler(RealtimeBaseHandler):
             if tracked_item_id != item_id
         }
         st.input_item_by_turn_revision[(turn_id, turn_revision)] = item_id
+        if item_id not in st.input_items:
+            # The earlier revision of this utterance already published its
+            # authoritative final, which released the transcript state while
+            # keeping the route. The client keeps one entry per item id, so the
+            # reopened revision must not stream deltas again; its final replaces
+            # the earlier transcript.
+            st.input_items[item_id] = InputItemState(finalized=True)
         return item_id
 
     def release_input_item_state(
@@ -176,8 +192,7 @@ class AudioHandler(RealtimeBaseHandler):
             if is_reopen and event.turn_id is not None
             else None
         )
-        previous_input_item = st.input_items.get(previous_input_item_id) if previous_input_item_id is not None else None
-        if previous_input_item_id is not None and previous_input_item is not None:
+        if previous_input_item_id is not None:
             assert event.turn_id is not None
             input_item_id = self._reuse_input_item(
                 conn_id,
