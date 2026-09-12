@@ -133,7 +133,7 @@ include = ["speech_to_speech*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-speech_to_speech = ["TTS/*.wav"]
+speech_to_speech = ["TTS/*.wav", "api/openai_realtime/*.html"]
 
 [tool.ruff]
 src = ["src"]

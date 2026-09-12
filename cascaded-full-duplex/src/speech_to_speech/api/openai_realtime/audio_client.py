@@ -29,6 +29,8 @@ from jsonschema import SchemaError, ValidationError
 from jsonschema.validators import validator_for
 from openai import AsyncOpenAI
 
+from speech_to_speech.api.openai_realtime.conversation_window import ConversationWindow
+from speech_to_speech.api.openai_realtime.mic_gain import AdaptiveGain
 from speech_to_speech.pipeline.transcript_logging import log_exception
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,10 @@ class RealtimeAudioClientConfig:
     tool_response_create: bool = True
     wake_word: str | None = None
     wake_word_timeout_s: float = 300.0
-    wake_ack: str = "嗯哼，您说"
+    wake_ack: str = "嗯哼"
+    # 本地对话窗口：在浏览器里渲染用户/助手对话。终端输出始终保留。
+    ui: bool = True
+    ui_open_browser: bool = True
 
     def __post_init__(self) -> None:
         if not 0 <= self.playback_buffer_ms < float("inf"):
@@ -351,15 +356,32 @@ class PlaybackBuffer:
 
 
 class _FriendlyEventRenderer:
-    """将 Realtime 事件渲染为可读终端输出，并处理增量文本的行覆盖。"""
+    """将 Realtime 事件渲染为可读终端输出，并处理增量文本的行覆盖。
 
-    def __init__(self) -> None:
+    可选地，同一批事件也会推送给本地对话窗口（``window``），让浏览器页面与
+    终端显示同一份对话。窗口只负责展示，缺少窗口时行为与原来完全一致。
+    """
+
+    def __init__(self, window: ConversationWindow | None = None) -> None:
         # Input transcription events can arrive out of order across items.
         self.user_transcript_by_item: dict[str | None, str] = {}
         self.live_user_width = 0
         self.saw_user_speech = False
         self.live_assistant_stream: _AssistantTranscriptStream | None = None
         self.streamed_assistant_transcripts: set[_AssistantTranscriptStream] = set()
+        self.window = window
+        # 对话窗口的增量状态：记录当前流式气泡对应的 item，避免重复建行。
+        self._ui_live_assistant_key: _AssistantTranscriptStream | None = None
+
+    def push_ui(self, event: dict[str, Any], *, durable: bool = False) -> None:
+        """把一条展示事件推给对话窗口；未启用窗口时为空操作。"""
+
+        if self.window is None:
+            return
+        if durable:
+            self.window.push_message(event)
+        else:
+            self.window.push(event)
 
     def render_live_user_text(self, text: str, *, final: bool = False) -> None:
         """实时覆盖显示用户转写；完成事件到达后提交该行并清零宽度。"""
@@ -372,6 +394,21 @@ class _FriendlyEventRenderer:
             return
         print(f"\r{padded}", end="", flush=True)
         self.live_user_width = len(line)
+
+    def stream_user_transcript(self, text: str, *, final: bool, item_id: str | None) -> None:
+        """把用户转写推给对话窗口；``final`` 表示该轮转写已完成。
+
+        ``item_id`` 让窗口把同一句话的多次呈现合并成一个气泡：话轮被重开时
+        服务端复用同一个 item，后到的最终转写会替换先前的文本。
+        """
+
+        if final:
+            self.push_ui(
+                {"event": "transcript", "role": "user", "item_id": item_id, "final": True, "text": text},
+                durable=True,
+            )
+        else:
+            self.push_ui({"event": "transcript", "role": "user", "item_id": item_id, "delta": text})
 
     def clear_live_user_text(self) -> None:
         if self.live_user_width == 0:
@@ -397,11 +434,13 @@ class _FriendlyEventRenderer:
         if self.live_assistant_stream != stream_key:
             self.finish_live_assistant_text()
             delta = delta.lstrip()
+            self._ui_live_assistant_key = stream_key
             if not delta:
                 return
             print("ASSISTANT: ", end="", flush=True)
             self.live_assistant_stream = stream_key
         self.streamed_assistant_transcripts.add(stream_key)
+        self.push_ui({"event": "transcript", "role": "assistant", "delta": delta})
         print(delta, end="", flush=True)
 
     def render_assistant_text_done(self, event: Any) -> None:
@@ -410,10 +449,19 @@ class _FriendlyEventRenderer:
             self.finish_live_assistant_text()
         if stream_key in self.streamed_assistant_transcripts:
             self.streamed_assistant_transcripts.remove(stream_key)
+            self._ui_assistant_final(stream_key, event.transcript or "")
             return
         self.clear_live_user_text()
         self.finish_live_assistant_text()
+        self.push_ui({"event": "message", "role": "assistant", "text": event.transcript or ""}, durable=True)
         print(f"ASSISTANT: {event.transcript or ''}", flush=True)
+
+    def _ui_assistant_final(self, stream_key: _AssistantTranscriptStream, text: str) -> None:
+        """提交流式助手气泡：避免把「流式增量 + 结束事件」当成两条消息重复展示。"""
+
+        self.push_ui({"event": "transcript", "role": "assistant", "final": True, "text": text}, durable=True)
+        if self._ui_live_assistant_key == stream_key:
+            self._ui_live_assistant_key = None
 
     def finish_live_assistant_text(self) -> None:
         if self.live_assistant_stream is not None:
@@ -426,6 +474,11 @@ class _FriendlyEventRenderer:
 
     def finish_assistant_response(self, response_id: str | None) -> None:
         self.finish_live_assistant_text()
+        # 被打断的响应不会有 transcript.done；此时主动收尾 UI 气泡，
+        # 让浏览器用已累积的增量文本结束该行，而不是留下永远闪烁的光标。
+        if self._ui_live_assistant_key is not None and self._ui_live_assistant_key[0] == response_id:
+            self.push_ui({"event": "transcript", "role": "assistant", "final": True})
+            self._ui_live_assistant_key = None
         self.streamed_assistant_transcripts = {
             stream_key for stream_key in self.streamed_assistant_transcripts if stream_key[0] != response_id
         }
@@ -455,12 +508,14 @@ def handle_server_event(
     if event.type == "session.created":
         renderer.finish_live_assistant_text()
         print("Connected.", flush=True)
+        renderer.push_ui({"event": "status", "value": "connected"})
     elif event.type == "input_audio_buffer.speech_started":
         renderer.finish_live_assistant_text()
         playback.cancel_active_response()
         if renderer.saw_user_speech:
             print("", flush=True)
         renderer.saw_user_speech = True
+        renderer.push_ui({"event": "status", "value": "listening"})
     elif event.type == "input_audio_buffer.speech_stopped":
         return
     elif event.type == "conversation.item.input_audio_transcription.delta":
@@ -471,17 +526,21 @@ def handle_server_event(
         display_text = transcript.strip()
         if display_text:
             renderer.render_live_user_text(display_text)
+        if event.delta:
+            renderer.stream_user_transcript(event.delta, final=False, item_id=item_id)
     elif event.type == "conversation.item.input_audio_transcription.completed":
         renderer.finish_live_assistant_text()
         item_id = getattr(event, "item_id", None)
-        transcript = event.transcript or ""
-        renderer.render_live_user_text(transcript.strip(), final=True)
+        transcript = (event.transcript or "").strip()
+        renderer.render_live_user_text(transcript, final=True)
         renderer.user_transcript_by_item.pop(item_id, None)
+        renderer.stream_user_transcript(transcript, final=True, item_id=item_id)
     elif event.type == "response.created":
         playback.activate_response(getattr(event.response, "id", None))
         renderer.clear_live_user_text()
         renderer.finish_live_assistant_text()
         print("ASSISTANT: <response started>", flush=True)
+        renderer.push_ui({"event": "status", "value": "speaking"})
     elif event.type in {"response.output_item.added", "response.output_item.done"}:
         return
     elif event.type == "response.output_audio.delta":
@@ -509,12 +568,17 @@ def handle_server_event(
         if not cancelled:
             playback.finish()
         print(f"ASSISTANT: <response {event.response.status}>", flush=True)
+        renderer.push_ui({"event": "status", "value": "connected"})
     elif event.type == "output_audio_buffer.cleared":
         playback.clear()
     elif event.type == "error":
         renderer.clear_live_user_text()
         renderer.finish_live_assistant_text()
         print(f"ERROR: {event.error.type}: {event.error.message}", flush=True)
+        renderer.push_ui(
+            {"event": "system", "kind": "error", "text": f"{event.error.type}: {event.error.message}"},
+            durable=True,
+        )
     else:
         renderer.clear_live_user_text()
         renderer.finish_live_assistant_text()
@@ -942,6 +1006,21 @@ async def _wait_for_stop(stop_event: Event) -> None:
         await asyncio.to_thread(stop_event.wait, 0.1)
 
 
+def _open_conversation_window(config: RealtimeAudioClientConfig) -> ConversationWindow | None:
+    """启动本地对话窗口；失败时降级为纯终端显示，不阻塞会话。"""
+
+    if not config.ui:
+        return None
+    window = ConversationWindow(open_browser=config.ui_open_browser)
+    try:
+        return window.start()
+    except OSError as exc:
+        # 端口占用或无法绑定 loopback 时，UI 只是辅助功能，会话应继续。
+        logger.warning("Could not start the conversation window: %s", exc)
+        print(f"WARNING: conversation window disabled ({exc})", flush=True)
+        return None
+
+
 async def _run_audio_session(
     conn: Any,
     config: RealtimeAudioClientConfig,
@@ -951,6 +1030,10 @@ async def _run_audio_session(
     from speech_to_speech.api.openai_realtime.aec3 import AEC3Processor
 
     aec3 = AEC3Processor(config.send_rate)
+    # 低增益麦克风（实测有的机器语音块只有 ~100 RMS）上传前会被缓慢抬高，
+    # 正常麦克风上该增益保持 1.0，不改变原有行为。
+    gain = AdaptiveGain()
+    announced_gain = False
 
     wake_gate = None
     if config.wake_word:
@@ -964,7 +1047,9 @@ async def _run_audio_session(
 
     mic_queue: Queue[bytes] = Queue(maxsize=128)
     playback = PlaybackBuffer(config.recv_rate, startup_buffer_ms=config.playback_buffer_ms)
-    renderer = _FriendlyEventRenderer()
+    # 对话窗口是可选视图；创建失败不影响音频会话本身。
+    window = _open_conversation_window(config)
+    renderer = _FriendlyEventRenderer(window)
     tool_calls = _ToolCallCoordinator(conn, config)
 
     def callback_recv(outdata: Any, _frames: int, _time_info: Any, status: Any) -> None:
@@ -984,6 +1069,7 @@ async def _run_audio_session(
     async def send_audio() -> None:
         """从线程安全麦克风队列取 PCM，必要时经过唤醒词门控后上传。"""
 
+        nonlocal announced_gain
         while not stop_event.is_set():
             try:
                 chunk = await asyncio.to_thread(mic_queue.get, True, 0.1)
@@ -998,11 +1084,16 @@ async def _run_audio_session(
                     }
                 )
                 print(f"WAKE ACK: {config.wake_ack}", flush=True)
+                renderer.push_ui({"event": "status", "value": "listening"})
             for gated_chunk in chunks:
+                payload = gain.process(gated_chunk)
+                if not announced_gain and gain.gain > 1.5:
+                    announced_gain = True
+                    print(f"MIC GAIN: boosting microphone input x{gain.gain:.1f}", flush=True)
                 await conn.send(
                     {
                         "type": "input_audio_buffer.append",
-                        "audio": base64.b64encode(gated_chunk).decode("ascii"),
+                        "audio": base64.b64encode(payload).decode("ascii"),
                     }
                 )
 
@@ -1069,6 +1160,8 @@ async def _run_audio_session(
         aec3.close()
         renderer.clear_live_user_text()
         renderer.reset_assistant_text()
+        if window is not None:
+            window.close()
         for stream in reversed(started_streams):
             try:
                 stream.stop()

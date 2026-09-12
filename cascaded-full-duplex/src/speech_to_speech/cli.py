@@ -157,6 +157,26 @@ def parse_talk_arguments(argv: Sequence[str]) -> RealtimeAudioClientConfig:
         help="Importable module defining TOOLS and async execute_tool(name, arguments).",
     )
     parser.add_argument(
+        "--no-ui",
+        dest="ui",
+        action="store_false",
+        default=defaults.ui,
+        help="Do not open the local conversation window; print to the terminal only.",
+    )
+    parser.add_argument(
+        "--open-browser",
+        dest="ui_open_browser",
+        action="store_true",
+        default=defaults.ui_open_browser,
+        help="Open the conversation window in the default browser automatically (default).",
+    )
+    parser.add_argument(
+        "--no-open-browser",
+        dest="ui_open_browser",
+        action="store_false",
+        help="Serve the conversation window without opening a browser; open its URL manually.",
+    )
+    parser.add_argument(
         "--voice",
         default=defaults.voice,
         help="session.audio.output.voice (for example bm_fable, marin, or alloy).",
@@ -212,6 +232,8 @@ def parse_talk_arguments(argv: Sequence[str]) -> RealtimeAudioClientConfig:
         tools=tools,
         tool_executor=tool_executor,
         tool_response_create=tool_response_create,
+        ui=namespace.ui,
+        ui_open_browser=namespace.ui_open_browser,
     )
 
 

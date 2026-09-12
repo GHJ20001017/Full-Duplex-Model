@@ -628,6 +628,7 @@ def build_local_pipeline(args: ParsedArguments, stop_event: Event) -> ThreadMana
             tool_response_create=tool_response_create,
             wake_word=local_audio.local_audio_wake_word,
             wake_word_timeout_s=local_audio.local_audio_wake_word_timeout_s,
+            ui=local_audio.local_audio_ui,
         ),
     )
     return ThreadManager([*server_manager.handlers, client])

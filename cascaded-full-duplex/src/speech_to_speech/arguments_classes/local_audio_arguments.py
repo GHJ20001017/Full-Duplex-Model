@@ -51,3 +51,10 @@ class LocalAudioArguments:
         default=300.0,
         metadata={"help": "Seconds allowed for speech after the wake word. Default: 300 (5 minutes)."},
     )
+    local_audio_ui: bool = field(
+        default=True,
+        metadata={
+            "help": "Open a local browser window showing the user/assistant conversation. On by default.",
+            "aliases": ["--ui"],
+        },
+    )

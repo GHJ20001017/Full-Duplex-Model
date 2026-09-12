@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bg: #0a0b10;
+    --bg-elev: #13151c;
+    --bg-elev-2: #1b1e29;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #f5f6fa;
+    --text-dim: rgba(245, 246, 250, 0.65);
+    --text-faint: rgba(245, 246, 250, 0.42);
+    --voice-user: #22d3ee;
+    --voice-assistant: #8b7dff;
+    --voice-status: rgba(245, 246, 250, 0.42);
+    --voice-error: #ff6a75;
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(920px 620px at 12% -8%, rgba(139, 125, 255, 0.10), transparent 60%),
+      radial-gradient(760px 560px at 92% 4%, rgba(34, 211, 238, 0.08), transparent 62%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+  }
+
+  .app {
+    width: min(820px, 100%);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0 20px;
+  }
+
+  /* ---- header ---- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 22px 2px 18px;
+  }
+
+  .mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: conic-gradient(from 140deg, #22d3ee, #8b7dff, #22d3ee);
+    box-shadow: 0 0 22px rgba(139, 125, 255, 0.45), inset 0 0 10px rgba(255, 255, 255, 0.18);
+    flex: none;
+    transition: filter .5s ease, opacity .5s ease;
+  }
+
+  body.listening .mark {
+    filter: hue-rotate(-120deg) saturate(1.35);
+    box-shadow: 0 0 26px rgba(34, 211, 238, 0.55), inset 0 0 10px rgba(255, 255, 255, 0.2);
+  }
+  body.speaking .mark {
+    animation: pulse 1.9s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  .titles { min-width: 0; }
+  .titles h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .titles p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+
+  .status {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--voice-status);
+    transition: background .3s ease, box-shadow .3s ease;
+  }
+  body.live .dot { background: #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.7); }
+  body.live .status { color: var(--text-dim); }
+
+  /* ---- transcript ---- */
+  .stream {
+    flex: 1;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    padding: 6px 4px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .stream::-webkit-scrollbar { width: 8px; }
+  .stream::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 99px;
+  }
+
+  .row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: rise .32s cubic-bezier(.22,.61,.36,1) both;
+    max-width: 86%;
+  }
+  .row.user { align-self: flex-start; align-items: flex-start; }
+  .row.assistant { align-self: flex-end; align-items: flex-end; }
+  .row.system { align-self: center; align-items: center; max-width: 100%; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .who {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 0 4px;
+  }
+  .row.user .who { color: var(--voice-user); }
+  .row.assistant .who { color: var(--voice-assistant); }
+
+  .bubble {
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+    border-radius: var(--radius-md);
+    padding: 11px 14px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+  }
+  .row.user .bubble { border-left: 2px solid var(--voice-user); border-top-left-radius: 4px; }
+  .row.assistant .bubble {
+    border-right: 2px solid var(--voice-assistant);
+    border-top-right-radius: 4px;
+    background: var(--bg-elev-2);
+  }
+  .bubble.pending { color: var(--text-dim); }
+  .caret {
+    display: inline-block;
+    width: 7px;
+    height: 15px;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: currentColor;
+    opacity: .55;
+    animation: blink 1.1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .system .bubble {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    padding: 2px 10px;
+  }
+  .system.error .bubble { color: var(--voice-error); }
+
+  /* ---- empty state ---- */
+  .empty {
+    margin: auto;
+    text-align: center;
+    color: var(--text-faint);
+    padding: 40px 20px;
+  }
+  .empty .ring {
+    width: 92px;
+    height: 92px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, rgba(139,125,255,.16), transparent 68%);
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 0 40px rgba(139, 125, 255, 0.16);
+  }
+  .empty p { margin: 0; font-size: 13px; }
+
+  footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 4px 16px;
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .hint { text-transform: none; letter-spacing: 0; font-family: var(--font); font-size: 11.5px; }
+
+  @media (max-width: 600px) {
+    .app { padding: 0 12px; }
+    .row { max-width: 94%; }
+    .titles p { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="mark" aria-hidden="true"></div>
+      <div class="titles">
+        <h1 id="title">__TITLE__</h1>
+        <p id="subtitle">__SUBTITLE__</p>
+      </div>
+      <div class="status" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-text">connecting</span>
+      </div>
+    </header>
+
+    <main class="stream" id="stream" aria-live="polite">
+      <div class="empty" id="empty">
+        <div class="ring" aria-hidden="true"></div>
+        <p id="empty-text">Waiting for the conversation to start&hellip;</p>
+      </div>
+    </main>
+
+    <footer>
+      <span class="hint" id="hint">Speak into your microphone; replies appear here.</span>
+      <span id="footer-note">live transcript</span>
+    </footer>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var stream = document.getElementById("stream");
+  var empty = document.getElementById("empty");
+  var statusText = document.getElementById("status-text");
+  var subtitleEl = document.getElementById("subtitle");
+  var hintEl = document.getElementById("hint");
+
+  // One live bubble per role; a later item for the same role reuses it until the
+  // message is finalized, mirroring how the terminal streams partial text.
+  var live = { user: null, assistant: null };
+  // 用户的每个输入 item 对应一个气泡：话轮被重开时服务端复用同一个 item id，
+  // 于是同一句话只会更新文本，不会再多出一个气泡。
+  var userRows = Object.create(null);
+  var pinned = false;
+  var reconnectDelay = 500;
+
+  function atBottom() {
+    return stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60;
+  }
+
+  function scrollToBottom() {
+    stream.scrollTop = stream.scrollHeight;
+  }
+
+  function dropEmpty() {
+    if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+  }
+
+  function makeRow(role, kind) {
+    dropEmpty();
+    var row = document.createElement("div");
+    row.className = "row " + role + (kind === "error" ? " error" : "");
+    if (role !== "system") {
+      var who = document.createElement("div");
+      who.className = "who";
+      who.textContent = role === "user" ? "You" : "Assistant";
+      row.appendChild(who);
+    }
+    var bubble = document.createElement("div");
+    bubble.className = "bubble" + (role === "system" ? "" : " pending");
+    row.appendChild(bubble);
+    var stick = atBottom() || pinned;
+    stream.appendChild(row);
+    if (stick) scrollToBottom();
+    return bubble;
+  }
+
+  function appendText(bubble, text) {
+    var caret = bubble.querySelector(".caret");
+    if (caret) caret.remove();
+    bubble.appendChild(document.createTextNode(text));
+    var stick = atBottom();
+    if (stick) scrollToBottom();
+  }
+
+  function finish(bubble) {
+    if (!bubble) return;
+    bubble.classList.remove("pending");
+    var caret = bubble.querySelector(".caret");
+    if (caret) caret.remove();
+  }
+
+  function setLive(role, bubble) {
+    live[role] = bubble;
+  }
+
+  function ensureLive(role) {
+    if (!live[role] || !live[role].isConnected) {
+      var bubble = makeRow(role);
+      var caret = document.createElement("span");
+      caret.className = "caret";
+      bubble.appendChild(caret);
+      setLive(role, bubble);
+    }
+    return live[role];
+  }
+
+  function ensureUserItem(itemId) {
+    var bubble = userRows[itemId];
+    if (!bubble || !bubble.isConnected) {
+      bubble = makeRow("user");
+      var caret = document.createElement("span");
+      caret.className = "caret";
+      bubble.appendChild(caret);
+      userRows[itemId] = bubble;
+    }
+    return bubble;
+  }
+
+  function reset() {
+    stream.querySelectorAll(".row").forEach(function (row) { row.remove(); });
+    live.user = live.assistant = null;
+    userRows = Object.create(null);
+    if (!empty.parentNode) stream.appendChild(empty);
+  }
+
+  function setBodyClass(name, on) {
+    document.body.classList.toggle(name, !!on);
+  }
+
+  var handlers = {
+    status: function (msg) {
+      var value = msg.value || "";
+      statusText.textContent = value;
+      setBodyClass("live", value && value !== "disconnected" && value !== "connecting");
+      setBodyClass("listening", value === "listening" || value === "user-speaking");
+      setBodyClass("speaking", value === "speaking" || value === "ai-speaking");
+      if (value === "connected" || value === "ready") {
+        hintEl.textContent = msg.hint || hintEl.textContent;
+      }
+    },
+    transcript: function (msg) {
+      var role = msg.role === "assistant" ? "assistant" : "user";
+      var itemId = role === "user" && typeof msg.item_id === "string" && msg.item_id ? msg.item_id : null;
+      var bubble = itemId ? userRows[itemId] : live[role];
+      if (bubble && !bubble.isConnected) bubble = null;
+      if (!bubble) {
+        if (!msg.delta && !msg.text) return; // 空事件不生成空气泡
+        bubble = itemId ? ensureUserItem(itemId) : ensureLive(role);
+      }
+      if (msg.delta) appendText(bubble, msg.delta);
+      if (msg.final) {
+        // 同一句话的最终转写可能先短后长：后到的、更完整的文本覆盖显示，
+        // 空转写则保留已经显示的内容。
+        if (msg.text) bubble.textContent = msg.text;
+        finish(bubble);
+        if (role === "user") {
+          if (live.user && live.user !== bubble) finish(live.user);
+          live.user = null;
+        } else {
+          setLive(role, null);
+        }
+      }
+    },
+    message: function (msg) {
+      var role = msg.role === "assistant" ? "assistant" : "user";
+      var bubble = makeRow(role);
+      bubble.classList.remove("pending");
+      bubble.textContent = msg.text || "";
+      finish(bubble);
+      setLive(role, null);
+    },
+    system: function (msg) {
+      var bubble = makeRow("system", msg.kind);
+      bubble.textContent = msg.text || "";
+      finish(bubble);
+    },
+    reset: function () { reset(); }
+  };
+
+  function dispatch(name, msg) {
+    var handler = handlers[name];
+    if (handler) handler(msg);
+  }
+
+  function connect() {
+    var source = new EventSource("/events");
+
+    source.addEventListener("open", function () {
+      reconnectDelay = 500;
+      setBodyClass("live", true);
+    });
+
+    source.addEventListener("message", function (event) {
+      var payload;
+      try { payload = JSON.parse(event.data); }
+      catch (err) { return; }
+      if (!payload || typeof payload !== "object") return;
+      dispatch(payload.event, payload);
+    });
+
+    source.addEventListener("closed", function () {
+      source.close();
+      statusText.textContent = "disconnected";
+      setBodyClass("live", false);
+    });
+
+    source.addEventListener("error", function () {
+      if (source.readyState === EventSource.CLOSED) {
+        statusText.textContent = "disconnected";
+        setBodyClass("live", false);
+        setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+      }
+    });
+  }
+
+  stream.addEventListener("scroll", function () {
+    pinned = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 40;
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

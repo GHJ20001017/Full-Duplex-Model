@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import math
-import struct
 import time
 from collections import deque
 from typing import Any
+
+from speech_to_speech.api.openai_realtime.mic_gain import short_term_level
 
 
 class OpenWakeWordDetector:
@@ -49,7 +49,15 @@ class OpenWakeWordDetector:
 
 
 class WakeWordGate:
-    """Discard microphone audio until a wake word is followed by speech."""
+    """Discard microphone audio until a wake word is followed by speech.
+
+    The speech test is relative rather than a single hard-coded level: an
+    absolute floor (``speech_rms_threshold``) is combined with a multiple of the
+    observed noise floor (``noise_ratio``). Microphone gain varies by more than
+    20 dB between machines and rooms, and a fixed 500 RMS floor never opened on
+    low-gain setups where speech peaks at ~100 RMS even though openWakeWord
+    still recognized the wake word.
+    """
 
     def __init__(
         self,
@@ -57,19 +65,26 @@ class WakeWordGate:
         *,
         timeout_s: float = 300.0,
         sample_rate: int = 16000,
-        speech_rms_threshold: float = 500.0,
+        speech_rms_threshold: float = 80.0,
         preroll_ms: int = 400,
+        noise_ratio: float = 4.0,
     ) -> None:
         if timeout_s <= 0:
             raise ValueError("timeout_s must be positive")
+        if speech_rms_threshold <= 0:
+            raise ValueError("speech_rms_threshold must be positive")
+        if noise_ratio < 1.0:
+            raise ValueError("noise_ratio must be at least 1")
         self.detector = detector
         self.timeout_s = timeout_s
         self.sample_rate = sample_rate
         self.speech_rms_threshold = speech_rms_threshold
+        self.noise_ratio = noise_ratio
         self._armed_until = 0.0
         self._active = False
         self._wake_detected = False
         self._last_speech_at = 0.0
+        self._noise_floor: float | None = None
         self._preroll: deque[bytes] = deque()
         self._preroll_bytes = max(0, int(sample_rate * 2 * preroll_ms / 1000))
         self._preroll_size = 0
@@ -78,8 +93,17 @@ class WakeWordGate:
     def armed(self) -> bool:
         return self._armed_until > time.monotonic()
 
+    @property
+    def threshold(self) -> float:
+        """Speech level that opens the gate for the current noise floor."""
+
+        if self._noise_floor is None:
+            return self.speech_rms_threshold
+        return max(self.speech_rms_threshold, self.noise_ratio * self._noise_floor)
+
     def process(self, chunk: bytes) -> list[bytes]:
         now = time.monotonic()
+        level = short_term_level(chunk, sample_rate=self.sample_rate)
         if not self._active and not self.armed and self.detector.process(chunk):
             self._armed_until = now + self.timeout_s
             self._wake_detected = True
@@ -89,10 +113,12 @@ class WakeWordGate:
             return []
 
         if self._active:
-            if self._has_speech(chunk):
+            if self._is_speech_level(level):
                 self._last_speech_at = now
             elif now - self._last_speech_at >= self.timeout_s:
                 self._active = False
+                # The next utterance may happen in a different noise field.
+                self._noise_floor = None
                 print("Wake window expired; waiting for wake word", flush=True)
                 return []
             return [chunk]
@@ -101,10 +127,11 @@ class WakeWordGate:
             self._armed_until = 0.0
             self._preroll.clear()
             self._preroll_size = 0
+            self._observe_level(level)
             return []
 
         self._append_preroll(chunk)
-        if self._has_speech(chunk):
+        if self._is_speech_level(level):
             self._active = True
             self._last_speech_at = now
             output = list(self._preroll)
@@ -112,6 +139,7 @@ class WakeWordGate:
             self._preroll_size = 0
             print("Speech detected; audio pipeline enabled", flush=True)
             return output
+        self._observe_level(level)
         return []
 
     def close(self) -> None:
@@ -133,10 +161,22 @@ class WakeWordGate:
         while self._preroll and self._preroll_size > self._preroll_bytes:
             self._preroll_size -= len(self._preroll.popleft())
 
-    def _has_speech(self, chunk: bytes) -> bool:
-        usable = chunk[: len(chunk) - len(chunk) % 2]
-        if not usable:
-            return False
-        samples = struct.unpack(f"<{len(usable) // 2}h", usable)
-        rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
-        return rms >= self.speech_rms_threshold
+    def _is_speech_level(self, level: float) -> bool:
+        return level >= self.threshold
+
+    def _observe_level(self, level: float) -> None:
+        """Track the noise floor from blocks that are not speech.
+
+        Speech-level blocks are skipped so a sentence can never raise the floor
+        and make the gate deaf to the next one; below-threshold blocks pull the
+        estimate down quickly and push it up slowly.
+        """
+
+        if level >= self.threshold:
+            return
+        if self._noise_floor is None:
+            self._noise_floor = level
+        elif level < self._noise_floor:
+            self._noise_floor += 0.5 * (level - self._noise_floor)
+        else:
+            self._noise_floor += 0.05 * (level - self._noise_floor)
