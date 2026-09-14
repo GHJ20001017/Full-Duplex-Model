@@ -1,3 +1,5 @@
+
+
 # Full-Duplex Model
 
 全双工语音模型工程，包含两条独立路线：
@@ -15,6 +17,10 @@
 - **本地服务端唤醒词**：客户端 openWakeWord 门控（默认 `hey jarvis`），未唤醒不上传音频；唤醒后服务端播报固定应答。
 - **流式 ASR**：Parakeet 智能渐进式转写（每 500 ms 出部分结果、句子边界滑动窗口）+ 流式 Paraformer（中文）。
 - **语义化 barge-in**：`TurnController` 区分附和音（`嗯`/`对`/`ok`，不打断）与明确打断短语（`停一下`/`等一下`，立即取消）。
+
+
+https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
+
 
 默认 Realtime 端口为 **7869**（上游为 8765）。详见 [cascaded-full-duplex/README.md](cascaded-full-duplex/README.md)。
 
