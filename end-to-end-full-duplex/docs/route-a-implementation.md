@@ -1,185 +1,338 @@
-# Qwen3 + Mimi 小型全双工模型：总路线与首轮实验
+# Route A：按 Moshi 训练流程构建 Qwen3 全双工模型
 
-## 总的做法
+## 目标与边界
 
-**不是直接把 Qwen3 换进 Moshi 就能训练对话。先让 Qwen3 读懂 Mimi token，再训练它生成 Mimi token，最后训练双流对话。**
+本路线不是“Qwen3 加一个 ASR 适配器，再接一个 TTS”。目标是复现 **Moshi 的训练顺序、数据组织、联合损失、延迟机制和全双工建模方式**，只把原版 Moshi 的文本骨干 Helium 替换为 Qwen3，并且**不重新训练 Mimi 编解码器**。
 
-```text
-1. 下载 Qwen3 和 Mimi，检查文本推理及音频重建
-   ↓
-2. 音频输入适配：Mimi token → Qwen3 → 转写文本
-   验证 Qwen3 是否真的利用音频，而不是靠文字猜答案
-   ↓
-3. 音频输出适配：Qwen3 + Depth → Mimi token → 语音
-   先验证受控文本条件生成，再联合预测文本和语音
-   ↓
-4. 语音问答：用户语音 → 助手文本 + 助手语音
-   ↓
-5. 真正双工：持续双轨输入，学习轮替、附和和打断
-   ↓
-6. 实时推理：麦克风 → 模型 → 播放，测质量和延迟
-```
+因此必须遵守以下边界：
 
-第 2 步是本项目增加的**输入适配诊断/预热任务**，不是原 Moshi 论文的完整训练阶段；转写成功不等于能理解问答。最终在线路径不串接外部 ASR 或 TTS，仍保留 Moshi 的多流 Temporal/Depth、对齐助手文本、声学延迟与流式状态。
+- Mimi 使用已经发布的 checkpoint，冻结其 Encoder/Decoder 和量化器；只做加载、流式 encode/decode、码本形状和重建质量验证。
+- 不增加独立 ASR、VAD、轮次检测、LLM、TTS 串联路径。用户音频直接作为用户音频流进入模型；助手文本是 Inner Monologue，同时作为助手输出文本流监督。
+- 不把“先训练 Qwen3 读音频、再训练一个独立语音生成器”当作 Moshi 训练流程。可以做小规模诊断，但不能替代 Moshi 的四阶段联合训练。
+- Qwen3 是本项目相对于原版 Moshi 的唯一核心骨干替换。由于 Qwen3 的隐藏维度、词表和 tokenizer 与 Helium 不同，所有投影、embedding、输出头都从 Qwen3 config 和实际 Mimi 配置读取，不能照抄 Helium 的维度常数。
 
-以下按**中文首版、Qwen3-1.7B-Base**给出可执行的建议。数据量、超参数和通过线是首轮工程设置，不是实测结果。本文只更新方案，不执行下载或训练。
-
-## 第一步：下载两个预训练模型，确认能单独运行
-
-### 下载清单
-
-| 资产 | 下载来源 | 用途 |
-| --- | --- | --- |
-| Qwen3 权重、配置、tokenizer | `Qwen/Qwen3-1.7B-Base` | 作为跨时间建模的 Temporal Transformer |
-| Mimi 权重 | `kyutai/moshiko-pytorch-bf16` 中的 `tokenizer-e351c8d8-checkpoint125.safetensors` | 同一个模型提供 Encoder 和 Decoder |
-| Moshi 实现 | [kyutai-labs/moshi](https://github.com/kyutai-labs/moshi) | 复用 Mimi loader、Depth 和延迟机制；适配到 Qwen3 |
-
-**不下载原版 7B Moshi LM 作为训练起点，不使用其 SentencePiece tokenizer。** Depth、音频 embedding 和音频输出头是新训练的。Mimi 不是“mini”。
-
-以下是在模块目录执行的下载示例，需要先有含 Hugging Face CLI 的环境；正式运行前把 revision 环境变量设置为选定仓库的 commit SHA，不使用浮动版本训练。
-
-```bash
-cd "/Users/guhj/Documents/Full-Duplex Model/end-to-end-full-duplex"
-: "${QWEN_REV:?设置 Qwen3 仓库 commit SHA}"
-: "${MIMI_REV:?设置 Mimi 所在仓库 commit SHA}"
-hf download Qwen/Qwen3-1.7B-Base \
-  --revision "$QWEN_REV" --local-dir checkpoints/base/qwen3-1.7b
-hf download kyutai/moshiko-pytorch-bf16 \
-  tokenizer-e351c8d8-checkpoint125.safetensors \
-  --revision "$MIMI_REV" --local-dir checkpoints/base/mimi
-```
-
-实现时用固定版本 `moshi.models.loaders.get_mimi` 加载这个 Mimi 文件，设置 `num_codebooks=8`，不调用会一并下载 Moshi LM 的完整 checkpoint 加载入口。Qwen3 使用支持该模型的 Transformers 版本；安装后锁定实际依赖版本。
-
-### 做两个检查
-
-1. Qwen3 完成文本续写，保存 tokenizer/config，确认模型层和文本输出头可加载。
-2. 从 AISHELL-3 取 20 条录音，转为 24 kHz，执行 `waveform → Mimi.encode → Mimi.decode → waveform`。设置 Mimi 为 eval，关闭梯度。核对每侧 token 形状约为 `[B, 8, T]`、帧率 12.5 Hz、普通码本 ID 范围 0–2047；比较原声与重建音频。
-
-**产物**：两套本地权重、版本记录、20 条重建音频。重建有明显问题就先修采样率/码本配置，不进入训练。
-
-## 第二步：做“Qwen3 能否读懂音频 token”的适配实验
-
-### 2.1 用什么数据
-
-- 主数据：[AISHELL-1](https://www.openslr.org/33/)，使用录音和汉字转写。先从官方训练集抽 **10h**，另从开发集取 **1h** 做验证；官方测试集最后再使用。
-- 音频重采样到 24 kHz，保留说话人/原始文件 ID。重采样不代表恢复原本缺失的高频。
-- 对转写做强制对齐，再用 Qwen3 tokenizer 转成子词，分配到 80 ms 时间格。快速语速造成同帧多 token 时顺延，并统计实际滞后；不得丢字。
-- 缓存 Mimi 的 8 路 token、对齐文本 token、文本有效 mask。按原始文件划分，不能把同一句的不同切片放到训练和验证两侧。
-
-### 2.2 模型具体怎么接
-
-每个码本独立建一个可训练 embedding，大小为 `2048 × Qwen3 hidden_size`，特殊码本标记另留位置。hidden size 从 Qwen3 config 读取。将同一帧的 8 个 embedding 求和作为该帧输入：
+原版 Moshi 的四个模型训练阶段是：
 
 ```text
-8 路 Mimi token [B, 8, T]
-    → 8 个音频 embedding，按码本求和
-    → 音频帧表示 [B, T, H]
-    → Qwen3 inputs_embeds
-    → 原 Qwen3 文本输出头
-    → 每帧一个文本 token 或文本对齐 PAD
+0. 准备并冻结 Mimi（本项目跳过 Mimi 训练，只验证）
+1. Moshi pre-training：单音频流 + 文本保留训练
+2. Moshi post-training：基于 diarization 的模拟双流
+3. Fisher fine-tuning：真实双流会话，获得全双工能力
+4. Instruction fine-tuning：合成语音指令数据，固定助手声音
 ```
 
-- **不把 2048 个 codec ID 当作 Qwen3 原词表 ID，也不把 8 个码本展开成 8 倍时间长度。**
-- 这是帧级因果转写任务，不走聊天模板，不加入 Depth，不预测音频。
-- 输入不提供参考转写，也不提供上一帧真实文字，只给音频帧；避免模型靠 teacher-forced 文本历史把实验做“成功”。
-- 每帧只能看当前和过去音频。转写标签从对应发声结束后再延迟 2 帧（160 ms）开始排布，拥挤时继续顺延；这只是诊断任务的初始延迟设置，不是最终助手回复延迟。
-- 为片尾排不下的文字追加真实静音编码帧，并记录额外等待时间。验证必须报告实际转写滞后，不能只报告 160 ms。
-- loss 为文本 CE，对齐 PAD 先设权重 0.1，普通文本权重 1；batch padding 不计入 loss。添加专用 PAD/EPAD ID，不覆盖 Qwen3 原有 token 语义。
+此外，Moshi 还训练一个**辅助的 streaming multi-stream TTS**，用来生成第 4 阶段的合成指令语音；它不是把 Moshi 变成串联式 TTS，且不应与 Moshi 主模型混为一个 checkpoint。
 
-### 2.3 先跑小样本，再跑两组对照
+本文的训练数值首先记录 Moshi 论文中的设置；中文首版因数据规模、GPU 和 Qwen3 规模不同，可以等比例缩短，但必须在实验表中标明“缩短版”，不能把缩短版称为复现原训练预算。
 
-先用 32 条训练样本检查 loss、梯度和自由转写；这一轮只排查工程问题。随后做以下 10h 数据实验，两组从同一 Qwen3 和同一新增 embedding 初始化出发：
+参考依据：Moshi 论文 [§3.4、§4.2–§4.4](https://arxiv.org/html/2410.00037v2)、[Moshi 官方实现](https://github.com/kyutai-labs/moshi)、[官方微调仓库](https://github.com/kyutai-labs/moshi-finetune)。
 
-| 实验 | 训练哪些参数 | 回答的问题 |
+---
+
+## 第 0 步：准备并冻结 Mimi，不训练编解码器
+
+### 0.1 固定模型资产
+
+| 资产 | 用途 | 本路线是否训练 |
 | --- | --- | --- |
-| E1：冻结骨干 | 8 个音频 embedding、新增文本 token 参数；其余 Qwen3 冻结 | 只映射输入是否足够？ |
-| E2：LoRA 适配 | E1 + Qwen3 attention 的 q/k/v/o projection LoRA，建议 rank 16、alpha 32 | 骨干需要适配时，轻量更新是否足够？ |
-| E3：条件性追加 | E1 + Qwen3 最后 8 个 block 解冻；不叠加 E2 的 LoRA | 仅当 E1/E2 均不行且数据/实现正确时，检查 LoRA 容量是否限制学习 |
+| Qwen3 权重、配置、tokenizer | Temporal Transformer 初始化 | 后续阶段训练/适配 |
+| 已发布 Mimi checkpoint | 24 kHz 音频 ↔ 12.5 Hz、8 路 codec token | 否，全部冻结 |
+| Moshi PyTorch loader 与 delay 工具 | Mimi 加载、流式状态、延迟/反延迟 | 复用并适配 |
 
-**首轮训练设置**：AdamW；新参数学习率 `1e-4`，LoRA `1e-4`，解冻 block `1e-5`；warmup 占更新数 5%，梯度裁剪 1.0。新参数组、LoRA 和 block 分别记录梯度范数。新增文本 token 的参数训练要避免误解冻整个词表。
+当前仓库的下载脚本以 ModelScope 为入口，模型来源和实际文件名以 `scripts/download_models.py` 为准。训练运行前要保存：模型仓库 revision、文件 SHA、Python/PyTorch/Moshi 版本、Mimi `num_codebooks`、采样率和帧率。
 
-每组先跑 3 个训练集 epoch，每半个 epoch 验证；同样本顺序、同有效音频时长、同最大上下文。每次 optimizer 更新累计约 120 秒有效音频，通过 microbatch/梯度累积适配显存。上述值用于起跑，不保证收敛；比较学习曲线后再追加同等预算。
+### 0.2 只做三项验收
 
-### 2.4 怎么判断它真的读懂了音频
+1. `24 kHz waveform → Mimi.encode → Mimi.decode` 能正常重建；Mimi 处于 `eval()`，不建立梯度。
+2. token 形状为 `[B, 8, T]`，帧率为 12.5 Hz，即每帧 80 ms；确认每个码本的 cardinality 和 padding 约定。
+3. 在 20 条未参与训练划分的音频上保存重建音频、波形图和 token 统计。
 
-验证时不喂参考文字，去掉输出 PAD 后计算中文 CER，并报告插入/删除/替换错误。对同一 checkpoint 再做两项诊断：
+如果这一步失败，修复采样率、声道、流式缓存或 loader；不要通过训练 Moshi 主模型来掩盖 codec 问题。
 
-1. 把输入换成相同长度的静音 codec token。
-2. 把输入换成其他句子的音频，保持待评分的原转写不变。
+---
 
-**进入下一步的建议门槛**：开发集 CER ≤ 30%，且比静音、错配音频两种诊断各降低至少 30% 相对 CER；按原始录音配对 bootstrap 的 CER 差值 95% 区间应支持真实音频更好。主候选重复 3 个随机种子，报告均值/波动。门槛是排除“还没学会输入”的工程线，不是最终 ASR 质量目标。
+## 第 1 步：按 Moshi 结构搭建 Qwen3-Moshi
 
-如果 loss 降但 CER 不降，先查 PAD 占比、标签泄漏和文本错位；如果真实音频与静音差不多，不进入双工训练。达标后将数据扩到 AISHELL-1 训练集，并记录扩量收益。
+### 1.1 训练时的三类流
 
-**产物**：`audio-input-adapted` checkpoint，以及 E1/E2 的 CER、静音/错配 CER、转写滞后、GPU-hours。此时只证明语音内容输入可用，尚未证明问答能力。
+每个 80 ms 时间步包含：
 
-## 第三步：让模型能说——训练 Depth 与音频输出
+- `U_t`：用户音频 8 路 Mimi token，训练时来自用户音频，推理时来自麦克风；
+- `A_t`：助手音频 8 路 Mimi token，训练时是真值，推理时由模型采样；
+- `W_t`：助手文本 token，训练时是真值对齐文本，推理时由文本头采样。
 
-### 数据和初始化
+Temporal Transformer 沿时间建模；Depth Transformer 在同一个时间步内按码本顺序建模。不能把 8 个码本简单展开为 8 倍时间，也不能用 8 个互相独立的并行分类头替代 Depth。
 
-- 数据：[AISHELL-3](https://www.openslr.org/93/)，约 85h 多说话人普通话及转写。先选一名数据量充足的说话人，用其不重复句子的训练/验证划分验证固定音色；再扩到多说话人训练部分。
-- 继承第二步 Qwen3 和输入 embedding。为助手音频建立独立 embedding，可复制输入 embedding 初始化，之后不绑定权重。
-- 新建 `Qwen3→Depth` 投影、Depth（首试 4 层、hidden 512、8 heads、FFN 2048）和 8 个码本输出头，保留 Depth 按位置区分的参数化。Mimi 继续冻结。
+### 1.2 与 Moshi 对齐的网络结构
 
-### 分成两个实验，不一开始就做全双工
+```text
+用户音频 U + 助手历史音频 A + 助手历史文本 W
+        ↓ 各流独立 embedding，再按时间步求和
+Qwen3 Temporal Transformer（跨时间因果建模）
+        ├── Text head → W_t（Inner Monologue）
+        └── projection → Depth Transformer（同一步内按码本自回归）
+                              ↓
+                    助手音频 A_t 的 8 路 logits
+        ↓ delay / undelay 后送入冻结 Mimi Decoder
+助手音频
+```
 
-| 实验 | 输入 | 预测目标 | 训练方式 |
-| --- | --- | --- | --- |
-| E4：受控发音 | 当前对齐文本 token + 历史助手音频 | 当前调度位置的 8 个助手音频 token | 先固定 Qwen3，训练新增输出模块；验证未训练句子的文本能否变成可懂语音 |
-| E5：文本—语音联合生成 | 历史助手文本 + 历史助手音频，不提前输入当前目标文字 | 先预测当前文本，再以文本和 Temporal hidden 为条件让 Depth 预测音频 | 继续训练新增模块和 Qwen3 适配参数；训练时对当前文本条件使用 teacher forcing，生成时换成模型自己的文本 |
+必须实现并单元测试：
 
-E4 是接口与发音诊断，不是最终推理。E5 才接近 Moshi 的联合生成训练。两者都按固定帧率运行，不先生成完整回答后接独立 TTS。
+- 每一路的输入 embedding、输出 projection、文本 head 和音频 head；
+- Temporal KV cache；
+- 2 帧 acoustic delay 的 pre-training 约定，以及后续阶段 1 帧 delay；
+- 文本与音频的时间戳对齐、shift、mask，确保当前目标 token 不泄漏到 Temporal 输入；
+- 用户流、助手流、文本流的 reset；一次会话结束时同时清空 codec state、KV cache 和播放队列。
 
-**训练细节**：
-- Temporal 跨时间，Depth 在同一调度步内自回归预测 8 个码本；不能用 8 个独立并行头替代 Depth。
-- 复用并测试 delay/undelay，单流参考 2 帧声学延迟；训练目标和输入严格移位，不能把当前音频答案送回 Temporal。
-- 音频 loss 使用归一化加权 CE，语义码本/其余码本先用 100:1；E5 再加文本 CE。分别记录各码本和非 PAD 文本 loss。
-- E5 可从 30% 输入文本遮蔽开始，保留音频历史训练；穿插第二步音频转写任务和合法纯文本任务，起点按更新数 80%/10%/10%（联合生成/转写/纯文本），监测听觉与文本遗忘。
+### 1.3 初始化方式
 
-**检查**：E4 用 200 条未训练句子的对齐文本自由生成全部音频，不喂真实历史音频；E5 只给短前缀后自由续写。固定同一独立 ASR 评估器，比较原录音、Mimi 重建、生成音频的 CER，并人工盲听可懂度和重复问题。E4 先以生成 CER 不高于重建 CER + 10 个百分点作为工程门槛；E5 检查自身文本与声音一致性，不用开放续写与唯一参考句的 CER 判正确性。
+- Temporal Transformer：加载 Qwen3 预训练权重。若 Qwen3 的 attention、RoPE、RMSNorm、SwiGLU 实现与训练框架不兼容，先写显式权重映射和等价性测试，不静默改变结构。
+- Depth Transformer：随机初始化。Moshi 的参考配置是 6 层、hidden 1024、FFN 4096、16 heads；Qwen3-Moshi 首版沿用该 Depth 配置，显存不足时只能作为标明的缩小实验。
+- 音频 embedding、音频输出头、Temporal→Depth 投影：随机初始化；音频码本 cardinality 从 Mimi 配置读取，不能假设所有码本都与 Qwen3 词表共用。
+- 文本 embedding 和文本 head：从 Qwen3 初始化，并保留 Qwen3 原词表语义。音频 ID 绝不能直接送进 Qwen3 原词表。
 
-**产物**：`speech-text-joint` checkpoint、固定文本生成样例、自由续写样例及输入能力回归结果。通过后再扩大到清洗后的 AISHELL-3 数据；多说话人生成用短音频前缀指定声音，不能假装无条件混合数据会自动得到固定音色。
+---
 
-## 第四步：让“听”和“说”接起来——语音问答
+## 第 2 步：Moshi pre-training——单流音频预训练
 
-**数据**：先准备 5,000–10,000 条人工审校的中文口语问答，涵盖问答、指令、澄清和纠正；用获授权 TTS 生成用户音频和固定音色助手音频，得到统一时间轴的双轨样本。源脚本按训练/验证/测试分组，不能泄漏其音色变体。
+这是第一段真正的 Moshi 训练，不是单独的 ASR 预热任务。
 
-**做法**：
-1. 加入独立用户与助手两侧音频流；输入用户音频、助手历史音频和历史助手文本，监督助手文本与音频。用户转写不作为主任务的输入。
-2. 用户说话期间，助手目标是正确的静音和文本 PAD；助手回答期间仍持续读取用户流。双流参考 1 帧声学延迟。
-3. 从第三步 checkpoint 训练 Qwen3 适配参数和全部音频新增模块；混入输入/语音任务做回归，避免只学会固定套路。
-4. 对相同问题构造只改一个关键词的音频对，如日期、数量、地点或否定条件；正确答案应随输入变化。
+### 2.1 数据
 
-**检查**：保留 200 条未训练语音问答，人工评估答案是否正确、是否遵循要求、是否说清。与同一问答适配 checkpoint 的文本输入参考任务区分比较；另做错配用户音频诊断。第二步 CER 合格而这里失败，优先补语义问答与指令数据，不直接宣称全双工已完成。
+原版使用约 700 万小时的无监督音频，主要为英语语音，并用 Whisper large-v3 得到转写。中文首版应建立对应的数据版本：
 
-**产物**：`spoken-qa` checkpoint。此时允许先轮流说话，目的是检查用户音频能驱动正确的助手语音响应。
+- 大规模中文公开/授权音频，统一重采样为 24 kHz、单声道；
+- Whisper 或其他离线转写只用于生成训练监督文本和时间戳，不作为模型推理输入；
+- 当前阶段把所有说话人混合成**一条音频流**，不做用户/助手双流；文本流包含这条音频中的词；
+- 训练/验证/测试按原始节目、说话人或会话划分，不能把同一录音切片分到两侧；
+- 每个 batch item 先按 5 分钟音频组织，Moshi 论文的 audio batch 总量约 16 小时。
 
-## 第五步：用真实双轨数据训练打断和附和
+同时准备与 Qwen3 语言能力匹配的纯文本数据。原版 Moshi pre-training 中有一半时间继续训练纯文本 batch，以避免 Temporal Transformer 忘记原语言能力；中文首版也必须保留这条支路。
 
-**数据**：先采集或取得授权的 10h 同步双轨中文会话，再按学习曲线扩大到 50–100h。左助手、右用户，保留静音和重叠。两人独立麦克风、共享时间原点；包含正常轮替、停顿、同时起说、打断、短附和、发声中补充条件。
+### 2.2 输入和目标
 
-**做法**：
-- 从第四步继续训练，不用 VAD 的轮次门控切断用户输入。
-- 打断样本必须有“助手停说→用户补充→按新要求回答”的真实目标；附和样本则应包含助手继续说。
-- TTS 拼接只补内容，不能替代真实交互。说话人分段不能从混音还原干净重叠双轨。
-- [DailyTalkContiguous](https://huggingface.co/datasets/kyutai/DailyTalkContiguous) 仅作为可选英文格式调试数据，先查许可，不当作中文打断训练的替代品。
+单流阶段仍使用 Moshi 的 Inner Monologue：
 
-**检查**：测试集按会话独立保留，每类至少先标注 20 个事件。对比第四步与第五步 checkpoint 的打断成功率、实际停播延迟、附和误停率，以及打断后的回答正确性；对正常问答做回归。
+- 约 30% 的文本 token 随机 mask；
+- 文本和音频之间的 delay 在 `-0.6 s` 到 `+0.6 s` 之间随机化；
+- acoustic delay 使用 2 帧；
+- 文本 padding 占比很高，padding loss 权重降为 50%；
+- 每个训练 step 同时产生文本 logits 和 8 路音频 logits；不调用外部 ASR/TTS。
 
-**产物**：`duplex` checkpoint 与事件级对比结果。没有真实双轨数据就停在语音问答，不把合成轮次训练称为自然双工完成。
+Moshi 论文的主要训练设置：
 
-## 第六步：实时运行与最终交付
+| 项目 | Moshi pre-training 参考值 |
+| --- | ---: |
+| 训练步数 | 1,000,000 |
+| audio batch | 约 16 小时 |
+| Temporal 学习率 | `3e-5`，linear warmup + cosine |
+| Depth 学习率 | `2e-4`，linear warmup + cosine |
+| 文本/音频混合 | audio 与纯文本各约 50% |
+| 文本 embedding/head 学习率 | audio batch 中乘 `0.75` |
+| 优化器 | AdamW，weight decay `0.1`，betas 约 `(0.9, 0.95)` |
+| 训练技术 | H100、FSDP、activation checkpointing |
 
-1. 接通麦克风 → Mimi Encoder → Qwen3/Depth → Mimi Decoder → 播放；持续维护 codec 状态、KV cache 和播放队列，会话结束一起 reset。
-2. 每帧记录 encode/model/decode 时间、排队时长及显存；在目标机器连续运行至少 10 分钟，检查 RTF < 1、队列不持续增长。
-3. 打断同时测模型停生成和实际停止播放；不能用“一检测到人声就停播”掩盖附和误判。
-4. 输出质量、任务正确性、打断/附和、p50/p95 延迟、失败次数及 GPU/缓冲配置一起报告。
+纯文本 batch 使用独立 optimizer state，使文本 batch 和音频 batch 的更新尺度平衡。不能简单把两个 loss 相加后共用一套不受控制的 optimizer state。
 
-**最终交付**：完整组合 checkpoint、Qwen3 tokenizer、模型/延迟配置、版本和数据清单、每阶段实验表、固定样例与失败案例。下载权重不提交 Git；训练入口需实现，不把本文的实验标签当作已有脚本。
+### 2.3 联合损失
 
-## 现在先做哪一件事
+对每个时间步，文本 token 作为第 1 项，音频 8 路作为后续项。损失按 Moshi 的定义实现：
 
-**先只完成第一步和第二步的 E1/E2。** 它们回答当前最关键的问题：在 10h 普通话试验上，Qwen3 通过新增音频 embedding 加轻量骨干适配，是否确实能读取 Mimi token。拿到这个结果，再投入 Depth、语音问答和真实双轨数据训练。
+```text
+L = 1/S · Σ_s [ CE(text_s)
+    + 1/(Σ_{k=2..K} α_k) · Σ_{k=2..K} α_k CE(audio_{s,k}) ]
+```
 
-参考：[Qwen3 模型卡](https://huggingface.co/Qwen/Qwen3-1.7B-Base)、[Moshi loader（Mimi 文件名与加载方式）](https://github.com/kyutai-labs/moshi/blob/main/moshi/moshi/models/loaders.py)、[Moshi 论文](https://arxiv.org/html/2410.00037v2)、[官方微调数据约定](https://github.com/kyutai-labs/moshi-finetune)。AISHELL 页面列有 Apache-2.0，使用时仍保存下载包实际许可；自采录音和合成声音须取得训练授权。
+其中第 1 个音频码本是语义码本，参考权重为 `α_2 = 100`；其余 acoustic codebook 的权重为 `1`。文本 loss 与合并后的音频 loss 同量级，不使用当前文档旧版的 `100:1` 作为整个音频 loss 的比例。padding 和无效时间步必须显式 mask。
+
+### 2.4 阶段验收
+
+- 训练集/验证集文本 CE、音频 CE 分别下降；记录每个码本的 CE，不能只看总 loss；
+- 由真值文本或模型文本驱动 Depth 生成音频，再经冻结 Mimi Decoder 检查可懂度；
+- 验证文本与音频是否对齐，检查 delay/undelay 后的首尾静音和长度；
+- 纯文本能力相对 Qwen3 基线的回归必须单独报告；
+- 不能用 CER ≤ 某个预设值作为唯一通过线。该阶段的结论是“联合 token 建模已稳定”，不是“已经具备自然对话能力”。
+
+---
+
+## 第 3 步：Moshi post-training——从单流变成模拟双流
+
+### 3.1 构造模拟双流
+
+对无监督音频数据运行 diarization（原版使用 PyAnnote）：
+
+1. 随机选一个说话人作为主说话人，即未来的 Moshi stream；
+2. 根据 diarization mask 提取主说话人 waveform；
+3. 其余声音作为用户 stream；两条流分别经过同一个冻结 Mimi Encoder；
+4. 文本流只保留主说话人的时间对齐文本；
+5. 文本 delay 固定为 0；acoustic delay 改为 1 帧；
+6. 不使用轮次门控，不因一方暂时静音而截断另一方的上下文。
+
+该阶段的目的不是获得自然双工，而是让模型学会同时接收用户流并持续生成助手流。它必须保留重叠和非主说话人残留，不能用“主说话人一段、用户一段”的纯轮流数据替代。
+
+### 3.2 参考训练设置
+
+| 项目 | Moshi post-training 参考值 |
+| --- | ---: |
+| 训练步数 | 100,000 |
+| audio batch | 约 8 小时 |
+| Temporal 学习率 | `3e-6` |
+| Depth 学习率 | `5e-5` |
+| 纯文本 batch | 约 10% |
+| text/audio delay | 固定 0；acoustic delay 1 帧 |
+
+从第 2 步 checkpoint 继续训练，不重新初始化 Qwen3、Depth 或音频头。每轮验证同时做：主说话人语音生成、用户流变化响应、静音期间的正常继续生成、两流重叠时的输出稳定性。
+
+---
+
+## 第 4 步：Fisher fine-tuning——真实双流会话
+
+### 4.1 数据格式
+
+原版使用 Fisher 约 2000 小时电话会话，每个参与者有独立声道。中文版本必须优先寻找或采集**双麦克风、独立声道、带时间戳的中文对话**；不能把混音后再分离的结果当作 ground-truth 双流。
+
+每条样本保存：
+
+```text
+conversation_id
+main_speaker_audio.wav
+user_audio.wav
+main_speaker_timestamped_transcript.json
+sample_rate = 24000
+speaker_assignment_seed
+```
+
+随机选择一方作为 main/Moshi stream，另一方作为 user stream；同一会话的所有切片必须保持在同一个数据划分。文本只监督 main speaker。保留自然停顿、重叠、打断和 backchannel。
+
+### 4.2 训练
+
+- 从 post-training checkpoint 继续；
+- acoustic delay 1 帧，text delay 0；
+- 参考训练量 10,000 batches，每 batch 约 40 分钟音频；
+- Temporal 学习率 `2e-6`，Depth 学习率 `4e-6`；
+- 不再混入纯文本 batch；
+- 仍使用联合文本/音频 CE 和语义码本加权；
+- 验证时必须按会话独立留出，测重叠、打断、附和、静音和正常轮替，而不是只测单人语音重建。
+
+这一阶段才训练模型从真实用户流中持续听、持续说，不能提前加 VAD/turn detector 把全双工问题改成轮流对话。
+
+---
+
+## 第 5 步：Instruction fine-tuning——固定助手声音和行为
+
+### 5.1 先训练辅助 streaming multi-stream TTS
+
+为了生成 Moshi 的 instruction 数据，先训练独立的 streaming multi-stream TTS：
+
+1. audio pre-training 部分与 Moshi 共用单流音频预处理；
+2. post-training 使用文本领先音频约 2 秒的 delay，使文本能稳定控制音频；
+3. 使用约 170 小时高质量、多说话人、独立声道的 supervised multi-stream conversation 做 TTS 微调；
+4. 用它把文本对话脚本渲染成双流语音。
+
+该 TTS 是数据生成工具，不是最终在线推理路径；Moshi 主模型不直接在这 170 小时 supervised multi-stream 数据上训练。
+
+### 5.2 生成 speech-text instruct 数据
+
+原版先用经过 Open Hermes 和真实会话 transcript 微调的 Helium 生成自然口语脚本，再用 multi-stream TTS 合成超过 20k 小时语音。中文首版应保持同样的数据逻辑，而不是直接把文本指令套聊天模板：
+
+- 普通知识问答、短轮次、backchannel；
+- 询问声音风格、情绪和角色；
+- 错别字/误听后的澄清与重复请求；
+- 错误事实纠正；
+- 简单数学、语法、常识；
+- 安全拒答；
+- 介绍模型自己和项目；
+- 用户声音随机变化，助手声音固定为一个授权说话人的声音和多种表达风格。
+
+生成文本不能含难以自然朗读的 URL、长列表和不自然的书面格式。每条样本必须包含两路音频、助手时间戳文本、用户音频增强配置和会话划分信息。
+
+### 5.3 训练与用户流增强
+
+从 Fisher checkpoint 继续训练：
+
+| 项目 | Moshi instruction fine-tuning 参考值 |
+| --- | ---: |
+| 训练步数 | 30,000 |
+| audio batch | 约 2.7 小时 |
+| Temporal 学习率 | `2e-6` |
+| Depth 学习率 | `2e-6` |
+| acoustic delay | 1 帧 |
+
+训练中对 user stream 做与 Moshi 对齐的鲁棒性增强：
+
+- 50% 概率随机增益 `-24` 至 `+15 dB`；
+- 30% 概率加入 Deep Noise Suppression 噪声，并随机插入最长 30 秒静音段；
+- 30% 概率加入助手声音的回声，回声增益取 `[0, 0.2]`，延迟取 `100–500 ms`；
+- 30% 概率一起使用 echo/reverb；
+- 保留用户说话、静音、打断和助手继续说的目标，不用增强后的 VAD 标签替代真实目标。
+
+助手声音的一致性来自 instruction 阶段固定 speaker 条件，而不是推理时接一个 voice-cloning/TTS 模块。
+
+---
+
+## 第 6 步：训练过程中的统一验证
+
+每个阶段都保存可复现的 checkpoint、数据 revision、配置和 optimizer state，并至少报告：
+
+1. 文本 CE、8 个音频码本 CE、padding loss、梯度范数；
+2. 文本流与音频流的时间对齐、实际生成延迟、首帧延迟；
+3. 冻结 Mimi 重建质量和生成语音可懂度；
+4. Qwen3 原有纯文本能力回归；
+5. 单流、模拟双流、真实双流、instruction 数据四套独立验证；
+6. 正常轮替、重叠、打断、backchannel、静音和错误事实纠正；
+7. GPU 显存、tokens/秒、音频实时率、p50/p95 端到端延迟。
+
+禁止用以下结果宣称 Moshi 训练完成：
+
+- 只有单句 ASR/CER 变好；
+- 只有 Mimi 重建质量好；
+- 先完整 ASR，再文本 LLM，再独立 TTS 的串联 demo；
+- 只有合成的严格轮流对话；
+- 只有模型停止生成的延迟，没有实际播放停止延迟；
+- 只报告总 loss，不报告文本、语义码本和 acoustic codebook 的分项 loss。
+
+---
+
+## 第 7 步：流式推理闭环
+
+最终在线路径必须是：
+
+```text
+麦克风
+  → 冻结 Mimi Encoder
+  → 用户 8 路音频流
+  → Qwen3 Temporal + Text head + Depth
+  → 助手文本与助手 8 路音频流
+  → delay/undelay
+  → 冻结 Mimi Decoder
+  → 播放
+```
+
+推理时：
+
+- 每 80 ms 接收一帧用户音频；
+- 用户流直接进入 history，不经过外部 ASR；
+- 只采样助手文本和助手音频；
+- 维护 Temporal KV cache、Depth 当前步状态、Mimi 编解码器状态和播放队列；
+- 连续运行至少 10 分钟，确认实时率小于 1、队列不持续增长；
+- 单独测“模型决定停”和“扬声器实际停”的时间差；
+- 测试用户打断时，助手能停止/调整而不是由 VAD 直接替模型做决定。
+
+---
+
+## 本项目的实际落地顺序
+
+为了控制工程风险，按下面顺序实现，但不要改变 Moshi 的训练定义：
+
+1. **Mimi 验证和流式状态**：完成第 0 步，不训练 codec。
+2. **Qwen3-Moshi 架构单元测试**：完成第 1 步，先用极小 batch 验证 shift、delay、Depth 和 loss。
+3. **单流 pre-training 小规模复现**：完成第 2 步的短跑，确认文本保留训练和联合 loss 正常。
+4. **完整单流 pre-training**：扩大无监督中文音频和纯文本数据。
+5. **diarization 模拟双流 post-training**：完成第 3 步。
+6. **真实中文双流 Fisher 等价数据 fine-tuning**：完成第 4 步。
+7. **辅助 streaming multi-stream TTS 和 instruction 合成**：完成第 5 步前半。
+8. **instruction fine-tuning 与噪声/回声增强**：完成第 5 步后半。
+9. **流式推理、延迟和全双工事件验收**：完成第 6–7 步。
+
+首个可执行里程碑不是 E1/E2 的音频转写实验，而是：**在冻结 Mimi 的前提下，Qwen3-Moshi 能在单流数据上同时降低文本 CE 和 8 路音频 CE，并经 delay/undelay 与 Mimi Decoder 生成可对齐语音**。达到这个里程碑后，才进入模拟双流和真实全双工训练。

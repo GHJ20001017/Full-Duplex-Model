@@ -3,5 +3,6 @@ data/processed/*
 data/manifests/*
 checkpoints/*
 logs/*
+outputs/*
 __pycache__/
 *.pyc

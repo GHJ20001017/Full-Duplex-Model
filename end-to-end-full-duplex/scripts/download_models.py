@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download Qwen3-1.7B and the official Mimi codec, without Moshi LM weights."""
+"""Download Qwen3-1.7B and Mimi from ModelScope, without Moshi LM weights."""
 
 import argparse
 import sys
@@ -17,8 +17,8 @@ def main():
         "--output-dir", type=Path, default=DEFAULT_OUTPUT,
         help="Download root (default: module checkpoints/base).",
     )
-    parser.add_argument("--qwen-revision", default="main", help="Qwen branch, tag or commit SHA.")
-    parser.add_argument("--mimi-revision", default="main", help="Mimi branch, tag or commit SHA.")
+    parser.add_argument("--qwen-revision", default="master", help="ModelScope branch, tag or commit SHA.")
+    parser.add_argument("--mimi-revision", default="master", help="ModelScope branch, tag or commit SHA.")
     args = parser.parse_args()
 
     output = args.output_dir.expanduser().resolve()
@@ -30,9 +30,10 @@ def main():
 
     if not (skip_qwen and skip_mimi):
         try:
-            from huggingface_hub import hf_hub_download, snapshot_download
+            from modelscope.hub.file_download import model_file_download
+            from modelscope.hub.snapshot_download import snapshot_download
         except ImportError:
-            print("Missing dependency. Run: python3 -m pip install -U huggingface_hub", file=sys.stderr)
+            print("Missing dependency. Run: python3 -m pip install -U modelscope", file=sys.stderr)
             return 1
 
     try:
@@ -42,7 +43,7 @@ def main():
         else:
             print(f"Downloading {QWEN_REPO} to {qwen_dir}", flush=True)
             snapshot_download(
-                repo_id=QWEN_REPO,
+                model_id=QWEN_REPO,
                 revision=args.qwen_revision,
                 local_dir=str(qwen_dir),
             )
@@ -50,9 +51,9 @@ def main():
             print(f"Skipping Mimi: target already exists: {mimi_file}", flush=True)
         else:
             print(f"Downloading Mimi codec to {mimi_dir}", flush=True)
-            hf_hub_download(
-                repo_id=MIMI_REPO,
-                filename=MIMI_FILE,
+            model_file_download(
+                model_id=MIMI_REPO,
+                file_path=MIMI_FILE,
                 revision=args.mimi_revision,
                 local_dir=str(mimi_dir),
             )
