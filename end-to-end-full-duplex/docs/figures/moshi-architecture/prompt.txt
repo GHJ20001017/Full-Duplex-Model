@@ -1,0 +1,45 @@
+Create a technically accurate, polished educational architecture diagram of the ORIGINAL MOSHI model by Kyutai, not a proposed reimplementation. This is a comprehensive scientific explanatory infographic. Canvas 3072 x 2048 pixels, landscape 3:2, white background, crisp flat diagram shapes, excellent legibility, carefully routed directed arrows, generous margins. All explanatory prose in Simplified Chinese, canonical module names in English. Use navy typography, teal for observed USER AUDIO, amber for generated MOSHI AUDIO, violet for MOSHI TEXT, blue for transformers, and gray dashed boxes/arrows for TRAINING ONLY. Do not use photographs, ornamental robot heads, gradients, 3D effects, or code screenshots. Labels should be large enough to read; use concise labels instead of lengthy paragraphs.
+
+Title at the top: "Moshi 全双工语音模型架构"
+Subtitle: "原版 Moshi / Helium 7B · 双音频流 + 文本 Inner Monologue · 分层自回归生成"
+
+Arrange exactly FOUR clearly labeled panels: A spans the full width at top (~31% of content height); B at middle left (~55% width and 39% height); C at middle right (~45% width and 39% height); D spans the full width at bottom (~25% height). The remaining space is title, gutters and footer. Panels must contain computation diagrams, not prose cards.
+
+PANEL A — "A  实时全双工：持续听，也持续生成"
+Draw an actual left-to-right inference architecture. User microphone/waveform "用户音频 / 24 kHz" -> "Mimi Encoder" -> a teal 8-token stack "用户：8 路音频 tokens（外部输入）" -> "历史联合 tokens / 因果移位 + Embedding 求和" -> large blue "Temporal Transformer" -> grouped violet/amber block "文本头 + Depth Transformer" -> amber "反延迟 / 组装完整音频帧" -> "Mimi Decoder" -> speaker waveform "Moshi 音频 / 24 kHz".
+The central autoregressive generator has a visible violet output branch labeled "助手文本（Inner Monologue）" and an amber output branch labeled "助手音频 tokens". Show an explicit feedback arrow from generated text AND generated assistant audio tokens back to the history-token buffer, labeled "回填历史 → 下一时步". User audio is continuously ingested and also enters the history, not sampled by the generator. Put a small clock badge "12.5 帧/秒 · 每帧 80 ms". Add the concise note "推理时：用户 tokens 来自麦克风；只采样助手文本与助手音频". Do NOT put ASR, VAD, a turn detector, or a standalone TTS in the forward inference path. Timing is precisely specified by panel D, so do not label the user input as instantaneous conditioning of the same output frame.
+
+PANEL B — "B  Moshi 核心：沿时间建模，沿码本生成"
+Display TWO linked modules, Temporal above and Depth below, using real connections.
+Temporal inputs are three colored stacks labeled "历史文本 W", "历史助手音频 A（8 路）", "历史用户音频 U（8 路）". They feed separate embedding symbols and a plus/sum node, NOT sequence concatenation. Label "每步 17 路 token embedding 相加". Then arrow into a stacked transformer block labeled "Temporal Transformer" with smaller text "Helium 7B 初始化" and "32 层 · d=4096 · 32 heads". Below it: "因果注意力 · RoPE · RMSNorm · SwiGLU". At its output label "hₜ：跨时间上下文". Draw a horizontal history/KV-cache connection into this Temporal block labeled "时间 KV cache".
+From hₜ branch to a violet "Text linear + softmax" -> violet "Wₜ". Draw a second branch from hₜ to "逐码本投影 4096 → 1024" feeding each step of the Depth block. Wₜ is fed as the initial token conditioning into the Depth block. Important: TEXT is sampled directly by the text head, NOT by the Depth Transformer.
+Show a wide blue outlined "Depth Transformer" enclosing a left-to-right causal sequence of amber tokens "Aₜ,₁" -> "Aₜ₋₁,₂" -> "…" -> "Aₜ₋₁,₈". First is semantic codebook, the remaining seven are delayed acoustic codebooks. Label the first "语义" and the rest "声学（延迟 1 帧）". Top annotation "6 层 · d=1024 · 16 heads". Bottom annotation "帧内码本自回归 · 分码本参数 · 每个时间步重置 depth cache". Make hₜ conditioning visually enter every depth position, and Wₜ enter the first position. A small annotation "8 个音频头，每个 2048 类；文本词表 32k".
+One small footnote inside panel B: "官方推理：17 路输入，生成 1 路文本 + 8 路助手音频".
+
+PANEL C — "C  Mimi：流式语义–声学 Codec"
+Draw an encoder-to-quantizer-to-decoder computation graph with the exact sequential order below. Use a vertical route to fit the right panel with side-by-side quantizer branches.
+"24 kHz waveform" -> "因果 SEANet Encoder" with annotation "Conv strides: 4 × 5 × 6 × 8" -> "Encoder Transformer / 8 层 · d=512 · 8 heads" -> "↓2 → 12.5 Hz" -> split into TWO PARALLEL branches from the SAME latent representation:
+  Branch 1: purple/amber "Semantic VQ / q₁" with one codebook tile.
+  Branch 2: amber "Acoustic RVQ / q₂ … q₈" with seven sequential residual codebook tiles.
+Put both branches in a dashed outlined group titled "Split RVQ：1 语义 + 7 声学" with annotation "每个码本 2048 项 · 量化维度 256".
+DO NOT draw the acoustic branch as a residual after the semantic branch. The two branches are parallel; residual quantization is only WITHIN the seven-level acoustic branch.
+The quantized embeddings from both branches converge at a plus node labeled "两分支 embedding 相加" -> "↑2" -> "Decoder Transformer / 8 层 · d=512 · 8 heads" -> "因果 SEANet Decoder" -> "重建音频 / 24 kHz". Arrange this return decoder path compactly beside the encoder if needed, with clear direction.
+Along the edge show a gray dashed training-only callout "仅训练：WavLM teacher → 语义蒸馏" connected by a dashed line to q₁. Make it visibly separate from the inference route. Small note "Moshi 使用 8 个码本；Codec 训练与 Moshi LM 训练分开".
+
+PANEL D — "D  时序与延迟：17 条同步 token 流"
+Left 65% of this panel is a clean five-row token matrix; columns are model time steps "t", "t+1", "t+2". Each cell contains EXACT notation as specified:
+row violet "助手文本（1 路）": Wₜ | Wₜ₊₁ | Wₜ₊₂
+row amber "助手语义 q₁（1 路）": Aₜ,₁ | Aₜ₊₁,₁ | Aₜ₊₂,₁
+row amber "助手声学 q₂…q₈（7 路）": Aₜ₋₁,₂:₈ | Aₜ,₂:₈ | Aₜ₊₁,₂:₈
+row teal "用户语义 q₁（1 路）": Uₜ,₁ | Uₜ₊₁,₁ | Uₜ₊₂,₁
+row teal "用户声学 q₂…q₈（7 路）": Uₜ₋₁,₂:₈ | Uₜ,₂:₈ | Uₜ₊₁,₂:₈
+Place a dashed divider between assistant and user rows, labeled compactly "上：模型采样 / 下：观测输入". Each column is one joint delayed token vector Vₜ. Top arrow "模型时间 →". Below matrix: "历史 V＜ₜ → hₜ；先生成 Wₜ，再生成助手音频码本".
+Right 35%: three concise explanatory notes, not a second diagram:
+"声学延迟 τ = 1：语义与声学错开 80 ms"
+"反延迟后，收齐同一物理帧的 8 个码本再解码"
+"文本用 PAD / EPAD 对齐音频时钟；只建模助手文本，不要求用户 ASR"
+Then a gray dashed small box: "仅训练：离线转写 / 时间戳 → 文本对齐监督".
+
+Footer legend with colored swatches: "用户观测" teal, "助手音频" amber, "助手文本" violet, "仅训练" gray dashed. A concise provenance footer: "依据：Moshi paper §3.3–3.4（arXiv:2410.00037v2）与 Kyutai 官方实现；示意图，非逐行计算图。"
+
+Scientific invariants: no Qwen; original backbone is Helium. Mimi uses WavLM teacher, NOT HuBERT. No teacher model during inference. No serial ASR–LLM–TTS pipeline. User audio is a separate channel and is not generated at inference. The text is the assistant's aligned speech transcript, not hidden chain-of-thought. Depth is over codebooks, Temporal is over time. Sum the per-stream embeddings. Delay seven acoustic codebooks, not q₁. The diagram should look like a carefully typeset technical teaching plate with enough whitespace and no misplaced connectors. Do not invent benchmarks, loss coefficients, training corpus sizes, or additional modules.

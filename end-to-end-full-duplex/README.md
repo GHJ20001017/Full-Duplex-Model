@@ -1,22 +1,17 @@
 # 端到端全双工模型
 
-该目录用于训练端到端全双工语音模型。目标是从用户与系统的交叠音频流直接预测系统响应音频流，并支持低延迟流式推理。
+本项目以 Qwen3 为语言骨干，结合 Mimi 音频编解码器，使用公开与仿真数据，复现 Moshi 的端到端全双工语音交互能力。
 
-## 目录
+## Moshi 架构参考
 
-- `src/`：模型、数据集、损失函数和训练器
-- `configs/`：训练配置
-- `scripts/`：数据准备、训练和评估入口
-- `data/raw`、`data/processed`、`data/manifests`：数据目录（不提交大型数据文件）
-- `checkpoints/`：模型检查点
-- `logs/`：训练日志
-- `tests/`：单元测试
+[![Moshi 全双工语音模型架构](docs/moshi-architecture-overview.png)](docs/moshi-architecture-overview.png)
 
-## 推荐实现阶段
+## Step1: 下载对应的模型文件
 
-1. 定义双通道交叠语音数据格式和 manifest。
-2. 实现音频编码器、对话状态建模模块和流式音频解码器。
-3. 加入因果训练、延迟约束、语音重叠与打断建模。
-4. 使用离线指标与实时指标联合评估：WER、响应延迟、打断延迟、音频质量和端点连续性。
+下载 **Qwen/Qwen3-1.7B**（非 Base 版）的权重、配置和 tokenizer，以及 **Mimi 音频编解码器**权重。Mimi 来自官方 `kyutai/moshiko-pytorch-bf16` 仓库，只下载 codec 文件，不下载 Moshi 7B 语言模型。
 
-训练入口和模型实现将在此目录中添加，避免与级联基线代码耦合。
+```bash
+cd "/Users/guhj/Documents/Full-Duplex Model/end-to-end-full-duplex"
+python3 -m pip install -U huggingface_hub
+python3 scripts/download_models.py
+```
