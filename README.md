@@ -57,6 +57,10 @@ export OPENAI_API_KEY="替换为你的 API 密钥"
 export LLM_BASE_URL="https://你的服务域名/v1"
 export LLM_MODEL="替换为该服务实际提供的模型名称"
 
+# 语义路由：填写独立运行的意图识别服务的完整推理接口 URL
+export S2S_SEMANTIC_TURN_URL="https://你的意图服务域名/完整推理路径"
+export S2S_SEMANTIC_TURN_TIMEOUT_S="0.12" # 可按服务延迟调整，默认 0.12 秒
+
 speech-to-speech serve \
   --host 0.0.0.0 \
   --port 7869 \
@@ -91,7 +95,7 @@ speech-to-speech serve \
 
 | 客户端 | 定位 | 主要能力 |
 | --- | --- | --- |
-| **S2S 修改版客户端** | 在 speech-to-speech 自带客户端基础上修改，适合直接语音对话与双工调试 | 本地麦克风／扬声器、AEC3 回声消除、`hey jarvis` 唤醒、对话窗口，以及关键词／模型语义路由切换 |
+| **S2S 修改版客户端** | 在 speech-to-speech 自带客户端基础上修改，适合直接语音对话与双工调试 | 本地麦克风／扬声器、AEC3 回声消除、`hey jarvis` 唤醒、对话窗口；打断行为由服务端控制 |
 | **Qwen Audio Agent 客户端** | 带 Gateway 的语音 Agent 客户端与运行时，适合边对话边执行任务 | WebUI、TUI、桌面悬浮球，后台任务编排，以及 MCP 工具和 ACP Agent 接入 |
 
 #### 3.1 S2S 修改版客户端
@@ -106,37 +110,12 @@ export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.dylib"
 
 speech-to-speech talk \
   --url ws://127.0.0.1:7869/v1/realtime \
-  --interruption-route keyword \
   --wake-word hey_jarvis \
   --wake-word-timeout 300 \
   --wake-ack "嗯哼，您说"
 ```
 
 允许终端访问麦克风，先说 **“hey jarvis”**，听到“嗯哼，您说”后开始对话。客户端默认打开本地对话窗口；加 `--no-open-browser` 可只输出窗口地址而不自动打开浏览器，加 `--no-ui` 可只使用终端。服务端和客户端分别按 `Ctrl+C` 停止。
-
-##### 模型语义路由配置
-
-第 2 步的服务端命令已显式选择 `semantic` 路线；程序默认值仍为 `keyword`。使用 `wait`／`continue`／`yield` 模型决策时，需要先准备兼容的意图识别 HTTP 服务；这里配置的是其**完整推理接口 URL**，不是 LLM 的 API 基地址。当前仓库提供调用客户端，不会通过 `serve` 自动启动该意图模型。
-
-在**终端一**设置以下变量，然后重新运行第 2 步的完整服务端命令：
-
-```bash
-export S2S_SEMANTIC_TURN_URL="https://你的意图服务域名/完整推理路径"
-export S2S_SEMANTIC_TURN_TIMEOUT_S="0.12"
-```
-
-该接口接收包含 `state.assistant_said`、`state.user_said` 和 `questions.action` 的 JSON POST，请求结果需在 `answers.action.choice` 返回 `wait`、`continue` 或 `yield`。默认超时为 0.12 秒，应按实际服务延迟调整。未配置接口时，请勿选择 `semantic` 路线。
-
-在**终端二**停止旧客户端，再切换为语义路由：
-
-```bash
-speech-to-speech talk \
-  --url ws://127.0.0.1:7869/v1/realtime \
-  --interruption-route semantic \
-  --wake-word hey_jarvis \
-  --wake-word-timeout 300 \
-  --wake-ack "嗯哼，您说"
-```
 
 #### 3.2 Qwen Audio Agent 客户端
 
@@ -156,10 +135,26 @@ npm run cli -- config
 ```dotenv
 QWEN_AUDIO_REALTIME_PROVIDER=speech-to-speech
 SPEECH_TO_SPEECH_REALTIME_URL=ws://127.0.0.1:7869/v1/realtime
-AGENT_PROTOCOL=none
+AGENT_PROTOCOL=codex
+QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE=native
 ```
 
-这里使用本项目的 **7869** 端口，不是上游文档中的 8765。选择 `speech-to-speech` 后，语音模型和 LLM API 仍由终端一的服务端配置，无需为了连接本地 S2S 再填写 DashScope 语音 API Key。`AGENT_PROTOCOL=none` 用于先验证纯语音对话；启用后台任务时，再按 [后端 Agent 配置](qwen-audio-agent/docs/backends/overview.md) 选择并完成相应 Agent 的安装、认证和工具配置。Codex、Claude Code 通过外部 ACP 适配器接入。
+这里使用本项目的 **7869** 端口。语音模型和对话 LLM API 仍由终端一的 S2S 服务端配置，无需为本地 S2S 连接填写 DashScope 语音 API Key；后台任务交给 **Codex**，通过 `codex-acp` 适配器接入，并复用本机 `~/.codex` 中的配置、登录状态和模型。`native` 保留 Codex 自身的权限确认机制。
+
+**安装并配置 Codex。** 在 `qwen-audio-agent` 目录执行：
+
+```bash
+# 补齐缺失的 Codex CLI 和 ACP 适配器，已有组件不会重复安装
+npm run cli -- install codex
+
+# 首次使用时登录；已配置好 Codex 认证的用户可跳过
+codex login
+
+# 检查 Codex 后端组件是否可用（不验证登录凭据）
+npm run cli -- setup --backend codex
+```
+
+启动 Gateway 前，先确认本机 Codex 已完成认证并可正常使用；S2S 服务端的 LLM API 配置不能代替 Codex 的认证。自定义模型、接口或工作目录见 [Codex 配置](qwen-audio-agent/docs/backends/configuration.md#codex)。
 
 **启动 Gateway。** 在终端二的 `qwen-audio-agent` 目录运行：
 

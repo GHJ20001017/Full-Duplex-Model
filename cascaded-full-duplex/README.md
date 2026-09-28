@@ -325,7 +325,6 @@ source .venv/bin/activate
 export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.so"
 speech-to-speech talk \
   --url ws://127.0.0.1:7869/v1/realtime \
-  --interruption-route keyword \
   --wake-word hey_jarvis --wake-word-timeout 300 --wake-ack "嗯哼，您说"
 ```
 
