@@ -207,6 +207,6 @@ npm run desktop
 
 级联路线基于 Hugging Face 的 [speech-to-speech](https://github.com/huggingface/speech-to-speech) 项目，使用或分发时请同时引用上游原项目；组件模型引用见 `cascaded-full-duplex/README.md`。
 
-## License
+## ⚖️ 开源协议
 
-Apache License 2.0。
+本项目采用 Apache License 2.0 开源协议。
