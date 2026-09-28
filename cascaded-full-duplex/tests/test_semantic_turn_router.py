@@ -2,10 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from speech_to_speech.api.openai_realtime.audio_client import (
-    RealtimeAudioClientConfig,
-    _url_with_interruption_route,
-)
+from speech_to_speech.api.openai_realtime.audio_client import RealtimeAudioClientConfig
 from speech_to_speech.api.openai_realtime.semantic_turn_router import (
     SemanticTurnDecision,
     SemanticTurnRouter,
@@ -91,17 +88,8 @@ class SemanticTurnRouterTests(unittest.TestCase):
         self.assertEqual(json.loads(logs.records[1].args[2]), body)
         self.assertEqual(len({record.args[0] for record in logs.records}), 1)
 
-    def test_route_query_preserves_existing_parameters(self):
-        url = _url_with_interruption_route(
-            "ws://localhost/v1/realtime?model=test&model=second",
-            "semantic",
-        )
-        self.assertIn("model=test", url)
-        self.assertIn("model=second", url)
-        self.assertIn("interruption_route=semantic", url)
-
-    def test_client_config_defaults_to_keyword(self):
-        self.assertEqual(RealtimeAudioClientConfig().interruption_route, "keyword")
+    def test_client_config_has_no_interruption_route(self):
+        self.assertFalse(hasattr(RealtimeAudioClientConfig(), "interruption_route"))
 
 
 if __name__ == "__main__":

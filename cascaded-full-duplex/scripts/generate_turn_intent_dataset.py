@@ -227,12 +227,21 @@ def validate_samples(content, slots, seen, max_assistant_chars=1200, max_asr_cha
     ids = set()
     local_seen = set(seen)
     for row in payload["samples"]:
-        if not isinstance(row, dict) or set(row) != FIELDS | {"slot_id"}:
+        if not isinstance(row, dict) or not FIELDS | {"slot_id"} <= set(row):
             rejected["fields"] += 1
             continue
         ident = row["slot_id"]
         if type(ident) is not int or ident not in expected or ident in ids:
             rejected["slot_id"] += 1
+            continue
+        # Some providers echo the plan slot verbatim, so a sample may repeat
+        # plan-only fields such as special_case. Accept echoed plan fields when
+        # their values match the plan, but keep rejecting unknown extras.
+        echoed = set(row) - FIELDS - {"slot_id"}
+        if not set(row) <= FIELDS | {"slot_id"} | set(expected[ident]) or any(
+            row[key] != expected[ident].get(key) for key in echoed
+        ):
+            rejected["fields"] += 1
             continue
         if any(not isinstance(row[key], str) for key in FIELDS):
             rejected["types"] += 1

@@ -275,13 +275,13 @@ def test_audio_client_rejects_invalid_playback_buffer(buffer_ms):
         RealtimeAudioClientConfig(playback_buffer_ms=buffer_ms)
 
 
-def test_audio_client_clears_unplayed_audio_on_barge_in(capsys):
+def test_audio_client_clears_unplayed_audio_on_server_clear(capsys):
     playback = PlaybackBuffer(16000)
     renderer = _FriendlyEventRenderer()
     playback.append(b"\x01\x02" * 100)
 
     handle_server_event(
-        SimpleNamespace(type="input_audio_buffer.speech_started"),
+        SimpleNamespace(type="output_audio_buffer.cleared"),
         playback=playback,
         renderer=renderer,
         print_json=False,
@@ -292,8 +292,7 @@ def test_audio_client_clears_unplayed_audio_on_barge_in(capsys):
     capsys.readouterr()
 
 
-@pytest.mark.parametrize("route", ["keyword", "semantic"])
-def test_audio_client_speech_start_respects_interruption_route(route):
+def test_audio_client_speech_start_does_not_select_interruption_route():
     playback = PlaybackBuffer(16000)
     playback.append(b"\x01\x02", response_id="old")
     renderer = _FriendlyEventRenderer()
@@ -303,11 +302,10 @@ def test_audio_client_speech_start_respects_interruption_route(route):
         playback=playback,
         renderer=renderer,
         print_json=False,
-        interruption_route=route,
     )
-    assert playback.buffered_bytes == (2 if route == "semantic" else 0)
+    assert playback.buffered_bytes == 2
     playback.append(b"\x03\x04", response_id="old")
-    assert playback.buffered_bytes == (4 if route == "semantic" else 0)
+    assert playback.buffered_bytes == 4
 
 
 @pytest.mark.parametrize("decision", ["yield", "wait"])
@@ -317,9 +315,7 @@ def test_audio_client_final_semantic_decision_replaces_queued_audio(decision, co
     renderer = _FriendlyEventRenderer()
 
     def handle(event):
-        handle_server_event(
-            event, playback=playback, renderer=renderer, print_json=False, interruption_route="semantic"
-        )
+        handle_server_event(event, playback=playback, renderer=renderer, print_json=False)
 
     handle(response_created("old"))
     playback.append(b"\x01\x02" * 100, response_id="old")
@@ -349,12 +345,9 @@ def test_audio_client_final_semantic_decision_replaces_queued_audio(decision, co
     assert callback[:2] == b"\x03\x04"
 
 
-@pytest.mark.parametrize(
-    "route,decision",
-    [("semantic", "continue"), ("semantic", None), ("keyword", "yield"), ("keyword", "wait")],
-)
+@pytest.mark.parametrize("decision", ["continue", None])
 @pytest.mark.parametrize("completed", [False, True])
-def test_audio_client_non_replacing_transcript_preserves_audio(route, decision, completed):
+def test_audio_client_transcript_without_server_cancel_preserves_audio(decision, completed):
     playback = PlaybackBuffer(16000)
     renderer = _FriendlyEventRenderer()
     playback.append(b"\x01\x02", response_id="old")
@@ -365,7 +358,7 @@ def test_audio_client_non_replacing_transcript_preserves_audio(route, decision, 
     if decision is not None:
         event.semantic_decision = decision
     handle_server_event(
-        event, playback=playback, renderer=renderer, print_json=False, interruption_route=route
+        event, playback=playback, renderer=renderer, print_json=False
     )
     assert playback.buffered_bytes == 2
     assert playback.is_active()
@@ -391,7 +384,16 @@ def test_audio_client_discards_late_audio_from_cancelled_response(capsys):
         print_json=False,
     )
     handle_server_event(
-        SimpleNamespace(type="input_audio_buffer.speech_started"),
+        SimpleNamespace(
+            type="response.done",
+            response=SimpleNamespace(id="old", status="cancelled"),
+        ),
+        playback=playback,
+        renderer=renderer,
+        print_json=False,
+    )
+    handle_server_event(
+        SimpleNamespace(type="output_audio_buffer.cleared"),
         playback=playback,
         renderer=renderer,
         print_json=False,
@@ -439,7 +441,7 @@ def test_audio_client_old_cancelled_response_cannot_clear_new_response(capsys):
         print_json=False,
     )
 
-    assert playback.buffered_bytes == 2
+    assert playback.buffered_bytes == 4
     capsys.readouterr()
 
 

@@ -316,6 +316,7 @@ class RealtimeService:
         chat_size: int = 10,
         speculative_turns: SpeculativeTurnTracker | None = None,
         default_instructions: str | None = None,
+        interruption_route: Literal["keyword", "semantic"] = "keyword",
     ) -> None:
         self.text_prompt_queue = text_prompt_queue
         self.tts_input_queue = tts_input_queue
@@ -323,6 +324,9 @@ class RealtimeService:
         self._chat_size = chat_size
         self.speculative_turns = speculative_turns
         self._default_instructions = default_instructions
+        if interruption_route not in {"keyword", "semantic"}:
+            raise ValueError("interruption_route must be 'keyword' or 'semantic'")
+        self._interruption_route = interruption_route
         self._conns: dict[str, ConnState] = {}
         self.total_usage = GlobalUsageMetrics()
 
@@ -358,6 +362,7 @@ class RealtimeService:
                     type="realtime",
                     instructions=self._default_instructions,
                 ),
+                interruption_route=self._interruption_route,
             )
         )
         self._conns[state.session_id] = state

@@ -1474,9 +1474,9 @@ class TestSemanticFinalOutput:
         service = unit.service
         decide = Mock(return_value=SemanticTurnDecision.YIELD)
         service.semantic_turn_router = SimpleNamespace(decide=decide)
-        app = create_app(pool=[unit], stop_event=ThreadingEvent())
+        app = create_app(pool=[unit], stop_event=ThreadingEvent(), interruption_route="semantic")
         with TestClient(app) as client:
-            with client.websocket_connect("/v1/realtime?interruption_route=semantic") as ws:
+            with client.websocket_connect("/v1/realtime?interruption_route=keyword") as ws:
                 ws.receive_json()
                 conn_id = unit.session.session_id
                 st = service._state(conn_id)
@@ -1510,9 +1510,9 @@ class TestSemanticFinalOutput:
         service = unit.service
         decide = Mock(return_value=decision)
         service.semantic_turn_router = SimpleNamespace(decide=decide)
-        app = create_app(pool=[unit], stop_event=ThreadingEvent())
+        app = create_app(pool=[unit], stop_event=ThreadingEvent(), interruption_route="semantic")
         with TestClient(app) as client:
-            with client.websocket_connect("/v1/realtime?interruption_route=semantic") as ws:
+            with client.websocket_connect("/v1/realtime?interruption_route=keyword") as ws:
                 ws.receive_json()
                 session = unit.session
                 conn_id = session.session_id

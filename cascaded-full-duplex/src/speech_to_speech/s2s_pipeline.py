@@ -471,6 +471,7 @@ def _build_pipeline_unit(
     stt_backend: BackendSelection,
     llm_backend: BackendSelection,
     tts_backend: BackendSelection,
+    interruption_route: Literal["keyword", "semantic"] = "keyword",
 ) -> "PipelineUnit":
     """Build one isolated pipeline with its own state and queues.
 
@@ -509,6 +510,7 @@ def _build_pipeline_unit(
         chat_size=chat_size,
         speculative_turns=speculative_turns,
         default_instructions=default_instructions,
+        interruption_route=interruption_route,
     )
 
     if module_kwargs.enable_live_transcription:
@@ -572,6 +574,7 @@ def build_pipeline(
             stt_backend=args.stt_backend,
             llm_backend=args.llm_backend,
             tts_backend=args.tts_backend,
+            interruption_route=args.realtime_server_kwargs.interruption_route,
         )
         for index in range(module_kwargs.num_pipelines)
     ]
@@ -581,6 +584,7 @@ def build_pipeline(
         pool=pool,
         host=host or args.realtime_server_kwargs.host,
         port=args.realtime_server_kwargs.port,
+        interruption_route=args.realtime_server_kwargs.interruption_route,
         llm_proxy_config=(
             build_llm_proxy_config(module_kwargs, args.llm_backend) if module_kwargs.enable_llm_proxy else None
         ),

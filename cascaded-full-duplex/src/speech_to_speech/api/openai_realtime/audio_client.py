@@ -15,15 +15,15 @@ import logging
 import signal
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from importlib import import_module
 from importlib.util import module_from_spec, spec_from_file_location
 from ipaddress import ip_address
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Lock
-from typing import Any, Literal, Optional
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from typing import Any, Optional
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 from jsonschema import SchemaError, ValidationError
 from jsonschema.validators import validator_for
@@ -85,7 +85,6 @@ class RealtimeAudioClientConfig:
     # 本地对话窗口：在浏览器里渲染用户/助手对话。终端输出始终保留。
     ui: bool = True
     ui_open_browser: bool = True
-    interruption_route: Literal["keyword", "semantic"] = "keyword"
 
     def __post_init__(self) -> None:
         if not 0 <= self.playback_buffer_ms < float("inf"):
@@ -499,7 +498,6 @@ def handle_server_event(
     playback: PlaybackBuffer,
     renderer: _FriendlyEventRenderer,
     print_json: bool,
-    interruption_route: Literal["keyword", "semantic"] = "keyword",
 ) -> None:
     """处理一个 Realtime 生命周期事件，更新播放缓冲区和终端状态。
 
@@ -521,8 +519,6 @@ def handle_server_event(
         renderer.push_ui({"event": "status", "value": "connected"})
     elif event.type == "input_audio_buffer.speech_started":
         renderer.finish_live_assistant_text()
-        if interruption_route != "semantic":
-            playback.cancel_active_response()
         if renderer.saw_user_speech:
             print("", flush=True)
         renderer.saw_user_speech = True
@@ -540,9 +536,9 @@ def handle_server_event(
         if event.delta:
             renderer.stream_user_transcript(event.delta, final=False, item_id=item_id)
     elif event.type == "conversation.item.input_audio_transcription.completed":
-        if interruption_route == "semantic" and getattr(event, "semantic_decision", None) in {"yield", "wait"}:
-            # Final semantic decisions replace output, even if response.done has
-            # already released the response ID while its audio remains queued.
+        if getattr(event, "semantic_decision", None) in {"yield", "wait"}:
+            # The server has made the interruption decision. The client only
+            # applies the resulting playback action and does not select a route.
             playback.cancel_active_response()
         renderer.finish_live_assistant_text()
         item_id = getattr(event, "item_id", None)
@@ -1124,7 +1120,6 @@ async def _run_audio_session(
                 playback=playback,
                 renderer=renderer,
                 print_json=config.print_json,
-                interruption_route=config.interruption_route,
             )
 
     opened_streams: list[Any] = []
@@ -1191,17 +1186,6 @@ async def _run_audio_session(
                 logger.exception("Failed to close local audio stream")
 
 
-def _url_with_interruption_route(url: str, route: str) -> str:
-    parsed = urlsplit(url)
-    query_items = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key != "interruption_route"
-    ]
-    query_items.append(("interruption_route", route))
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
-
-
 async def listen_and_play_realtime(
     config: RealtimeAudioClientConfig,
     *,
@@ -1211,7 +1195,6 @@ async def listen_and_play_realtime(
 
     owned_stop_event = stop_event is None
     stop_event = stop_event or Event()
-    config = replace(config, url=_url_with_interruption_route(config.url, config.interruption_route))
     client = _make_client(config)
     realtime_query = dict(parse_qsl(urlsplit(config.url).query, keep_blank_values=True))
     connected = False

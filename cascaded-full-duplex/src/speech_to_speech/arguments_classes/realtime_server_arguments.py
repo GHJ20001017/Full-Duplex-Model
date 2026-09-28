@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass
@@ -13,6 +14,13 @@ class RealtimeServerArguments:
     port: int = field(
         default=7869,
         metadata={"help": "Port for the Realtime HTTP/WebSocket server. Default is 7869."},
+    )
+    interruption_route: Literal["keyword", "semantic"] = field(
+        default="keyword",
+        metadata={
+            "help": "Interruption routing policy shared by every Realtime session. "
+            "The client cannot override this server setting."
+        },
     )
 
 

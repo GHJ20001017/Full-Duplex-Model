@@ -1,6 +1,7 @@
 import logging
 import threading
 from threading import Event
+from typing import Literal
 
 import uvicorn
 
@@ -27,6 +28,7 @@ class RealtimeServer:
         host: str = "0.0.0.0",
         port: int = 7869,
         llm_proxy_config: LLMProxyConfig | None = None,
+        interruption_route: Literal["keyword", "semantic"] = "keyword",
     ) -> None:
         if not pool:
             raise ValueError("RealtimeServer requires at least one PipelineUnit in the pool")
@@ -35,10 +37,16 @@ class RealtimeServer:
         self.host = host
         self.port = port
         self.llm_proxy_config = llm_proxy_config
+        self.interruption_route = interruption_route
 
     def run(self) -> None:
         """Start the FastAPI/uvicorn server (called from a ThreadManager thread)."""
-        app = create_app(pool=self.pool, stop_event=self.stop_event, llm_proxy_config=self.llm_proxy_config)
+        app = create_app(
+            pool=self.pool,
+            stop_event=self.stop_event,
+            llm_proxy_config=self.llm_proxy_config,
+            interruption_route=self.interruption_route,
+        )
 
         logger.info(
             f"OpenAI Realtime API starting on ws://{self.host}:{self.port}/v1/realtime (pool size {len(self.pool)})"

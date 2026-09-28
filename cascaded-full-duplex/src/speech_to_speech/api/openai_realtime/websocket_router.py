@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from queue import Empty, Queue
 from threading import Event as ThreadingEvent
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypeVar
 
 import numpy as np
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
@@ -567,7 +567,14 @@ def create_app(
     pool: list[PipelineUnit],
     stop_event: ThreadingEvent,
     llm_proxy_config: LLMProxyConfig | None = None,
+    interruption_route: Literal["keyword", "semantic"] | None = None,
 ) -> FastAPI:
+    if interruption_route is not None and interruption_route not in {"keyword", "semantic"}:
+        raise ValueError("interruption_route must be 'keyword' or 'semantic'")
+    if interruption_route is not None:
+        for unit in pool:
+            unit.service._interruption_route = interruption_route
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # One send loop per pipeline unit; each polls its own queues and forwards
@@ -637,17 +644,16 @@ def create_app(
         try:
             session_id = unit.service.register()
             unit.session.session_id = session_id
-            requested_route = ws.query_params.get("interruption_route", "keyword").strip().lower()
-            if requested_route not in {"keyword", "semantic"}:
-                await send_ws_event(
-                    ws,
-                    build_error_event(
-                        "interruption_route must be 'keyword' or 'semantic'",
-                        error_type="invalid_interruption_route",
-                    ),
+            requested_route = ws.query_params.get("interruption_route")
+            if requested_route is not None:
+                logger.warning(
+                    "Ignoring deprecated client interruption_route query parameter %r; "
+                    "the server policy is %s",
+                    requested_route,
+                    unit.service._interruption_route,
                 )
-                return
-            if requested_route == "semantic" and unit.service.semantic_turn_router is None:
+            effective_route = unit.service._state(session_id).runtime_config.interruption_route
+            if effective_route == "semantic" and unit.service.semantic_turn_router is None:
                 await send_ws_event(
                     ws,
                     build_error_event(
@@ -656,12 +662,11 @@ def create_app(
                     ),
                 )
                 return
-            unit.service._state(session_id).runtime_config.interruption_route = requested_route
             logger.info(
                 "Client connected to pipeline %s (session %s, interruption_route=%s)",
                 unit.index,
                 session_id,
-                requested_route,
+                effective_route,
             )
 
             # Defensive: drain edge queues and reset events so stale data from a

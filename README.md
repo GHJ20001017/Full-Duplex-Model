@@ -46,7 +46,18 @@ export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.dylib"
 python -c 'from openwakeword.utils import download_models; download_models(model_names=["hey_jarvis"])'
 ```
 
-### 2. 启动服务端
+### 2. 启动语义路由服务
+
+语义路由服务的启动脚本位于 [`semantic-route-jev/deployment/`](semantic-route-jev/deployment/)。将 RLCD checkpoint 放在本地目录后，在项目根目录执行下面的命令；`CKPT` 就是模型地址，需要按实际 checkpoint 路径修改：
+
+```bash
+CKPT="/Users/guhj/Documents/Full-Duplex_Model/semantic-route-jev/checkpoint" \
+  /Users/guhj/Documents/Full-Duplex_Model/semantic-route-jev/deployment/start_inference_v7.sh
+```
+
+服务默认监听 `0.0.0.0:8792`，客户端侧将 `S2S_SEMANTIC_TURN_URL` 配置为该服务的 `/v1/systemone` 接口地址。
+
+### 3. 启动服务端
 
 进入 `cascaded-full-duplex` 目录并激活环境。先将下面的占位值替换为自己的 OpenAI 兼容服务配置；`LLM_BASE_URL` 是 API 基地址，不要填写完整的 `/chat/completions` 路径。密钥仅保存在本地环境变量中，不要写入仓库。
 
@@ -59,7 +70,7 @@ export LLM_MODEL="替换为该服务实际提供的模型名称"
 
 # 语义路由：填写独立运行的意图识别服务的完整推理接口 URL
 export S2S_SEMANTIC_TURN_URL="https://你的意图服务域名/完整推理路径"
-export S2S_SEMANTIC_TURN_TIMEOUT_S="0.12" # 可按服务延迟调整，默认 0.12 秒
+export S2S_SEMANTIC_TURN_TIMEOUT_S="1" # 可按服务延迟调整，默认 1 秒
 
 speech-to-speech serve \
   --host 0.0.0.0 \
@@ -89,7 +100,7 @@ speech-to-speech serve \
   --qwen3_tts_max_new_tokens 1536
 ```
 
-### 3. 选择并启动客户端
+### 4. 选择并启动客户端
 
 项目提供两种客户端，连接第 2 步启动的同一个语音服务端，可按使用场景选择：
 

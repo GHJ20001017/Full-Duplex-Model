@@ -169,6 +169,26 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(sum(rejected.values()), 7)
         self.assertEqual(rejected["duplicate_input"], 1)
 
+    def test_echoed_plan_fields_accepted_but_unknown_extras_rejected(self):
+        slot = {"slot_id": 0, "label": "YIELD", "special_case": "wake_start"}
+        echoed = row(slot, assistant_text="", user_asr="我想改签",
+                     special_case="wake_start")
+        accepted, rejected = generator.validate_samples(
+            json.dumps({"samples": [echoed]}), [slot], set())
+        self.assertEqual(len(accepted), 1)
+        self.assertFalse(rejected)
+        # Output stays four-field even though the provider echoed plan fields.
+        self.assertEqual(set(accepted[0][1]), generator.FIELDS)
+        # A wrong echoed value must not be silently accepted.
+        wrong = row(slot, assistant_text="", user_asr="我想改签",
+                    special_case="assistant_echo")
+        self.assertEqual(
+            generator.validate_samples(json.dumps({"samples": [wrong]}), [slot], set())[1]["fields"], 1)
+        # Unknown extras remain rejected.
+        unknown = row(slot, assistant_text="", user_asr="我想改签", extra="x")
+        self.assertEqual(
+            generator.validate_samples(json.dumps({"samples": [unknown]}), [slot], set())[1]["fields"], 1)
+
     def test_empty_wait_allowed_and_seen_input_rejected(self):
         slots = [{"slot_id": 0, "label": "WAIT"}]
         sample = row(slots[0], user_asr="")
