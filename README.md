@@ -48,14 +48,25 @@ python -c 'from openwakeword.utils import download_models; download_models(model
 
 ### 2. 启动语义路由服务
 
-语义路由服务的启动脚本位于 [`semantic-route-jev/deployment/`](semantic-route-jev/deployment/)。将 RLCD checkpoint 放在本地目录后，在项目根目录执行下面的命令；`CKPT` 就是模型地址，需要按实际 checkpoint 路径修改：
+语义路由模型托管在 ModelScope：[ghjghj1017/qwen3-jev](https://www.modelscope.cn/models/ghjghj1017/qwen3-jev)，启动脚本位于 [`semantic-route-jev/deployment/`](semantic-route-jev/deployment/)。
+
+新开一个终端，进入**本仓库根目录**并激活第 1 步创建的环境，然后下载模型到 `semantic-route-jev/checkpoint`：
 
 ```bash
-CKPT="/Users/guhj/Documents/Full-Duplex_Model/semantic-route-jev/checkpoint" \
-  /Users/guhj/Documents/Full-Duplex_Model/semantic-route-jev/deployment/start_inference_v7.sh
+source cascaded-full-duplex/.venv/bin/activate
+uv pip install modelscope
+
+python -c 'from modelscope import snapshot_download; snapshot_download("ghjghj1017/qwen3-jev", local_dir="semantic-route-jev/checkpoint")'
 ```
 
-服务默认监听 `0.0.0.0:8792`，客户端侧将 `S2S_SEMANTIC_TURN_URL` 配置为该服务的 `/v1/systemone` 接口地址。
+下载完成后，在同一个终端、仓库根目录启动服务。`CKPT` 是**本地模型目录**，不是 ModelScope 网页地址；如果模型已下载到其他位置，请替换该路径：
+
+```bash
+CKPT="$PWD/semantic-route-jev/checkpoint" \
+  sh semantic-route-jev/deployment/start_inference_v7.sh
+```
+
+服务默认监听 `0.0.0.0:8792`。在第 3 步的语音服务端配置 `S2S_SEMANTIC_TURN_URL`，指向该服务的 `/v1/systemone` 接口；两个服务运行在同一台机器时，可使用 `http://127.0.0.1:8792/v1/systemone`。
 
 ### 3. 启动服务端
 
