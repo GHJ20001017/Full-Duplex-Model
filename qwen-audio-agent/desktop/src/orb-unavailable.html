@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>qwen-audio-agent</title>
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      i {
+        width: 112px;
+        height: 112px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 28%, #ffd8df, #a43f58 42%, #3d101b 76%);
+        box-shadow: 0 0 34px #c2445f70;
+        animation: unavailable 1.8s ease-in-out infinite;
+        cursor: pointer;
+      }
+      @keyframes unavailable {
+        50% { opacity: .65; transform: scale(.96); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        i { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <i
+      id="open-settings"
+      role="button"
+      tabindex="0"
+      aria-label="Gateway 未连接，打开设置"
+      title="Gateway 未连接 · 点击设置"
+    ></i>
+    <script src="./orb-unavailable.js"></script>
+  </body>
+</html>

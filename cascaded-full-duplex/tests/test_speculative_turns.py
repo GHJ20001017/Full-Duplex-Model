@@ -1,12 +1,14 @@
 import time
 from queue import Queue
 from threading import Event, Thread
+from types import SimpleNamespace
 from typing import Literal
 
 import numpy as np
 import pytest
 import torch
 
+from speech_to_speech.api.openai_realtime.runtime_config import RuntimeConfig
 from speech_to_speech.pipeline.events import SpeechStartedEvent, SpeechStoppedEvent
 from speech_to_speech.pipeline.messages import VADAudio
 from speech_to_speech.pipeline.speculative_turns import SpeculativeTurnTracker
@@ -1041,3 +1043,69 @@ def test_vad_progressive_processing_pause_is_capped():
     handler.realtime_processing_pause = 0.5
 
     assert handler._progressive_processing_pause(30_000) == 2.0
+
+
+@pytest.mark.parametrize("turn_detection", [None, {"type": "server_vad"}])
+def test_semantic_vad_final_utterances_are_independent_without_reopen_grace(turn_detection):
+    first_audio = torch.ones(8192)
+    iterator = _StaticVADIterator(
+        triggered=False, vad_output=[first_audio], last_utterance_active_speech_samples=8192,
+    )
+    handler = _vad_handler_for_iterator(iterator)
+    cfg = RuntimeConfig(
+        interruption_route="semantic",
+        session={"type": "realtime", "audio": {"input": {"turn_detection": turn_detection}}},
+    )
+    handler.smart_turn_analyzer = _StaticSmartTurnAnalyzer()  # Must not delay finalized semantic input.
+    first = list(handler.process((_audio_bytes(8192), cfg)))
+    iterator._vad_output = [torch.full((8192,), 2.0)]
+    second = list(handler.process((_audio_bytes(8192), cfg)))
+
+    assert len(first) == len(second) == 1
+    assert (first[0].turn_id, first[0].turn_revision) == ("turn_1", 0)
+    assert (second[0].turn_id, second[0].turn_revision) == ("turn_2", 0)
+    np.testing.assert_array_equal(first[0].audio, np.ones(8192))
+    np.testing.assert_array_equal(second[0].audio, np.full(8192, 2.0))
+    assert first[0].processing_delay_s == second[0].processing_delay_s == 0
+    assert handler.speculative_turns.try_is_latest_after_reopen_grace("turn_1", 0) is True
+    assert handler.speculative_turns.try_is_latest_after_reopen_grace("turn_2", 0) is True
+    assert not handler.speculative_turns.is_committed("turn_1", 0)
+    assert handler.smart_turn_analyzer.calls == []
+    events = list(handler.text_output_queue.queue)
+    assert all(not event.reopened for event in events if isinstance(event, SpeechStartedEvent))
+
+
+def test_semantic_vad_mode_update_cancels_pending_reopen_and_restores_keyword_behavior():
+    handler = _vad_handler_for_iterator(_StaticVADIterator(triggered=False, vad_output=None))
+    handler._start_new_turn()
+    handler._last_final_audio_ms = 1000
+    handler._begin_pending_reopen_if_needed(1100)
+    assert handler._pending_reopen_candidate is not None
+    cfg = SimpleNamespace(interruption_route="semantic", session=SimpleNamespace(audio=None))
+    handler._apply_runtime_turn_detection(cfg)
+    assert handler._pending_reopen_candidate is None
+    assert not handler._should_reopen_current_turn(1100)
+    cfg.interruption_route = "keyword"
+    handler._apply_runtime_turn_detection(cfg)
+    assert handler._should_reopen_current_turn(1100)
+    assert handler._smart_turn_timing_ms(np.zeros(8192)) == (800, 0)
+
+
+def test_semantic_vad_keeps_progressive_audio_for_new_independent_turn():
+    iterator = _StaticVADIterator(
+        triggered=False, vad_output=[torch.ones(8192)], last_utterance_active_speech_samples=8192,
+    )
+    handler = _vad_handler_for_iterator(iterator)
+    cfg = RuntimeConfig(interruption_route="semantic")
+    list(handler.process((_audio_bytes(8192), cfg)))
+    iterator.triggered = True
+    iterator._vad_output = None
+    iterator.buffer = iterator._speech_chunks = [torch.full((8192,), 2.0)]
+    iterator.active_speech_samples = 8192
+    handler.enable_realtime_transcription = True
+    progressive = list(handler.process((_audio_bytes(8192), cfg)))
+    assert len(progressive) == 1
+    assert progressive[0].mode == "progressive"
+    assert (progressive[0].turn_id, progressive[0].turn_revision) == ("turn_2", 0)
+    np.testing.assert_array_equal(progressive[0].audio, np.full(8192, 2.0))
+    assert handler.speculative_turns._pending_reopen == {}

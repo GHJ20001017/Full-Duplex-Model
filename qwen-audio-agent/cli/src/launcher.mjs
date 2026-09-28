@@ -1,0 +1,701 @@
+import { dirname, resolve } from 'node:path'
+import { runtimePathEnvironment } from '../../shared/runtime-paths.mjs'
+import { requireWebRtcDependencies } from '../../shared/gateway/webrtc.mjs'
+import { tuiClientDirectory } from '../../shared/client-paths.mjs'
+import { randomUUID } from 'node:crypto'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import readline from 'node:readline'
+import QRCode from 'qrcode'
+import { loadRuntimeEnvironment } from '../../shared/runtime-environment.mjs'
+import { refreshProcessPath } from '../../shared/process-path.mjs'
+import {
+  backendDefinition,
+  backendNames,
+  normalizeBackendProtocol,
+  resolveBackendOwnership,
+} from '../../shared/backend/catalog.mjs'
+import {
+  findExecutable,
+  formatBackendSetup,
+  inspectBackendSetups,
+} from '../../shared/backend/setup.mjs'
+import { installBackend } from '../../shared/backend/install.mjs'
+import {
+  addSkills,
+  listSkills,
+  presentInstallerAgents,
+  removeSkill,
+  updateSkills,
+} from '../../shared/skill-library.mjs'
+import { helpText, parseArguments } from './arguments.mjs'
+import {
+  createGatewayPairingTicket,
+  ensureRuntime,
+  isLocalGateway,
+  readGatewayHealth,
+  readWebRtcConfiguration,
+  waitForGateway,
+} from './runtime.mjs'
+import {
+  listGatewayDevices,
+  issueGatewayDevice,
+  pairGatewayConnectionCode,
+  revokeGatewayDevice,
+  saveGatewayDirectConnection,
+} from '../../shared/gateway/access-client.mjs'
+import {
+  createGatewayPairingCode,
+  decodeGatewayConnectionCode,
+  encodeGatewayBrowserPairingCode,
+  encodeGatewayPairingCode,
+} from '../../shared/gateway/remote-access.mjs'
+import { GatewayConnectionProfileStore } from '../../shared/gateway/connection-profiles.mjs'
+import { createPrivateFileGatewayCredentialStore } from '../../shared/gateway/file-credential-store.mjs'
+import { launchWebUi } from './webui.mjs'
+import { acquireCliInstance } from './instance-lock.mjs'
+import { collectDiagnostics, formatDiagnostics } from './diagnostics.mjs'
+import { manageGatewayService } from './gateway-service.mjs'
+import {
+  GATEWAY_RESTART_FOLLOW_UP,
+  showConfig,
+  updateRealtimeModelConfig,
+} from './config-command.mjs'
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const gatewayPath = resolve(root, 'server/src/index.mjs')
+
+async function runMinimal(options) {
+  const moduleUrl = pathToFileURL(resolve(root, 'tui/src/index.mjs'))
+  const { runTui } = await import(moduleUrl)
+  await runTui({
+    url: options.url,
+    accessToken: options.accessToken,
+    sessionId: options.sessionId,
+    audioMode: options.audioMode,
+    takeover: options.takeover,
+  })
+  return 0
+}
+
+function applyGatewayOptions(env, options) {
+  if (options.webrtc) env.QWAUDIO_WEBRTC_ENABLED = '1'
+  // Keep an explicit empty value so the environment loader cannot restore a
+  // backend from config.env after --backend none selected frontend-only mode.
+  env.AGENT_PROTOCOL = options.backend || ''
+  const definition = backendDefinition(options.backend)
+  if (options.backend) {
+    const baseUrlConfigured = Boolean(
+      options.backendUrlSpecified
+      || (
+        definition?.baseUrlEnvironment
+        && String(env[definition.baseUrlEnvironment] || '').trim()
+      )
+    )
+    env.QWEN_AUDIO_AGENT_BACKEND_OWNERSHIP = resolveBackendOwnership(
+      options.backend,
+      { baseUrlConfigured },
+    )
+    env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE =
+      options.backendPermissionMode
+  } else {
+    delete env.QWEN_AUDIO_AGENT_BACKEND_OWNERSHIP
+    delete env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE
+  }
+  if (options.backend && options.backendAgent) {
+    env.QWEN_AUDIO_AGENT_BACKEND_AGENT = options.backendAgent
+  } else {
+    delete env.QWEN_AUDIO_AGENT_BACKEND_AGENT
+  }
+  if (definition?.baseUrlEnvironment) {
+    env[definition.baseUrlEnvironment] = options.backendUrl
+  }
+  if (options.lan) {
+    env.QWEN_AUDIO_GATEWAY_LAN = '1'
+    delete env.QWEN_AUDIO_GATEWAY_TAILNET
+  } else if (options.tailnet) {
+    env.QWEN_AUDIO_GATEWAY_TAILNET = '1'
+    delete env.QWEN_AUDIO_GATEWAY_LAN
+  }
+  if (options.lan) options.listenHost = '0.0.0.0'
+}
+
+function gatewaySummary(health) {
+  const model = health?.realtimeModelProfile?.label
+    || health?.realtimeLabel
+    || health?.realtimeModel
+  const modelSummary = model ? `Realtime：${model}` : ''
+  const frontendMcp = health?.frontendMcp
+  const mcpConfigured = frontendMcp?.servers?.some(server => server.enabled)
+  const mcpSummary = !mcpConfigured
+    ? ''
+    : frontendMcp.ok === false
+      ? '前台 MCP 异常'
+      : frontendMcp.initialized === false
+        ? '前台 MCP 连接中'
+        : `前台 MCP ${frontendMcp.tools || 0} 个工具`
+  if (health?.backend?.enabled === false) {
+    return [modelSummary, '仅前台聊天模式', mcpSummary]
+      .filter(Boolean)
+      .join(' · ')
+  }
+  const label = health?.backend?.label
+    || health?.backend?.kind
+    || health?.backend?.protocol
+    || '后台 Agent'
+  const state = health?.backend?.ok ? '已连接' : '未连接'
+  return [modelSummary, `${label} ${state}`, mcpSummary]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function publicEndpointSummary(health) {
+  const endpoint = health?.publicEndpoint
+  if (!endpoint || endpoint.mode === 'none') return ''
+  if (endpoint.endpoint?.url) return endpoint.endpoint.url
+  if (endpoint.state === 'error') {
+    return `异常：${endpoint.error?.message || '未知错误'}`
+  }
+  return endpoint.state === 'starting' ? '启动中' : '未就绪'
+}
+
+function gatewayServiceEnvironment(url, options = {}) {
+  const target = new URL(url)
+  if (target.protocol !== 'http:' || !isLocalGateway(url)) {
+    throw new Error('Gateway 后台服务只支持本机 HTTP 地址')
+  }
+  const serviceEnvironment = {
+    HOST: options.lan ? '0.0.0.0' : options.listenHost || target.hostname.replace(/^\[(.*)\]$/, '$1'),
+    PORT: target.port || '80',
+  }
+  if (options.lan) serviceEnvironment.QWEN_AUDIO_GATEWAY_LAN = '1'
+  if (options.tailnet) serviceEnvironment.QWEN_AUDIO_GATEWAY_TAILNET = '1'
+  if (options.webrtc) serviceEnvironment.QWAUDIO_WEBRTC_ENABLED = '1'
+  return serviceEnvironment
+}
+
+async function waitForGatewayStop(url, {
+  inspectGateway = readGatewayHealth,
+  timeoutMs = 15_000,
+  intervalMs = 100,
+} = {}) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!await inspectGateway(url)) return
+    await new Promise(resolvePromise => setTimeout(resolvePromise, intervalMs))
+  }
+  throw new Error(`Gateway 停止超时：${url}`)
+}
+
+async function waitForPublicEndpoint(url, {
+  inspectGateway = value => readGatewayHealth(value),
+  timeoutMs = 35_000,
+  intervalMs = 200,
+} = {}) {
+  const deadline = Date.now() + timeoutMs
+  let health = null
+  while (Date.now() < deadline) {
+    health = await inspectGateway(url)
+    const endpoint = health?.publicEndpoint
+    if (endpoint?.state === 'ready' && endpoint.endpoint?.url) return health
+    if (endpoint?.state === 'error') break
+    await new Promise(resolvePromise => setTimeout(resolvePromise, intervalMs))
+  }
+  const error = new Error(
+    health?.publicEndpoint?.error?.message || '等待 Gateway 对外地址就绪超时',
+  )
+  error.code = health?.publicEndpoint?.error?.code || 'gateway_public_url_not_ready'
+  throw error
+}
+
+function askConfirmation(question, { stdin, stdout }) {
+  return new Promise(resolvePromise => {
+    const rl = readline.createInterface({ input: stdin, output: stdout })
+    rl.question(question, answer => {
+      rl.close()
+      resolvePromise(answer)
+    })
+  })
+}
+
+export async function main(argv, {
+  env = process.env,
+  stdin = process.stdin,
+  stdout = process.stdout,
+  signalSource = process,
+  prepareEnvironment = ({ readOnly = false } = {}) => loadRuntimeEnvironment({
+    root,
+    env,
+    readOnly,
+  }),
+  inspectSetups = options => inspectBackendSetups({
+    env,
+    backend: options.backendSpecified ? options.backend : '',
+  }),
+  runInstaller = (id, installerOptions) => installBackend(id, {
+    env,
+    ...installerOptions,
+  }),
+  skillTools = {
+    addSkills,
+    listSkills,
+    removeSkill,
+    updateSkills,
+    // 安装目标：本机实际存在的后台（CLI 可执行即算）∪ 当前配置后台；
+    // 不为从未使用的后台预建目录，新后台由网关启动补装自动补齐。
+    presentAgents: () => presentInstallerAgents({
+      readyBackends: backendNames().filter(id => {
+        const command = backendDefinition(id)?.setup?.command
+        return Boolean(command && findExecutable(command, { env }))
+      }),
+      currentProtocol: normalizeBackendProtocol(env.AGENT_PROTOCOL),
+    }),
+  },
+  runMinimalTui = runMinimal,
+  prepareRuntime = options => ensureRuntime(options, { root, env }),
+  checkWebRtcDependencies = requireWebRtcDependencies,
+  inspectWebRtc = (url, accessToken) => readWebRtcConfiguration(url, { accessToken }),
+  inspectGateway = (url, accessToken = '') => readGatewayHealth(
+    url,
+    fetch,
+    { accessToken },
+  ),
+  issueDeviceCredential = (url, label, endpoint) => issueGatewayDevice(url, {
+    device: { type: 'client', label: label || 'Conversation client' },
+    endpoint,
+  }),
+  createPairingTicket = url => createGatewayPairingTicket(url),
+  listPairedDevices = url => listGatewayDevices(url),
+  revokePairedDevice = (url, id) => revokeGatewayDevice(url, id),
+  waitForEndpoint = url => waitForPublicEndpoint(url, { inspectGateway }),
+  manageService = (action, options) => manageGatewayService(action, options),
+  refreshPath = options => refreshProcessPath(options),
+  waitForService = (url, { requireBackend = false } = {}) =>
+    waitForGateway(url, { requireBackend }),
+  waitForServiceStop = url => waitForGatewayStop(url, { inspectGateway }),
+  runWebUi = options => launchWebUi(options),
+  diagnose = collectDiagnostics,
+  acquireInstance = (directory, instanceKey) => acquireCliInstance(directory, { instanceKey }),
+  updateConfig = updateRealtimeModelConfig,
+  createConnectionProfiles = directory => new GatewayConnectionProfileStore({
+    filePath: resolve(directory, 'gateway-connections.json'),
+    credentialStore: createPrivateFileGatewayCredentialStore({
+      filePath: resolve(directory, 'gateway-client-credentials.json'),
+    }),
+  }),
+  pairConnectionCode = pairGatewayConnectionCode,
+  saveDirectConnection = saveGatewayDirectConnection,
+  renderPairingQr = value => QRCode.toString(value, {
+    type: 'terminal',
+    small: true,
+    errorCorrectionLevel: 'L',
+  }),
+} = {}) {
+  const processModelOverrides = { ...env }
+  const readOnlyCommand = ['setup', 'install', 'doctor', 'connect', 'disconnect', 'tui', 'webui', 'status'].includes(argv[0])
+    || (argv[0] === 'gateway' && argv[1] === 'status')
+    || argv.includes('--help') || argv.includes('-h')
+    || (argv[0] === 'config' && argv[1] === 'show')
+  const environment = prepareEnvironment({ readOnly: readOnlyCommand })
+  const options = parseArguments(argv, env)
+  const connectionProfiles = ['connect', 'disconnect', 'tui'].includes(options.command)
+    ? createConnectionProfiles(tuiClientDirectory(env))
+    : null
+  if (!options.urlSpecified && options.command === 'tui') {
+    const saved = await connectionProfiles.resolve('cli-default')
+    if (saved?.credential) {
+      options.url = saved.profile.gateway_url
+      options.accessToken = saved.credential
+    }
+  }
+  if (
+    options.command === 'gateway'
+    && ['install', 'start', 'restart'].includes(options.gatewayAction)
+  ) {
+    // A persistent service cannot inherit later changes from the invoking
+    // shell. Refresh the shared, non-secret PATH cache before it starts.
+    refreshPath({ env })
+  }
+  if (options.help) {
+    stdout.write(`${helpText()}\n`)
+    return 0
+  }
+  if (options.command === 'doctor') {
+    const report = await diagnose({ options, environment, env })
+    stdout.write(`${options.json ? JSON.stringify(report, null, 2) : formatDiagnostics(report)}\n`)
+    return report.ok ? 0 : 1
+  }
+  if (options.command === 'connect') {
+    if (!options.pairingCode) throw new Error('connect 需要 Gateway 连接码')
+    const instanceId = `cli_${randomUUID()}`
+    const decoded = decodeGatewayConnectionCode(options.pairingCode)
+    const connectionOptions = {
+        device: { id: instanceId, type: 'cli', label: 'TUI' },
+        clientInstanceId: instanceId,
+        profileId: 'cli-default',
+        label: 'Remote Gateway',
+        profileStore: connectionProfiles,
+    }
+    const paired = decoded.kind === 'direct'
+      ? await saveDirectConnection(decoded.connection, connectionOptions)
+      : await pairConnectionCode(decoded.connection, connectionOptions)
+    stdout.write(`已连接远程 Gateway：${paired.profile.gateway_url}\n`)
+    return 0
+  }
+  if (options.command === 'disconnect') {
+    const removed = await connectionProfiles.remove('cli-default')
+    stdout.write(removed ? '已忘记远程 Gateway\n' : '没有已保存的远程 Gateway\n')
+    return 0
+  }
+  if (options.command === 'config') {
+    const configPath = environment.configPath
+      || resolve(environment.configDirectory, 'config.env')
+    if (!options.configAction) {
+      stdout.write(`${configPath}\n`)
+    } else if (options.configAction === 'show') {
+      stdout.write(`${showConfig({ configPath, env })}\n`)
+    } else {
+      const updated = updateConfig(configPath, options.realtimeModel, { env })
+      const modelEnvironment = updated?.environment || 'QWEN_AUDIO_REALTIME_MODEL'
+      const processRealtimeModelOverride = String(processModelOverrides[modelEnvironment] || '').trim()
+      if (
+        processRealtimeModelOverride
+        && processRealtimeModelOverride !== options.realtimeModel
+      ) {
+        stdout.write(
+          `配置文件已更新；当前 ${modelEnvironment} 环境变量仍覆盖该值。`
+          + '请先取消环境变量，再执行 qwenaudio gateway restart\n',
+        )
+      } else {
+        stdout.write(`${GATEWAY_RESTART_FOLLOW_UP}\n`)
+      }
+    }
+    return 0
+  }
+  if (options.command === 'setup') {
+    const report = inspectSetups(options)
+    stdout.write(options.json
+      ? `${JSON.stringify(report, null, 2)}\n`
+      : `${formatBackendSetup(report)}\n`)
+    const selected = report.backends.find(item => item.selected)
+      || (options.backendSpecified ? report.backends[0] : null)
+    return selected && !selected.ready ? 1 : 0
+  }
+  if (options.command === 'skill') {
+    // qwenaudio skill 是 skills.sh 的品牌化入口：参数组装后透传，输出原样展示。
+    if (options.skillAction === 'list') {
+      stdout.write(skillTools.listSkills().stdout)
+      return 0
+    }
+    if (options.skillAction === 'update') {
+      stdout.write(skillTools.updateSkills().stdout)
+      return 0
+    }
+    if (options.skillAction === 'install') {
+      const result = skillTools.addSkills(options.skillTarget, {
+        skills: options.skillNames,
+        list: options.skillList,
+        ...(options.skillList ? {} : { agents: skillTools.presentAgents() }),
+      })
+      stdout.write(result.stdout)
+      if (!options.skillList) {
+        // 各后台发现新技能的时机不同：部分热加载，部分仅在进程/会话启动时扫描。
+        stdout.write(
+          '技能已安装；若运行中的后台未发现新技能，'
+          + '执行 qwenaudio gateway restart 后即可生效\n',
+        )
+      }
+      return 0
+    }
+    stdout.write(skillTools.removeSkill(options.skillTarget).stdout)
+    return 0
+  }
+  if (options.command === 'install') {
+    const label = backendDefinition(options.installTarget)?.label
+      || options.installTarget
+    const confirmStep = options.yes
+      ? async () => true
+      : async step => {
+          stdout.write(`即将执行官方安装脚本：\n  ${step.display}\n`)
+          const answer = await askConfirmation('确认执行？[y/N] ', {
+            stdin,
+            stdout,
+          })
+          return /^y(?:es)?$/i.test(answer.trim())
+        }
+    const result = await runInstaller(options.installTarget, {
+      confirmStep,
+      onProgress: event => {
+        if (event.phase === 'start') {
+          stdout.write(`${event.title}：${event.display}\n`)
+        } else if (event.phase === 'skip') {
+          stdout.write(`${event.title}：组件已就绪，跳过\n`)
+        } else if (event.phase === 'output') {
+          stdout.write(event.chunk)
+        }
+      },
+    })
+    if (!result.ok) {
+      stdout.write(
+        `✗ ${label} 安装未完成：${result.error?.message || '未知错误'}\n`,
+      )
+      return 1
+    }
+    stdout.write(
+      result.alreadyInstalled
+        ? `✓ ${label} 已安装\n`
+        : `✓ ${label} 安装完成\n`,
+    )
+    const configurationHint = result.configurationHint || result.loginHint
+    if (
+      configurationHint
+      && result.authentication?.status !== 'authenticated'
+    ) {
+      stdout.write(`${configurationHint}\n`)
+    }
+    return 0
+  }
+
+  if (options.command === 'gateway' && options.gatewayAction === 'pair') {
+    if (options.legacyPairing) {
+      const ticket = await createPairingTicket(options.url)
+      const pairingCode = createGatewayPairingCode({
+        gatewayUrl: ticket.gatewayUrl,
+        pairingCode: ticket.code,
+        expiresAt: ticket.expiresAt,
+      })
+      const appUrl = encodeGatewayPairingCode(pairingCode)
+      const browserUrl = encodeGatewayBrowserPairingCode(pairingCode)
+      if (options.json) {
+        stdout.write(`${JSON.stringify({
+          ...pairingCode,
+          app_url: appUrl,
+          browser_url: browserUrl,
+        }, null, 2)}\n`)
+      } else {
+        const qrCode = await renderPairingQr(browserUrl)
+        stdout.write(
+          '旧版客户端扫码配对：\n'
+          + `${qrCode}\n`
+          + `临时连接码：\n${appUrl}\n`
+          + `浏览器访问：\n${browserUrl}\n`
+          + `有效期至：${new Date(pairingCode.expires_at).toLocaleString()}\n`,
+        )
+      }
+      return 0
+    }
+    const issued = await issueDeviceCredential(
+      options.url,
+      options.deviceLabel,
+      options.endpoint,
+    )
+    const connectionCode = issued.connection_code
+    if (options.json) {
+      stdout.write(`${JSON.stringify({
+        device: issued.device,
+        connection_code: connectionCode,
+      }, null, 2)}\n`)
+    }
+    else {
+      const qrCode = await renderPairingQr(connectionCode)
+      stdout.write(
+        '扫码或复制连接：\n'
+        + `${qrCode}\n`
+        + `连接码（只显示这一次）：\n${connectionCode}\n`
+        + `设备 ID：${issued.device.id}\n`,
+      )
+    }
+    return 0
+  }
+
+  if (options.command === 'gateway' && options.gatewayAction === 'devices') {
+    const result = await listPairedDevices(options.url)
+    if (options.json) stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+    else if (!result.devices?.length) stdout.write('尚无已授权客户端\n')
+    else {
+      for (const device of result.devices) {
+        stdout.write(`${device.id}\t${device.label || device.type || 'Client'}\n`)
+      }
+    }
+    return 0
+  }
+
+  if (options.command === 'gateway' && options.gatewayAction === 'revoke') {
+    await revokePairedDevice(options.url, options.deviceId)
+    stdout.write(`已撤销客户端：${options.deviceId}\n`)
+    return 0
+  }
+
+  if (
+    (options.command === 'gateway' && options.gatewayAction !== 'run')
+    || options.command === 'status'
+  ) {
+    if (options.gatewayAction === 'install' && options.webrtc) checkWebRtcDependencies()
+    const serviceEnvironment = [
+      'install',
+      'start',
+      'restart',
+    ].includes(options.gatewayAction)
+      ? {
+          ...gatewayServiceEnvironment(options.url, options),
+          // A background service does not inherit the invoking shell. Preserve
+          // every resolved directory explicitly, including custom profiles.
+          ...runtimePathEnvironment(environment),
+        }
+      : {}
+    const serviceOptions = {
+      configDirectory: environment.configDirectory,
+      stateDirectory: environment.stateDirectory,
+      gatewayPath,
+      serviceEnvironment,
+      serviceMetadata: {
+        url: options.url,
+        ...(options.lan ? { lan: true } : {}),
+        ...(options.tailnet ? { tailnet: true } : {}),
+        ...(options.webrtc ? { webrtc: true } : {}),
+      },
+    }
+    if (options.gatewayAction === 'status') {
+      const service = isLocalGateway(options.url)
+        ? await manageService('status', serviceOptions)
+        : null
+      const serviceUrl = (!options.urlSpecified && service?.installedMetadata?.url) || options.url
+      const health = await inspectGateway(serviceUrl, options.accessToken)
+      const publicEndpoint = publicEndpointSummary(health)
+      stdout.write(
+        `Gateway 连接：${health ? '可达' : '不可达'}\n`
+        + `本机常驻服务：${
+          !service ? '不适用（远程 Gateway）' : service.running
+            ? '运行中'
+            : service.installed ? '已停止' : '未安装'
+        }\n`
+        + `连接状态：${health ? gatewaySummary(health) : '未连接'}\n`
+        + `地址：${serviceUrl}\n`
+        + (publicEndpoint ? `对外地址：${publicEndpoint}\n` : ''),
+      )
+      // Reachability is independent of the process launcher (terminal,
+      // desktop, OS service or remote host). Readiness is reported separately.
+      return health ? 0 : 1
+    }
+
+    const current = await manageService('status', serviceOptions)
+    const currentUrl = current.installedMetadata?.url || options.url
+    const health = await inspectGateway(currentUrl)
+    if (
+      ['install', 'start', 'restart'].includes(options.gatewayAction)
+      && health
+      && !current.running
+    ) {
+      throw new Error(
+        'Gateway 正在前台运行；请先结束前台进程，再启动后台服务',
+      )
+    }
+    const service = await manageService(
+      options.gatewayAction,
+      serviceOptions,
+    )
+    const serviceUrl = service.installedMetadata?.url || currentUrl
+    if (['install', 'start', 'restart'].includes(options.gatewayAction)) {
+      const ready = await waitForService(serviceUrl, {
+        requireBackend: Boolean(options.backend),
+      })
+      if (options.webrtc || service.installedMetadata?.webrtc) {
+        await inspectWebRtc(serviceUrl, options.accessToken)
+      }
+      stdout.write(
+        `Gateway 后台服务已${
+          options.gatewayAction === 'restart' ? '重启' : '启动'
+        }：${serviceUrl}\n`
+        + `${gatewaySummary(ready)}\n`,
+      )
+    } else {
+      if (health && current.running) await waitForServiceStop(currentUrl)
+      stdout.write(
+        options.gatewayAction === 'uninstall'
+          ? 'Gateway 后台服务已移除\n'
+          : 'Gateway 后台服务已停止\n',
+      )
+    }
+    if (service.logPath) stdout.write(`日志：${service.logPath}\n`)
+    return 0
+  }
+
+  if (options.command === 'gateway') {
+    applyGatewayOptions(env, options)
+    let runtime
+    let shutdownSignal
+    const requestShutdown = signal => {
+      shutdownSignal ||= signal
+      runtime?.close(shutdownSignal)
+    }
+    const onSigint = () => requestShutdown('SIGINT')
+    const onSigterm = () => requestShutdown('SIGTERM')
+    // A terminal or SSH session closing sends SIGHUP rather than SIGINT.
+    // The Gateway runs in its own process group, so it would otherwise outlive
+    // this launcher and keep its ports occupied.
+    const onSighup = () => requestShutdown('SIGTERM')
+    // This is a final synchronous safeguard for unexpected launcher exits.
+    // ManagedRuntime.close only sends signals, so it is safe in an exit hook.
+    const onExit = () => runtime?.close('SIGTERM')
+    signalSource.once('SIGINT', onSigint)
+    signalSource.once('SIGTERM', onSigterm)
+    signalSource.once('SIGHUP', onSighup)
+    signalSource.once('exit', onExit)
+    try {
+      runtime = await prepareRuntime(options)
+      if (shutdownSignal) {
+        if (!runtime.ownsProcesses) return 0
+        const stopped = runtime.wait()
+        runtime.close(shutdownSignal)
+        return await stopped
+      }
+      let health = await inspectGateway(options.url)
+      if (options.webrtc) await inspectWebRtc(options.url, options.accessToken)
+      if (
+        !runtime.ownsProcesses
+        && options.lan
+        && health?.publicEndpoint?.mode !== 'lan'
+      ) {
+        throw new Error('现有 Gateway 未开启局域网访问；请先停止后再使用 --lan 启动')
+      }
+      if (
+        !runtime.ownsProcesses
+        && options.tailnet
+        && health?.publicEndpoint?.mode !== 'tailnet'
+      ) {
+        throw new Error('现有 Gateway 未开启 Tailnet；请先停止后再使用 --tailnet 启动')
+      }
+      if (options.lan || options.tailnet) health = await waitForEndpoint(options.url)
+      const publicEndpoint = health?.publicEndpoint?.endpoint?.url
+      stdout.write(
+        `Gateway ${runtime.ownsProcesses ? '已启动' : '已在运行'}：${options.url}\n`
+        + `WebUI：${options.url}/\n`
+        + (options.webrtc ? `WebRTC：${options.url}/api/realtime/webrtc/example\n` : '')
+        + (publicEndpoint ? `对外地址：${publicEndpoint}\n` : '')
+        + `${gatewaySummary(health)}\n`,
+      )
+      if (!runtime.ownsProcesses) return 0
+      return await runtime.wait()
+    } finally {
+      signalSource.off('SIGINT', onSigint)
+      signalSource.off('SIGTERM', onSigterm)
+      signalSource.off('SIGHUP', onSighup)
+      signalSource.off('exit', onExit)
+      if (runtime?.ownsProcesses) runtime.close()
+    }
+  }
+
+  const health = await inspectGateway(options.url, options.accessToken)
+  if (!health) {
+    throw new Error(
+      `Gateway 未运行：${options.url}。请先执行 qwenaudio gateway`,
+    )
+  }
+  if (options.command === 'webui') return runWebUi(options)
+
+  const instance = acquireInstance(tuiClientDirectory(env), environment.stateDirectory)
+  try {
+    return await runMinimalTui(options)
+  } finally {
+    instance.release()
+  }
+}

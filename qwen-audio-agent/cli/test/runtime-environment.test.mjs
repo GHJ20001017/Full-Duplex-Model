@@ -1,0 +1,408 @@
+import assert from 'node:assert/strict'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
+import test from 'node:test'
+import {
+  loadRuntimeEnvironment,
+  requireDashScopeCredential,
+  requireRealtimeFrontendConfiguration,
+} from '../../shared/runtime-environment.mjs'
+
+import { userConfigDirectory } from '../../shared/runtime-paths.mjs'
+
+function fixture() {
+  const base = mkdtempSync(resolve(tmpdir(), 'qwaudio-config-'))
+  const root = resolve(base, 'app')
+  const homeDirectory = resolve(base, 'home')
+  mkdirSync(root, { recursive: true })
+  mkdirSync(homeDirectory, { recursive: true })
+  const frontendAgentConfig = resolve(root, 'config/frontend-agent')
+  mkdirSync(frontendAgentConfig, { recursive: true })
+  writeFileSync(
+    resolve(frontendAgentConfig, 'ASSISTANT.md'),
+    '# Assistant Profile\n\n## Identity\n\n你默认叫测试助手。\n',
+  )
+  return { base, root, homeDirectory }
+}
+
+function assertPrivateMode(filePath) {
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(filePath).mode & 0o777, 0o600)
+  }
+}
+
+test('loads setup configuration without creating or changing user files', () => {
+  const target = fixture()
+  writeFileSync(resolve(target.root, '.env'), [
+    'AGENT_PROTOCOL=codex',
+    'CODEX_PATH=/tools/codex',
+  ].join('\n'))
+  const env = {}
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+    readOnly: true,
+  })
+  assert.equal(env.AGENT_PROTOCOL, 'codex')
+  assert.equal(env.CODEX_PATH, '/tools/codex')
+  assert.equal(existsSync(result.configDirectory), false)
+  assert.equal(existsSync(result.configPath), false)
+  assert.equal(env.CODEX_WORKSPACE, undefined)
+  assert.equal(env.QWEN_AUDIO_AGENT_AUTH_SECRET, undefined)
+})
+
+test('loads environment, project and user config in documented priority order', () => {
+  const target = fixture()
+  const configDirectory = resolve(target.homeDirectory, '.config/qwaudio')
+  mkdirSync(configDirectory, { recursive: true })
+  writeFileSync(resolve(configDirectory, 'config.env'), [
+    'DASHSCOPE_API_KEY=user-key',
+    'AGENT_PROTOCOL=openclaw',
+  ].join('\n'))
+  writeFileSync(resolve(target.root, '.env'), [
+    'DASHSCOPE_API_KEY=project-key',
+    'OPENCODE_BASE_URL=http://127.0.0.1:5000',
+  ].join('\n'))
+  const env = { DASHSCOPE_API_KEY: 'process-key' }
+
+  loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+  })
+
+  assert.equal(env.DASHSCOPE_API_KEY, 'process-key')
+  assert.equal(env.OPENCODE_BASE_URL, 'http://127.0.0.1:5000')
+  assert.equal(env.AGENT_PROTOCOL, 'openclaw')
+})
+
+test('generates and reuses a private stable local identity secret', () => {
+  const target = fixture()
+  const first = {}
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: first,
+  })
+  assert.equal(result.generatedSecret, true)
+  assert.equal(first.QWEN_AUDIO_AGENT_AUTH_SECRET.length, 64)
+  assertPrivateMode(result.identityPath)
+
+  const second = {}
+  loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: second,
+  })
+  assert.equal(
+    second.QWEN_AUDIO_AGENT_AUTH_SECRET,
+    first.QWEN_AUDIO_AGENT_AUTH_SECRET,
+  )
+  assert.match(readFileSync(result.identityPath, 'utf8'), /AUTH_SECRET=/)
+  const configContent = readFileSync(result.configPath, 'utf8')
+  assert.match(configContent, /DASHSCOPE_API_KEY=/)
+  assert.match(
+    configContent,
+    /QWEN_AUDIO_REALTIME_PROVIDER=dashscope/,
+  )
+  assert.match(
+    configContent,
+    /SPEECH_TO_SPEECH_REALTIME_URL=ws:\/\/127\.0\.0\.1:8765\/v1\/realtime/,
+  )
+  assert.match(
+    configContent,
+    /MINICPM_O_REALTIME_URL=ws:\/\/127\.0\.0\.1:8006\/v1\/realtime\?mode=audio/,
+  )
+  assert.doesNotMatch(configContent, /S2S_REALTIME_URL=/)
+  assertPrivateMode(result.configPath)
+  assert.match(readFileSync(result.userModelPath, 'utf8'), /^# USER/m)
+  assertPrivateMode(result.userModelPath)
+  assert.match(readFileSync(result.assistantProfilePath, 'utf8'), /测试助手/)
+  assertPrivateMode(result.assistantProfilePath)
+})
+
+test('reuses the persisted secret when the environment provides an empty value', () => {
+  const target = fixture()
+  const first = {}
+  loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: first,
+  })
+
+  const second = { QWEN_AUDIO_AGENT_AUTH_SECRET: '' }
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: second,
+  })
+
+  assert.equal(second.QWEN_AUDIO_AGENT_AUTH_SECRET, first.QWEN_AUDIO_AGENT_AUTH_SECRET)
+  assert.equal(result.generatedSecret, false)
+})
+
+test('does not overwrite an existing user model', () => {
+  const target = fixture()
+  const configDirectory = resolve(target.homeDirectory, '.config/qwaudio')
+  mkdirSync(configDirectory, { recursive: true })
+  mkdirSync(resolve(configDirectory, 'data'), { recursive: true })
+  const userModelPath = resolve(configDirectory, 'data/USER.md')
+  writeFileSync(userModelPath, '# USER\n\n- 称呼：老大\n')
+
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: {},
+    generateSecret: false,
+  })
+
+  assert.equal(result.userModelPath, userModelPath)
+  assert.equal(readFileSync(userModelPath, 'utf8'), '# USER\n\n- 称呼：老大\n')
+  assertPrivateMode(userModelPath)
+})
+
+test('copies the assistant profile template once and preserves user customization', () => {
+  const target = fixture()
+  const first = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: {},
+    generateSecret: false,
+  })
+  assert.match(readFileSync(first.assistantProfilePath, 'utf8'), /测试助手/)
+
+  writeFileSync(
+    first.assistantProfilePath,
+    '# Assistant Profile\n\n## Identity\n\n你叫小舟。\n',
+  )
+  const second = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env: {},
+    generateSecret: false,
+  })
+
+  assert.equal(second.assistantProfilePath, first.assistantProfilePath)
+  assert.match(readFileSync(second.assistantProfilePath, 'utf8'), /你叫小舟/)
+  assert.doesNotMatch(readFileSync(second.assistantProfilePath, 'utf8'), /测试助手/)
+  assertPrivateMode(second.assistantProfilePath)
+})
+
+test('supports an explicit cross-platform user config directory', () => {
+  const directory = resolve('/tmp/qwaudio-custom')
+  assert.equal(
+    userConfigDirectory({
+      QWAUDIO_CONFIG_DIR: directory,
+    }, '/unused'),
+    directory,
+  )
+})
+
+test('keeps managed backend data outside the installation directory', () => {
+  const target = fixture()
+  const env = {}
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+    generateSecret: false,
+  })
+
+  // 所有后台默认共享同一个托管 workspace，均在安装目录之外。
+  assert.equal(
+    result.sharedWorkspace,
+    resolve(result.dataDirectory, 'workspace'),
+  )
+  for (const workspace of [
+    result.openCodeWorkspace,
+    result.openClawWorkspace,
+    result.qoderWorkspace,
+    result.qwenCodeWorkspace,
+    result.minimaxWorkspace,
+    result.kimiWorkspace,
+    result.hermesWorkspace,
+    result.codeBuddyWorkspace,
+    result.codexWorkspace,
+    result.claudeWorkspace,
+    result.piWorkspace,
+    result.acpWorkspace,
+  ]) {
+    assert.equal(workspace, result.sharedWorkspace)
+  }
+  assert.equal(
+    result.openClawStateDirectory,
+    resolve(result.stateDirectory, 'backends/openclaw'),
+  )
+  assert.equal(env.OPENCODE_WORKSPACE, result.openCodeWorkspace)
+  assert.equal(
+    env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE,
+    result.openClawWorkspace,
+  )
+  assert.equal(
+    env.QWEN_AUDIO_AGENT_OPENCLAW_STATE_DIR,
+    result.openClawStateDirectory,
+  )
+  assert.equal(env.OPENCLAW_STATE_DIR, undefined)
+  assert.equal(env.QODER_WORKSPACE, result.qoderWorkspace)
+  assert.equal(env.QWEN_CODE_WORKSPACE, result.qwenCodeWorkspace)
+  assert.equal(env.MINIMAX_CODE_WORKSPACE, result.minimaxWorkspace)
+  assert.equal(env.KIMI_WORKSPACE, result.kimiWorkspace)
+  assert.equal(env.HERMES_WORKSPACE, result.hermesWorkspace)
+  assert.equal(env.CODEBUDDY_WORKSPACE, result.codeBuddyWorkspace)
+  assert.equal(env.CODEX_WORKSPACE, result.codexWorkspace)
+  assert.equal(env.CLAUDE_WORKSPACE, result.claudeWorkspace)
+  assert.equal(env.PI_WORKSPACE, result.piWorkspace)
+  assert.equal(env.ACP_WORKSPACE, result.acpWorkspace)
+  assert.equal(
+    existsSync(resolve(
+      result.codeBuddyWorkspace,
+      '.codebuddy/models.json',
+    )),
+    false,
+  )
+  assert.equal(
+    existsSync(resolve(result.openCodeWorkspace, 'AGENTS.md')),
+    false,
+  )
+})
+
+test('desktop client setup does not require packaged backend templates', () => {
+  const base = mkdtempSync(resolve(tmpdir(), 'qwaudio-desktop-config-'))
+  const root = resolve(base, 'app')
+  const homeDirectory = resolve(base, 'home')
+  mkdirSync(root, { recursive: true })
+  mkdirSync(homeDirectory, { recursive: true })
+  const env = {}
+
+  const result = loadRuntimeEnvironment({
+    root,
+    homeDirectory,
+    env,
+    generateSecret: false,
+    prepareBackendRuntime: false,
+  })
+
+  assert.equal(existsSync(result.configPath), true)
+  assert.equal(existsSync(result.userModelPath), true)
+  assert.equal(existsSync(result.openCodeWorkspace), false)
+  assert.equal(existsSync(result.openClawWorkspace), false)
+  assert.equal(existsSync(result.qoderWorkspace), false)
+  assert.equal(existsSync(result.minimaxWorkspace), false)
+  assert.equal(existsSync(result.kimiWorkspace), false)
+  assert.equal(existsSync(result.hermesWorkspace), false)
+  assert.equal(existsSync(result.codeBuddyWorkspace), false)
+  assert.equal(existsSync(result.codexWorkspace), false)
+  assert.equal(existsSync(result.claudeWorkspace), false)
+  assert.equal(existsSync(result.piWorkspace), false)
+  assert.equal(existsSync(result.acpWorkspace), false)
+  assert.equal(env.OPENCODE_WORKSPACE, undefined)
+  assert.equal(env.QWEN_AUDIO_AGENT_OPENCLAW_WORKSPACE, undefined)
+  assert.equal(env.OPENCLAW_STATE_DIR, undefined)
+  assert.equal(env.QODER_WORKSPACE, undefined)
+  assert.equal(env.MINIMAX_CODE_WORKSPACE, undefined)
+  assert.equal(env.KIMI_WORKSPACE, undefined)
+  assert.equal(env.HERMES_WORKSPACE, undefined)
+  assert.equal(env.CODEBUDDY_WORKSPACE, undefined)
+  assert.equal(env.CODEX_WORKSPACE, undefined)
+  assert.equal(env.CLAUDE_WORKSPACE, undefined)
+  assert.equal(env.PI_WORKSPACE, undefined)
+  assert.equal(env.ACP_WORKSPACE, undefined)
+})
+
+test('requires only a DashScope credential from the user', () => {
+  assert.doesNotThrow(() => requireDashScopeCredential({
+    DASHSCOPE_API_KEY: 'key',
+  }))
+  assert.throws(() => requireDashScopeCredential({}), /DASHSCOPE_API_KEY/)
+})
+
+test('does not require a DashScope credential for speech-to-speech', () => {
+  assert.doesNotThrow(() => requireRealtimeFrontendConfiguration({
+    QWEN_AUDIO_REALTIME_PROVIDER: 'speech-to-speech',
+  }))
+  assert.doesNotThrow(() => requireRealtimeFrontendConfiguration({
+    QWEN_AUDIO_REALTIME_PROVIDER: 's2s',
+  }))
+  assert.throws(
+    () => requireRealtimeFrontendConfiguration({}),
+    /DASHSCOPE_API_KEY/,
+  )
+  assert.throws(
+    () => requireRealtimeFrontendConfiguration({
+      QWEN_AUDIO_REALTIME_PROVIDER: 'speech2speech',
+    }),
+    /不支持的 Realtime 前台/,
+  )
+})
+
+test('does not require a DashScope credential for MiniCPM-o', () => {
+  assert.doesNotThrow(() => requireRealtimeFrontendConfiguration({
+    QWEN_AUDIO_REALTIME_PROVIDER: 'minicpm-o',
+  }))
+  assert.doesNotThrow(() => requireRealtimeFrontendConfiguration({
+    QWEN_AUDIO_REALTIME_PROVIDER: 'minicpmo',
+  }))
+})
+
+test('separates configuration, shared data and instance state', () => {
+  const target = fixture()
+  const runtimeDir = resolve(target.base, 'desktop-runtime')
+  const dataDir = resolve(target.homeDirectory, '.config/qwaudio')
+  const env = {
+    QWAUDIO_CONFIG_DIR: resolve(target.base, 'config'),
+    QWAUDIO_STATE_DIR: runtimeDir,
+    QWAUDIO_DATA_DIR: dataDir,
+  }
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+  })
+  assert.equal(result.configDirectory, resolve(target.base, 'config'))
+  assert.equal(result.stateDirectory, runtimeDir)
+  assert.equal(result.dataDirectory, dataDir)
+  // Configuration stays in configDirectory; memory and workspace are data.
+  assert.equal(result.configPath, resolve(result.configDirectory, 'config.env'))
+  assert.equal(result.userModelPath, resolve(dataDir, 'USER.md'))
+  assert.equal(result.frontendMemoryPath, resolve(dataDir, 'MEMORY.md'))
+  assert.equal(result.frontendNotesPath, resolve(dataDir, 'frontend-notes.json'))
+  assert.equal(result.sharedWorkspace, resolve(dataDir, 'workspace'))
+  assert.equal(result.identityPath, resolve(result.configDirectory, 'identity.env'))
+  // 运行时状态留在各形态自己的目录，双实例互不干扰。
+  assert.equal(result.taskStatePath, resolve(runtimeDir, 'tasks.json'))
+  assert.equal(
+    result.openClawStateDirectory,
+    resolve(runtimeDir, 'backends/openclaw'),
+  )
+  assertPrivateMode(result.configPath)
+  assertPrivateMode(result.identityPath)
+})
+
+test('uses separate data and state subdirectories by default', () => {
+  const target = fixture()
+  const env = {}
+  const result = loadRuntimeEnvironment({
+    root: target.root,
+    homeDirectory: target.homeDirectory,
+    env,
+  })
+  assert.equal(result.dataDirectory, resolve(result.configDirectory, 'data'))
+  assert.equal(result.stateDirectory, resolve(result.configDirectory, 'state'))
+  assert.equal(
+    result.configPath,
+    resolve(result.configDirectory, 'config.env'),
+  )
+  assert.equal(
+    result.taskStatePath,
+    resolve(result.stateDirectory, 'tasks.json'),
+  )
+})

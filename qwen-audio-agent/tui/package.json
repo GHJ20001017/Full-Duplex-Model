@@ -1,0 +1,13 @@
+{
+  "name": "@qwen-audio-agent/tui",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

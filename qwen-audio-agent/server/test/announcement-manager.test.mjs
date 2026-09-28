@@ -1,0 +1,564 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  AnnouncementManager,
+  formatWorkResults,
+} from '../src/voice/announcement/announcement-manager.mjs'
+import { TaskManager } from '../src/task/task-manager.mjs'
+
+async function waitFor(condition, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for announcement state')
+    }
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+}
+
+test('formats only final work results for realtime presentation', () => {
+  const text = formatWorkResults([{
+    event: 'task.completed',
+    taskId: 'task_1',
+    objective: '生成图片',
+    status: 'completed',
+    result: '图片已生成',
+  }])
+  assert.match(text, /^以下是你先前异步执行工作的最终更新/u)
+  assert.match(text, /task_id: task_1/)
+  assert.match(text, /工作: 生成图片/)
+  assert.doesNotMatch(text, /original_request:/)
+  assert.match(text, /图片已生成/)
+  assert.doesNotMatch(text, /permission|lifecycle|session/i)
+})
+
+test('passes backend-provided error content through for realtime interpretation', () => {
+  const backendResult = JSON.stringify({
+    code: 'Provider.InternalError',
+    message: 'backend supplied detail',
+  })
+  const text = formatWorkResults([{
+    event: 'task.completed',
+    taskId: 'task_2',
+    objective: '执行后台任务',
+    status: 'completed',
+    result: backendResult,
+  }])
+
+  assert.match(text, /^以下是你先前异步执行工作的最终更新/u)
+  assert.match(text, /Provider\.InternalError/)
+  assert.match(text, /backend supplied detail/)
+})
+
+test('waits while duplex speech blocks delivery', async () => {
+  let blocked = true
+  let spoken = 0
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => {
+        spoken += 1
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => blocked,
+    batchWindowMs: 0,
+  })
+  manager.completed({
+    id: 'task_1',
+    objective: '处理',
+    result: '完成',
+  })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(spoken, 0)
+  blocked = false
+  manager.flush()
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(spoken, 1)
+  manager.close()
+})
+
+test('rechecks blocked delivery without requiring a playback edge', async () => {
+  let blocked = true
+  let spoken = 0
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => {
+        spoken += 1
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => blocked,
+    batchWindowMs: 0,
+    retryBaseMs: 2,
+  })
+
+  manager.completed({ id: 'task_1', objective: '处理', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(spoken, 0)
+
+  blocked = false
+  await waitFor(() => spoken === 1)
+  manager.close()
+})
+
+test('batches nearby completed work into one realtime response', async () => {
+  const inputs = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async input => {
+        inputs.push(input)
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 2,
+  })
+  manager.completed({ id: 'one', objective: 'A', result: 'A done' })
+  manager.completed({ id: 'two', objective: 'B', result: 'B done' })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(inputs.length, 1)
+  assert.match(inputs[0], /A done/)
+  assert.match(inputs[0], /B done/)
+  manager.close()
+})
+
+test('delivers due reminders as registered Gateway system events', async () => {
+  const calls = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async (...args) => {
+        calls.push(args)
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    createTurnId: () => 'gateway-reminder-turn',
+  })
+
+  manager.completed({
+    id: 'task-reminder-1',
+    kind: 'reminder',
+    seriesId: 'series-reminder-1',
+    objective: '吃药',
+    result: '吃药',
+    schedule: {
+      at: 1_788_825_600_000,
+      recurrence: 'daily',
+      timeZone: 'Asia/Shanghai',
+    },
+  })
+  await waitFor(() => calls.length === 1)
+
+  assert.match(calls[0][0], /^<gateway_system_event type="reminder\.due">/u)
+  assert.match(calls[0][0], /<content>吃药<\/content>/u)
+  assert.doesNotMatch(calls[0][0], /task-reminder-1|series-reminder-1|异步执行工作/u)
+  assert.equal(calls[0][1], 'gateway-system-event')
+  assert.deepEqual(calls[0][2], {
+    turnId: 'gateway-reminder-turn',
+    taskId: 'task-reminder-1',
+    taskIds: ['task-reminder-1'],
+    seriesId: 'series-reminder-1',
+    eventName: 'reminder.due',
+  })
+  assert.match(calls[0][3].instructions, /已经到期的提醒/u)
+  manager.close()
+})
+
+test('does not mix due reminders and backend results in one delivery', async () => {
+  const calls = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async (...args) => {
+        calls.push(args)
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+  })
+
+  manager.completed({
+    id: 'reminder-first',
+    kind: 'reminder',
+    objective: '站起来活动',
+    result: '站起来活动',
+    schedule: { at: Date.now(), recurrence: 'once' },
+  })
+  manager.completed({
+    id: 'task-second',
+    kind: 'work',
+    objective: '整理报告',
+    result: '报告已整理',
+  })
+  await waitFor(() => calls.length === 1)
+  assert.equal(calls[0][1], 'gateway-system-event')
+  manager.confirmMany(['reminder-first'])
+  await waitFor(() => calls.length === 2)
+  assert.equal(calls[1][1], 'announcement')
+  assert.match(calls[1][0], /报告已整理/u)
+  manager.close()
+})
+
+test('uses a new realtime turn while correlating results only by task id', async () => {
+  const calls = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async (...args) => {
+        calls.push(args)
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    createTurnId: () => 'gateway-result-turn',
+  })
+  manager.completed({
+    id: 'task_1',
+    turnId: 'voice-origin-turn',
+    objective: '处理',
+    result: '完成',
+  })
+  await waitFor(() => calls.length === 1)
+
+  assert.match(calls[0][0], /task_id: task_1/)
+  assert.deepEqual(calls[0][2], {
+    turnId: 'gateway-result-turn',
+    taskId: 'task_1',
+    taskIds: ['task_1'],
+  })
+  manager.close()
+})
+
+test('delivers bounded announcement batches in order and confirms each task once', async () => {
+  const inputs = []
+  const delivered = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async input => {
+        inputs.push(input)
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    maxBatchItems: 1,
+    batchWindowMs: 0,
+    onDelivered: taskIds => delivered.push(...taskIds),
+  })
+
+  manager.completed({ id: 'first', objective: '第一个', result: '结果一' })
+  manager.completed({ id: 'second', objective: '第二个', result: '结果二' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(inputs.length, 1)
+  assert.match(inputs[0], /task_id: first/)
+
+  manager.confirmMany(['first'])
+  manager.confirmMany(['first'])
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(inputs.length, 2)
+  assert.match(inputs[1], /task_id: second/)
+
+  manager.confirmMany(['second'])
+  manager.confirmMany(['second'])
+  assert.deepEqual(delivered, ['first', 'second'])
+  manager.close()
+})
+
+test('does not mark a generated result delivered until playback starts', async () => {
+  const delivered = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => ({ completed: true, contextInjected: true }),
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    onDelivered: taskIds => delivered.push(...taskIds),
+  })
+  manager.completed({ id: 'task_1', objective: '处理', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.deepEqual(delivered, [])
+  manager.confirmMany(['task_1'])
+  assert.deepEqual(delivered, ['task_1'])
+  manager.close()
+})
+
+test('dismisses an active result after user interruption without retrying it', async () => {
+  let attempts = 0
+  const delivered = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => {
+        attempts += 1
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    retryBaseMs: 1,
+    retryMaxMs: 1,
+    acknowledgementTimeoutMs: 5,
+    onDelivered: taskIds => delivered.push(...taskIds),
+  })
+  manager.completed({ id: 'task_1', objective: '播报结果', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 2))
+
+  manager.dismissActive()
+  manager.retryMany(['task_1'])
+  await new Promise(resolve => setTimeout(resolve, 15))
+
+  assert.equal(attempts, 1)
+  assert.deepEqual(delivered, ['task_1'])
+  assert.equal(manager.activeBatch, null)
+  assert.equal(manager.pending.size, 0)
+  manager.close()
+})
+
+test('retries a generated result when playback acknowledgement times out', async () => {
+  let attempts = 0
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => {
+        attempts += 1
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    retryBaseMs: 1,
+    retryMaxMs: 1,
+    acknowledgementTimeoutMs: 5,
+  })
+  manager.completed({ id: 'task_1', objective: '处理', result: '完成' })
+  await waitFor(() => attempts >= 2)
+  assert.ok(attempts >= 2)
+  manager.close()
+})
+
+test('never retries an announcement while its audio is still queued or playing', async () => {
+  let blocked = true
+  let attempts = 0
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => {
+        attempts += 1
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => blocked,
+    batchWindowMs: 0,
+    retryBaseMs: 1,
+    retryMaxMs: 1,
+    acknowledgementTimeoutMs: 5,
+  })
+
+  // Queue while idle, then model the audio entering the client playback queue
+  // before generation completes.
+  blocked = false
+  manager.completed({ id: 'task_1', objective: '讲故事', result: '很长的故事' })
+  await new Promise(resolve => setTimeout(resolve, 2))
+  blocked = true
+  await new Promise(resolve => setTimeout(resolve, 15))
+  assert.equal(attempts, 1)
+
+  manager.confirmMany(['task_1'])
+  blocked = false
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(attempts, 1)
+  manager.close()
+})
+
+test('releases claimed notifications when a voice client is superseded', async () => {
+  const released = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => ({ completed: true, contextInjected: true }),
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    onRelease: taskIds => released.push(...taskIds),
+  })
+  manager.completed({ id: 'task_1', objective: '处理', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+
+  manager.pause()
+
+  assert.deepEqual(released, ['task_1'])
+  assert.equal(manager.activeBatch, null)
+  assert.equal(manager.pending.size, 0)
+  manager.close()
+})
+
+test('delivers work completed during desktop sleep after the client wakes', async () => {
+  const taskManager = new TaskManager()
+  const task = taskManager.create({
+    objective: '生成一份报告',
+    ownerId: 'owner-one',
+    sessionId: 'voice-one',
+    runner: async () => ({ content: '报告已生成' }),
+  })
+  await taskManager.wait(task.id)
+  assert.equal(taskManager.get(task.id).notificationStatus, 'pending')
+
+  const spoken = []
+  const claimantId = 'desktop-client'
+  const announcements = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async input => {
+        spoken.push(input)
+        return { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    onDelivered: taskIds => taskManager.markNotificationsDelivered(taskIds, {
+      claimantId,
+    }),
+    onRelease: taskIds => taskManager.releaseNotificationClaims(taskIds, {
+      claimantId,
+    }),
+  })
+
+  // No voice client claims or speaks the result while the desktop is asleep.
+  assert.equal(spoken.length, 0)
+  const claimed = taskManager.claimNotifications({
+    ownerId: 'owner-one',
+    sessionId: 'voice-one',
+    claimantId,
+  })
+  claimed.forEach(item => announcements.completed(item))
+  await waitFor(() => spoken.length === 1)
+  assert.match(spoken[0], /报告已生成/)
+
+  announcements.confirmMany([task.id])
+  assert.equal(taskManager.get(task.id).notificationStatus, 'delivered')
+  announcements.close()
+})
+
+test('returns an in-flight result to pending when desktop sleep starts', async () => {
+  const taskManager = new TaskManager()
+  const task = taskManager.create({
+    objective: '整理资料',
+    ownerId: 'owner-one',
+    sessionId: 'voice-one',
+    runner: async () => ({ content: '资料已整理' }),
+  })
+  await taskManager.wait(task.id)
+  const claimantId = 'desktop-client'
+  const claimed = taskManager.claimNotifications({
+    ownerId: 'owner-one',
+    sessionId: 'voice-one',
+    claimantId,
+  })
+  const announcements = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async () => ({ completed: true, contextInjected: true }),
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    onRelease: taskIds => taskManager.releaseNotificationClaims(taskIds, {
+      claimantId,
+    }),
+  })
+  claimed.forEach(item => announcements.completed(item))
+  await waitFor(() => announcements.activeBatch !== null)
+
+  announcements.pause()
+
+  assert.equal(taskManager.get(task.id).notificationStatus, 'pending')
+  announcements.close()
+})
+
+test('ignores a late generation completion after the voice client is paused', async () => {
+  let finishGeneration
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: () => new Promise(resolve => {
+        finishGeneration = resolve
+      }),
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+  })
+  manager.completed({ id: 'task_1', objective: '处理', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  manager.pause()
+  finishGeneration({ completed: true, contextInjected: true })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(manager.activeBatch, null)
+  assert.equal(manager.acknowledgementTimer, null)
+  manager.close()
+})
+
+test('a paused delivery cannot disturb the replacement voice client delivery', async () => {
+  const completions = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: () => new Promise(resolve => completions.push(resolve)),
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+  })
+  manager.completed({ id: 'task_1', objective: '第一个', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+  manager.pause()
+  manager.completed({ id: 'task_2', objective: '第二个', result: '完成' })
+  await new Promise(resolve => setTimeout(resolve, 5))
+
+  completions[0]({ completed: true, contextInjected: true })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.delivering, true)
+  assert.deepEqual(manager.activeBatch.taskIds, ['task_2'])
+
+  completions[1]({ completed: true, contextInjected: true })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.activeBatch.responseCompleted, true)
+  manager.close()
+})
+
+test('releases a poison batch after bounded retries so later results can proceed', async () => {
+  const inputs = []
+  const released = []
+  const manager = new AnnouncementManager({
+    getFrontend: () => ({
+      ready: true,
+      injectResult: async input => {
+        inputs.push(input)
+        return input.includes('坏结果')
+          ? { completed: false }
+          : { completed: true, contextInjected: true }
+      },
+    }),
+    isDeliveryBlocked: () => false,
+    batchWindowMs: 0,
+    retryBaseMs: 1,
+    retryMaxMs: 1,
+    maxRetryAttempts: 1,
+    onRelease: taskIds => released.push(...taskIds),
+  })
+  manager.completed({ id: 'poison', objective: '坏任务', result: '坏结果' })
+  await waitFor(() => inputs.some(input => input.includes('坏结果')))
+  manager.completed({ id: 'healthy', objective: '好任务', result: '好结果' })
+  await waitFor(() => (
+    released.includes('poison')
+    && inputs.some(input => input.includes('好结果'))
+  ))
+  manager.confirmMany(['healthy'])
+  manager.close()
+})

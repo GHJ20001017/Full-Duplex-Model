@@ -109,6 +109,10 @@ def response_done(response_id="response_1", status="completed", output=()):
             "https://voice.example/openai/v1/realtime/",
             ("https://voice.example/openai/v1", "wss://voice.example/openai/v1"),
         ),
+        (
+            "ws://127.0.0.1:8765/v1/realtime?token=secret",
+            ("http://127.0.0.1:8765/v1", "ws://127.0.0.1:8765/v1?token=secret"),
+        ),
     ],
 )
 def test_full_realtime_url_is_normalized_for_openai_sdk(url, expected):
@@ -120,7 +124,6 @@ def test_full_realtime_url_is_normalized_for_openai_sdk(url, expected):
     [
         "127.0.0.1:8765/v1/realtime",
         "ws://127.0.0.1:8765/v1",
-        "ws://127.0.0.1:8765/v1/realtime?token=secret",
     ],
 )
 def test_realtime_url_rejects_noncanonical_endpoints(url):
@@ -287,6 +290,88 @@ def test_audio_client_clears_unplayed_audio_on_barge_in(capsys):
     assert playback.buffered_bytes == 0
     assert not playback.is_active()
     capsys.readouterr()
+
+
+@pytest.mark.parametrize("route", ["keyword", "semantic"])
+def test_audio_client_speech_start_respects_interruption_route(route):
+    playback = PlaybackBuffer(16000)
+    playback.append(b"\x01\x02", response_id="old")
+    renderer = _FriendlyEventRenderer()
+
+    handle_server_event(
+        SimpleNamespace(type="input_audio_buffer.speech_started"),
+        playback=playback,
+        renderer=renderer,
+        print_json=False,
+        interruption_route=route,
+    )
+    assert playback.buffered_bytes == (2 if route == "semantic" else 0)
+    playback.append(b"\x03\x04", response_id="old")
+    assert playback.buffered_bytes == (4 if route == "semantic" else 0)
+
+
+@pytest.mark.parametrize("decision", ["yield", "wait"])
+@pytest.mark.parametrize("completed", [False, True])
+def test_audio_client_final_semantic_decision_replaces_queued_audio(decision, completed):
+    playback = PlaybackBuffer(16000)
+    renderer = _FriendlyEventRenderer()
+
+    def handle(event):
+        handle_server_event(
+            event, playback=playback, renderer=renderer, print_json=False, interruption_route="semantic"
+        )
+
+    handle(response_created("old"))
+    playback.append(b"\x01\x02" * 100, response_id="old")
+    if completed:
+        handle(response_done("old"))
+    handle(SimpleNamespace(type="input_audio_buffer.speech_started"))
+    handle(SimpleNamespace(type="conversation.item.input_audio_transcription.delta", delta="replace"))
+    assert playback.buffered_bytes == 200
+    handle(
+        SimpleNamespace(
+            type="conversation.item.input_audio_transcription.completed",
+            transcript="replace this",
+            semantic_decision=decision,
+        )
+    )
+    assert playback.buffered_bytes == 0
+    assert not playback.is_active()
+    callback = bytearray(b"\xff" * 200)
+    playback.write(callback)
+    assert callback == b"\x00" * 200
+    if not completed:
+        playback.append(b"\x01\x02", response_id="old")
+        assert playback.buffered_bytes == 0
+    handle(response_created("replacement"))
+    playback.append(b"\x03\x04", response_id="replacement")
+    playback.write(callback)
+    assert callback[:2] == b"\x03\x04"
+
+
+@pytest.mark.parametrize(
+    "route,decision",
+    [("semantic", "continue"), ("semantic", None), ("keyword", "yield"), ("keyword", "wait")],
+)
+@pytest.mark.parametrize("completed", [False, True])
+def test_audio_client_non_replacing_transcript_preserves_audio(route, decision, completed):
+    playback = PlaybackBuffer(16000)
+    renderer = _FriendlyEventRenderer()
+    playback.append(b"\x01\x02", response_id="old")
+    if completed:
+        playback.finish_response("old", cancelled=False)
+        playback.finish()
+    event = SimpleNamespace(type="conversation.item.input_audio_transcription.completed", transcript="hello")
+    if decision is not None:
+        event.semantic_decision = decision
+    handle_server_event(
+        event, playback=playback, renderer=renderer, print_json=False, interruption_route=route
+    )
+    assert playback.buffered_bytes == 2
+    assert playback.is_active()
+    callback = bytearray(2)
+    playback.write(callback)
+    assert callback == b"\x01\x02"
 
 
 def test_audio_client_discards_late_audio_from_cancelled_response(capsys):

@@ -99,6 +99,7 @@ class VADHandler(BaseHandler[VADIn, VADOut]):
         self.speculative_reopen_ms = speculative_reopen_ms
         self.short_segment_merge_ms = max(0, short_segment_merge_ms)
         self._last_turn_detection: dict | None = None
+        self._semantic_turns = False
         self.smart_turn_analyzer = None
         self.smart_turn_max_wait_ms = smart_turn_max_wait_ms
         self.smart_turn_incomplete_delay_ms = smart_turn_incomplete_delay_ms
@@ -175,6 +176,11 @@ class VADHandler(BaseHandler[VADIn, VADOut]):
 
     def _apply_runtime_turn_detection(self, runtime_config: RuntimeConfig | None = None) -> None:
         """Check RuntimeConfig for turn_detection changes and apply them."""
+        # Semantic decisions consume independent finalized utterances, including
+        # continue/yield turns that never produce a speculative response commit.
+        self._semantic_turns = bool(runtime_config and runtime_config.interruption_route == "semantic")
+        if self._semantic_turns:
+            self._cancel_pending_reopen()
         audio = runtime_config.session.audio if runtime_config else None
         audio_input = audio.input if audio is not None else None
         if not runtime_config or not audio_input or not audio_input.turn_detection:
@@ -247,6 +253,8 @@ class VADHandler(BaseHandler[VADIn, VADOut]):
         return self.min_speech_ms
 
     def _should_reopen_current_turn(self, audio_start_ms: int) -> bool:
+        if getattr(self, "_semantic_turns", False):
+            return False
         if self._current_turn_id is None or self._current_turn_revision is None or self._last_final_audio_ms is None:
             return False
 
@@ -516,6 +524,8 @@ class VADHandler(BaseHandler[VADIn, VADOut]):
 
     def _smart_turn_timing_ms(self, audio: np.ndarray) -> tuple[int, int]:
         """Return the response grace and pre-processing delay for this endpoint."""
+        if getattr(self, "_semantic_turns", False):
+            return 0, 0
         analyzer = getattr(self, "smart_turn_analyzer", None)
         if analyzer is None:
             return self.speculative_reopen_ms, 0
@@ -784,11 +794,12 @@ class VADHandler(BaseHandler[VADIn, VADOut]):
                 # The grace only delays response commits. Resumed speech
                 # follows the existing candidate/revision flow and makes
                 # this revision stale before assistant output is released.
-                self.speculative_turns.start_reopen_grace(
-                    turn_id,
-                    turn_revision,
-                    reopen_grace_ms / 1000.0,
-                )
+                if not self._semantic_turns:
+                    self.speculative_turns.start_reopen_grace(
+                        turn_id,
+                        turn_revision,
+                        reopen_grace_ms / 1000.0,
+                    )
                 final_audio = (
                     output_array
                     if not getattr(self, "streaming_audio_chunks", False)

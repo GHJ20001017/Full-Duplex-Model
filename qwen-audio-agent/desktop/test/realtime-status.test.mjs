@@ -1,0 +1,120 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  gatewayStatusLabel,
+  realtimeConnectionStatus,
+  realtimeModelStatusLabel,
+  realtimeModelRuntimeStatus,
+  realtimeRuntimeLabel,
+  realtimeStatusLabel,
+} from '../src/realtime-status.mjs'
+import * as realtimeStatus from '../src/realtime-status.mjs'
+import {
+  DASHSCOPE_OMNI_PLUS_REALTIME_MODEL,
+  DEFAULT_DASHSCOPE_REALTIME_MODEL,
+  resolveDashScopeRealtimeModelProfile,
+} from '../../shared/realtime-provider-catalog.mjs'
+
+test('uses compact realtime provider labels in the desktop status card', () => {
+  assert.equal(realtimeStatusLabel('dashscope'), 'DashScope')
+  assert.equal(
+    realtimeStatusLabel('speech-to-speech'),
+    'Speech-to-Speech',
+  )
+  assert.equal(realtimeStatusLabel('minicpm-o'), '面壁智能')
+  assert.equal(realtimeStatusLabel('stepfun'), 'StepFun')
+  assert.equal(realtimeStatusLabel('doubao-seeduplex'), 'Doubao Seeduplex')
+  assert.equal(realtimeRuntimeLabel('stepfun', 'stepaudio-3-realtime-preview'), 'StepAudio 3 Preview')
+  assert.equal(realtimeRuntimeLabel('doubao-seeduplex', '1.2.6.1'), 'Doubao Seeduplex 3.0')
+})
+
+test('uses compact gateway and realtime runtime identities', () => {
+  assert.equal(
+    gatewayStatusLabel('http://127.0.0.1:3101/health'),
+    '127.0.0.1:3101',
+  )
+  assert.equal(
+    realtimeRuntimeLabel('dashscope', 'qwen-audio-3.0-realtime-plus'),
+    'Qwen Audio 3.0 Plus',
+  )
+  assert.equal(
+    realtimeRuntimeLabel('speech-to-speech', ''),
+    'Speech-to-Speech',
+  )
+  assert.equal(
+    realtimeRuntimeLabel('minicpm-o', 'openbmb/MiniCPM-o-4_5'),
+    'MiniCPM-o 4.5',
+  )
+})
+
+test('uses consistent product and version labels for known realtime models', () => {
+  assert.equal(
+    realtimeModelStatusLabel('qwen-audio-3.0-realtime-plus'),
+    'Qwen Audio 3.0 Plus',
+  )
+  assert.equal(
+    realtimeModelStatusLabel('qwen-audio-3.0-realtime-flash'),
+    'Qwen Audio 3.0 Flash',
+  )
+  assert.equal(realtimeModelStatusLabel('custom-model'), 'custom-model')
+})
+
+test('uses the shared profile label and reports runtime model mismatch', () => {
+  assert.equal(
+    realtimeModelStatusLabel(DASHSCOPE_OMNI_PLUS_REALTIME_MODEL),
+    'Qwen3.5 Omni Plus',
+  )
+  assert.deepEqual(realtimeModelRuntimeStatus({
+    realtimeModel: DASHSCOPE_OMNI_PLUS_REALTIME_MODEL,
+    realtimeModelProfile: { id: DASHSCOPE_OMNI_PLUS_REALTIME_MODEL },
+  }, 'qwen-audio-3.0-realtime-plus'), {
+    label: 'Qwen3.5 Omni Plus',
+    mismatch: true,
+  })
+})
+
+test('renders no DashScope model for missing metadata or local providers', () => {
+  assert.deepEqual(realtimeModelRuntimeStatus({}, DEFAULT_DASHSCOPE_REALTIME_MODEL), {
+    label: '',
+    mismatch: false,
+  })
+  assert.deepEqual(realtimeModelRuntimeStatus({
+    realtimeProvider: 'speech-to-speech',
+    realtimeModel: DEFAULT_DASHSCOPE_REALTIME_MODEL,
+  }, DEFAULT_DASHSCOPE_REALTIME_MODEL), {
+    label: '',
+    mismatch: false,
+  })
+  assert.deepEqual(realtimeModelRuntimeStatus({
+    realtimeProvider: 'minicpm-o',
+    realtimeModel: 'openbmb/MiniCPM-o-4_5',
+  }, DEFAULT_DASHSCOPE_REALTIME_MODEL), {
+    label: '',
+    mismatch: false,
+  })
+})
+
+test('derives truthful model and Desktop transport hints per profile', () => {
+  assert.equal(typeof realtimeStatus.realtimeModelPresentation, 'function')
+
+  assert.deepEqual(realtimeStatus.realtimeModelPresentation(
+    resolveDashScopeRealtimeModelProfile(DASHSCOPE_OMNI_PLUS_REALTIME_MODEL),
+  ), {
+    optionHint: '模型：文字 / 语音 / 图片 / 视频',
+    selectedHint: '模型能力：文字 / 语音 / 图片 / 视频 · Desktop 传输：文字 / 语音（图片 / 视频未启用）',
+  })
+  assert.deepEqual(realtimeStatus.realtimeModelPresentation(
+    resolveDashScopeRealtimeModelProfile(DEFAULT_DASHSCOPE_REALTIME_MODEL),
+  ), {
+    optionHint: '模型：文字 / 语音',
+    selectedHint: '模型能力：文字 / 语音 · Desktop 传输：文字 / 语音（图片 / 视频未启用）',
+  })
+})
+
+test('keeps a fatal realtime failure distinct from Gateway connectivity', () => {
+  assert.equal(realtimeConnectionStatus(), 'configured')
+  assert.equal(realtimeConnectionStatus({ connecting: 1 }), 'connecting')
+  assert.equal(realtimeConnectionStatus({ connected: 1 }), 'connected')
+  assert.equal(realtimeConnectionStatus({ unavailable: 1 }), 'unavailable')
+  assert.equal(realtimeConnectionStatus({ disconnected: 1 }), 'disconnected')
+})

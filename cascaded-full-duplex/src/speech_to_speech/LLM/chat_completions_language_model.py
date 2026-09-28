@@ -136,12 +136,27 @@ def _to_chat_content_part(
     return cast("ChatCompletionContentPartParam", part)
 
 
+def _delta_reasoning(delta: Any) -> str:
+    """Extract a streaming ``reasoning_content`` fragment from a choice delta.
+
+    Thinking-mode servers stream it either as ``delta.reasoning_content`` or, on
+    some builds, ``delta.reasoning``. Any other shape yields no text.
+    """
+    for attr in ("reasoning_content", "reasoning"):
+        value = getattr(delta, attr, None)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 def _chat_messages(
     chat: Chat,
     audio_content_type: str = "input_audio",
 ) -> list[dict[str, Any]]:
     """Serialise chat history, including media and tool messages, for Chat Completions."""
-    messages = chat.to_transformers_chat()
+    # Chat Completions is the one backend whose upstream may be a thinking-mode
+    # server that requires prior assistant turns to echo their reasoning_content.
+    messages = chat.to_transformers_chat(include_reasoning=True)
     for message in messages:
         for tool_call in message.get("tool_calls") or []:
             fn = tool_call.get("function")
@@ -200,18 +215,36 @@ def _tool_calls_from_accum(tool_accum: dict[int, dict[str, str]]) -> Iterator[To
 
 
 def _iter_chat_stream_events(api_response: Stream[ChatCompletionChunk]) -> Iterator[ProviderEvent]:
-    """Normalize a streaming Chat Completions response."""
+    """Normalize a streaming Chat Completions response.
+
+    ``reasoning_content`` is a non-standard OpenAI extension emitted by
+    thinking-mode servers (DeepSeek-V4-family and compatible). It is not spoken
+    or shown; it rides along on the assistant/tool-call message so it can be
+    echoed back verbatim on the next request.
+    """
     tool_accum: dict[int, dict[str, str]] = {}
     usage: Usage | None = None
     text_segment = ""
+    reasoning_segment = ""
 
     def flush_tools() -> Iterator[ProviderEvent]:
-        nonlocal text_segment
+        nonlocal text_segment, reasoning_segment
+        # The pre-call text and the call are serialized as two separate assistant
+        # messages, but they are one assistant turn. Thinking-mode servers
+        # (DeepSeek-V4 family and compatible) require ``reasoning_content`` on
+        # *every* assistant message of a tool-calling turn, so the pre-call text
+        # message carries it too -- omitting it yields exactly the 400
+        # "reasoning_content ... must be passed back" error.
         if text_segment:
-            yield AssistantMessage(content=[AssistantContent(type="output_text", text=text_segment)])
+            yield AssistantMessage(
+                content=[AssistantContent(type="output_text", text=text_segment)],
+                reasoning_content=reasoning_segment,
+            )
             text_segment = ""
-        yield from _tool_calls_from_accum(tool_accum)
+        for call in _tool_calls_from_accum(tool_accum):
+            yield ToolCall(item=call.item, reasoning_content=reasoning_segment)
         tool_accum.clear()
+        reasoning_segment = ""
 
     def accumulate_tools(tool_calls: Any) -> None:
         for tool_call in tool_calls or []:
@@ -233,6 +266,9 @@ def _iter_chat_stream_events(api_response: Stream[ChatCompletionChunk]) -> Itera
         if not chunk.choices:
             continue
         delta = chunk.choices[0].delta
+        reasoning_piece = _delta_reasoning(delta)
+        if reasoning_piece:
+            reasoning_segment += reasoning_piece
         text_piece = delta.content or getattr(delta, "refusal", None)
         continuing_tool = bool(tool_accum)
         if continuing_tool:
@@ -248,7 +284,10 @@ def _iter_chat_stream_events(api_response: Stream[ChatCompletionChunk]) -> Itera
     if tool_accum:
         yield from flush_tools()
     if text_segment:
-        yield AssistantMessage(content=[AssistantContent(type="output_text", text=text_segment)])
+        yield AssistantMessage(
+            content=[AssistantContent(type="output_text", text=text_segment)],
+            reasoning_content=reasoning_segment,
+        )
     if usage is not None:
         yield usage
 
@@ -261,9 +300,18 @@ def _iter_chat_response_events(api_response: Any) -> Iterator[ProviderEvent]:
     message = api_response.choices[0].message if api_response.choices else None
     if message is None:
         return
+    reasoning = getattr(message, "reasoning_content", None) or ""
+    if not isinstance(reasoning, str):
+        reasoning = ""
     raw_content = message.content or getattr(message, "refusal", None)
     if raw_content:
-        yield AssistantMessage(content=[AssistantContent(type="output_text", text=raw_content)])
+        yield AssistantMessage(
+            content=[AssistantContent(type="output_text", text=raw_content)],
+            # Same single assistant turn as any tool calls below (they are
+            # serialized as separate messages), so thinking must ride on this
+            # message too or the upstream rejects the replay.
+            reasoning_content=reasoning,
+        )
         yield TextDelta(text=raw_content)
     tool_accum: dict[int, dict[str, str]] = {}
     for tool_call in message.tool_calls or []:
@@ -272,7 +320,8 @@ def _iter_chat_response_events(api_response: Any) -> Iterator[ProviderEvent]:
             "args": tool_call.function.arguments or "",
             "id": tool_call.id or "",
         }
-    yield from _tool_calls_from_accum(tool_accum)
+    for call in _tool_calls_from_accum(tool_accum):
+        yield ToolCall(item=call.item, reasoning_content=reasoning)
 
 
 class ChatCompletionsApiModelHandler(BaseOpenAICompatibleHandler):

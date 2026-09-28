@@ -117,6 +117,12 @@ def parse_talk_arguments(argv: Sequence[str]) -> RealtimeAudioClientConfig:
     )
     parser.add_argument("--model", default=defaults.model)
     parser.add_argument(
+        "--interruption-route",
+        choices=("keyword", "semantic"),
+        default=defaults.interruption_route,
+        help="Choose keyword or trained semantic interruption routing for this WebSocket session.",
+    )
+    parser.add_argument(
         "--api-key",
         default=defaults.api_key,
         help=(
@@ -213,6 +219,7 @@ def parse_talk_arguments(argv: Sequence[str]) -> RealtimeAudioClientConfig:
     return RealtimeAudioClientConfig(
         url=namespace.url,
         model=namespace.model,
+        interruption_route=namespace.interruption_route,
         api_key=namespace.api_key,
         send_rate=namespace.send_rate,
         recv_rate=namespace.recv_rate,

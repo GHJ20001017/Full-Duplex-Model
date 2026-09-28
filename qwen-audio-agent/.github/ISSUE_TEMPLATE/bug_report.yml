@@ -1,0 +1,56 @@
+name: Bug report
+description: 报告可复现的问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请勿提交 API Key、访问令牌、用户档案、完整对话或其他敏感数据。
+        安全漏洞请使用仓库的私密安全报告功能。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: npm 版本、Git 提交或桌面应用版本
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: 使用界面
+      options:
+        - WebUI
+        - 终端 TUI
+        - macOS 桌面应用
+        - Gateway / CLI
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、Node.js 版本以及使用的 OpenCode/OpenClaw 版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请提供最小、稳定的复现步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为与脱敏日志
+      description: 粘贴前请移除密钥、个人数据、文件内容和内部地址。
+    validations:
+      required: true

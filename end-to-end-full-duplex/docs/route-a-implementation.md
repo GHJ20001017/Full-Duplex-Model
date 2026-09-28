@@ -29,15 +29,21 @@
 
 ---
 
+
+
 ## 第 0 步：准备并冻结 Mimi，不训练编解码器
+
+
 
 ### 0.1 固定模型资产
 
-| 资产 | 用途 | 本路线是否训练 |
-| --- | --- | --- |
-| Qwen3 权重、配置、tokenizer | Temporal Transformer 初始化 | 后续阶段训练/适配 |
-| 已发布 Mimi checkpoint | 24 kHz 音频 ↔ 12.5 Hz、8 路 codec token | 否，全部冻结 |
-| Moshi PyTorch loader 与 delay 工具 | Mimi 加载、流式状态、延迟/反延迟 | 复用并适配 |
+
+| 资产                              | 用途                                  | 本路线是否训练   |
+| ------------------------------- | ----------------------------------- | --------- |
+| Qwen3 权重、配置、tokenizer           | Temporal Transformer 初始化            | 后续阶段训练/适配 |
+| 已发布 Mimi checkpoint             | 24 kHz 音频 ↔ 12.5 Hz、8 路 codec token | 否，全部冻结    |
+| Moshi PyTorch loader 与 delay 工具 | Mimi 加载、流式状态、延迟/反延迟                 | 复用并适配     |
+
 
 当前仓库的下载脚本以 ModelScope 为入口，模型来源和实际文件名以 `scripts/download_models.py` 为准。训练运行前要保存：模型仓库 revision、文件 SHA、Python/PyTorch/Moshi 版本、Mimi `num_codebooks`、采样率和帧率。
 
@@ -51,7 +57,11 @@
 
 ---
 
+
+
 ## 第 1 步：按 Moshi 结构搭建 Qwen3-Moshi
+
+
 
 ### 1.1 训练时的三类流
 
@@ -85,6 +95,8 @@ Qwen3 Temporal Transformer（跨时间因果建模）
 - 文本与音频的时间戳对齐、shift、mask，确保当前目标 token 不泄漏到 Temporal 输入；
 - 用户流、助手流、文本流的 reset；一次会话结束时同时清空 codec state、KV cache 和播放队列。
 
+
+
 ### 1.3 初始化方式
 
 - Temporal Transformer：加载 Qwen3 预训练权重。若 Qwen3 的 attention、RoPE、RMSNorm、SwiGLU 实现与训练框架不兼容，先写显式权重映射和等价性测试，不静默改变结构。
@@ -93,6 +105,8 @@ Qwen3 Temporal Transformer（跨时间因果建模）
 - 文本 embedding 和文本 head：从 Qwen3 初始化，并保留 Qwen3 原词表语义。音频 ID 绝不能直接送进 Qwen3 原词表。
 
 ---
+
+
 
 ## 第 2 步：Moshi pre-training——单流音频预训练
 
@@ -122,16 +136,18 @@ Qwen3 Temporal Transformer（跨时间因果建模）
 
 Moshi 论文的主要训练设置：
 
-| 项目 | Moshi pre-training 参考值 |
-| --- | ---: |
-| 训练步数 | 1,000,000 |
-| audio batch | 约 16 小时 |
-| Temporal 学习率 | `3e-5`，linear warmup + cosine |
-| Depth 学习率 | `2e-4`，linear warmup + cosine |
-| 文本/音频混合 | audio 与纯文本各约 50% |
-| 文本 embedding/head 学习率 | audio batch 中乘 `0.75` |
-| 优化器 | AdamW，weight decay `0.1`，betas 约 `(0.9, 0.95)` |
-| 训练技术 | H100、FSDP、activation checkpointing |
+
+| 项目                    | Moshi pre-training 参考值                         |
+| --------------------- | ---------------------------------------------- |
+| 训练步数                  | 1,000,000                                      |
+| audio batch           | 约 16 小时                                        |
+| Temporal 学习率          | `3e-5`，linear warmup + cosine                  |
+| Depth 学习率             | `2e-4`，linear warmup + cosine                  |
+| 文本/音频混合               | audio 与纯文本各约 50%                               |
+| 文本 embedding/head 学习率 | audio batch 中乘 `0.75`                          |
+| 优化器                   | AdamW，weight decay `0.1`，betas 约 `(0.9, 0.95)` |
+| 训练技术                  | H100、FSDP、activation checkpointing             |
+
 
 纯文本 batch 使用独立 optimizer state，使文本 batch 和音频 batch 的更新尺度平衡。不能简单把两个 loss 相加后共用一套不受控制的 optimizer state。
 
@@ -156,7 +172,11 @@ L = 1/S · Σ_s [ CE(text_s)
 
 ---
 
+
+
 ## 第 3 步：Moshi post-training——从单流变成模拟双流
+
+
 
 ### 3.1 构造模拟双流
 
@@ -173,20 +193,26 @@ L = 1/S · Σ_s [ CE(text_s)
 
 ### 3.2 参考训练设置
 
-| 项目 | Moshi post-training 参考值 |
-| --- | ---: |
-| 训练步数 | 100,000 |
-| audio batch | 约 8 小时 |
-| Temporal 学习率 | `3e-6` |
-| Depth 学习率 | `5e-5` |
-| 纯文本 batch | 约 10% |
+
+| 项目               | Moshi post-training 参考值 |
+| ---------------- | ----------------------- |
+| 训练步数             | 100,000                 |
+| audio batch      | 约 8 小时                  |
+| Temporal 学习率     | `3e-6`                  |
+| Depth 学习率        | `5e-5`                  |
+| 纯文本 batch        | 约 10%                   |
 | text/audio delay | 固定 0；acoustic delay 1 帧 |
+
 
 从第 2 步 checkpoint 继续训练，不重新初始化 Qwen3、Depth 或音频头。每轮验证同时做：主说话人语音生成、用户流变化响应、静音期间的正常继续生成、两流重叠时的输出稳定性。
 
 ---
 
+
+
 ## 第 4 步：Fisher fine-tuning——真实双流会话
+
+
 
 ### 4.1 数据格式
 
@@ -219,7 +245,11 @@ speaker_assignment_seed
 
 ---
 
+
+
 ## 第 5 步：Instruction fine-tuning——固定助手声音和行为
+
+
 
 ### 5.1 先训练辅助 streaming multi-stream TTS
 
@@ -251,13 +281,15 @@ speaker_assignment_seed
 
 从 Fisher checkpoint 继续训练：
 
-| 项目 | Moshi instruction fine-tuning 参考值 |
-| --- | ---: |
-| 训练步数 | 30,000 |
-| audio batch | 约 2.7 小时 |
-| Temporal 学习率 | `2e-6` |
-| Depth 学习率 | `2e-6` |
-| acoustic delay | 1 帧 |
+
+| 项目             | Moshi instruction fine-tuning 参考值 |
+| -------------- | --------------------------------- |
+| 训练步数           | 30,000                            |
+| audio batch    | 约 2.7 小时                          |
+| Temporal 学习率   | `2e-6`                            |
+| Depth 学习率      | `2e-6`                            |
+| acoustic delay | 1 帧                               |
+
 
 训练中对 user stream 做与 Moshi 对齐的鲁棒性增强：
 
@@ -270,6 +302,8 @@ speaker_assignment_seed
 助手声音的一致性来自 instruction 阶段固定 speaker 条件，而不是推理时接一个 voice-cloning/TTS 模块。
 
 ---
+
+
 
 ## 第 6 步：训练过程中的统一验证
 
@@ -293,6 +327,8 @@ speaker_assignment_seed
 - 只报告总 loss，不报告文本、语义码本和 acoustic codebook 的分项 loss。
 
 ---
+
+
 
 ## 第 7 步：流式推理闭环
 
@@ -320,6 +356,8 @@ speaker_assignment_seed
 - 测试用户打断时，助手能停止/调整而不是由 VAD 直接替模型做决定。
 
 ---
+
+
 
 ## 本项目的实际落地顺序
 

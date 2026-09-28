@@ -1,0 +1,13 @@
+{
+  "name": "@qwen-audio-agent/cli",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "bin": {
+    "qwenaudio": "./bin/qwenaudio.mjs"
+  },
+  "scripts": {
+    "start": "node bin/qwenaudio.mjs",
+    "test": "node --test"
+  }
+}

@@ -279,6 +279,7 @@ class ResponseHandler(RealtimeBaseHandler):
         st.current_response_params = event.response
         st.current_response_id = _generate_id("resp")
         st.current_response_key = request.response_key
+        st.assistant_text = ""
         st.response_created_pending_key = request.response_key
         self._start_item(conn_id)
         logger.debug("Standard response.create claimed internal tool follow-up prefetch")
@@ -605,6 +606,7 @@ class ResponseHandler(RealtimeBaseHandler):
         st.current_response_params = event.response
         st.current_response_id = _generate_id("resp")
         st.current_response_key = request.response_key
+        st.assistant_text = ""
         st.response_created_pending_key = request.response_key
         self._start_item(conn_id)
 

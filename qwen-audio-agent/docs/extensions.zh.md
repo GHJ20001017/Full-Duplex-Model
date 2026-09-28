@@ -1,0 +1,73 @@
+# 扩展 qwen-audio-agent
+
+本节面向开发者：通过已有扩展接口接入不同客户端、语音服务、后台 Agent 或知识系统。
+只想配置现成能力时，先看[配置总览](configuration.zh.md)与[快速开始](getting-started/quickstart.zh.md)。
+
+核心逻辑组件是前台 Agent、编排运行时和后台 Agent；Gateway 将运行时能力作为服务提供，客户端负责 I/O 与环境交互。扩展时分别使用模型 Provider、工具、BackendPort 或客户端协议，不把业务逻辑写进传输层。详见[架构总览](architecture/overview.zh.md)。
+
+## 前台工具：MCP、OpenAPI、Profile
+
+不碰语音链路即可给对话加工具：通过前台 MCP 客户端接入 MCP 服务、从
+OpenAPI 3.x 文档暴露选定的 REST 操作，或把人设与工具配置打包成版本化的
+前台 Profile。
+
+→ [前台 MCP 客户端](reference/frontend-mcp.zh.md) ·
+[前台 OpenAPI 适配器](reference/frontend-openapi.zh.md) ·
+[前台 Profile](reference/frontend-profile.zh.md)
+
+## 语音前台：自定义 Realtime Provider
+
+把实时语音模型换成其他云服务或自有栈：实现 Provider 契约并注册进
+Provider 注册表。
+
+→ [自定义 Provider](voice-frontends/custom-provider.zh.md)
+
+## 知识：检索 Provider
+
+运行时通过简洁的 Provider 接口接入知识模块。可以直接使用内置基础资料库，也可以接入你已经在运营的
+知识系统。
+
+→ [知识检索 Provider](reference/knowledge.zh.md)
+
+[LightRAG 接入示例](scenarios/lightrag.zh.md)展示了如何连接用户独立部署的完整知识库，
+同时让模型配置、索引和数据继续由 LightRAG 自己管理。
+
+## 后台：接入新 Agent
+
+四条路径把后台接到协议中立的 `BackendPort` 之后：零代码的通用 ACP
+入口、远程 A2A 智能体、用 Backend Adapter SDK 编写的自定义适配器，
+或带一键安装的一等公民后台。
+
+→ [接入新后台](backends/extend.zh.md) ·
+[Backend Adapter SDK](reference/backend-adapter-sdk.zh.md) ·
+[A2A Backend Adapter](reference/a2a-backend-adapter.zh.md)
+
+## 人设与记忆
+
+助手的默认名称、人格与表达风格在 `ASSISTANT.md` 里；输出音色由语音配置决定。默认 Markdown Provider 用
+`USER.md` / `MEMORY.md` 保存用户偏好与长期事实；也可以配置可选 VoiceMem 连接器，
+或替换 Provider 接入其他记忆引擎，不需要改动语音运行时。
+
+→ [助手画像与用户偏好](reference/personalization.zh.md) ·
+[Memory Provider](reference/memory-provider.zh.md)
+
+VoiceMem 安装与配置示例：
+[`examples/voicemem`](https://github.com/QwenAudio/qwen-audio-agent/tree/main/examples/voicemem)。
+
+## 客户端：自己构建
+
+网关在单条 WebSocket 上讲类型化事件。按客户端协议构建自定义客户端，
+或通过稳定性契约把助手嵌入宿主页面——桌面悬浮球、TUI、WebUI 用的都是
+同一条通道。
+
+[AI Passport 示例](scenarios/ai-passport.zh.md)展示了千问语音豆通过局域网转发器
+接入 Gateway 的方式；当前仅开放半双工，固件和音频驱动在外部项目维护。
+
+→ [Gateway 客户端协议](gateway-protocol.zh.md) ·
+[稳定性契约](contract.zh.md)
+
+## 桌面外观
+
+桌面悬浮球渲染可替换的宠物皮肤：一个 `pet.json` 清单加一张精灵图。
+
+→ [宠物皮肤规范](desktop/pet-skin-spec.zh.md)

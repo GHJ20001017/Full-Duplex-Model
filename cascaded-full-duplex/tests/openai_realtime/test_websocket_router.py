@@ -11,13 +11,16 @@ import base64
 import time
 from queue import Empty, Queue
 from threading import Event as ThreadingEvent
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
 from starlette.testclient import TestClient
 
 import speech_to_speech.api.openai_realtime.websocket_router as router_module
-from speech_to_speech.api.openai_realtime.pipeline_unit import PipelineUnit
+from speech_to_speech.api.openai_realtime.pipeline_unit import PipelineUnit, SessionState
+from speech_to_speech.api.openai_realtime.semantic_turn_router import SemanticTurnDecision
 from speech_to_speech.api.openai_realtime.service import CHUNK_SIZE_BYTES, RealtimeService
 from speech_to_speech.api.openai_realtime.websocket_router import create_app
 from speech_to_speech.pipeline.cancel_scope import CancelScope
@@ -27,11 +30,13 @@ from speech_to_speech.pipeline.events import (
     AssistantResponseDoneEvent,
     AssistantToolCallReadyEvent,
     AudioInputCompletedEvent,
+    PartialTranscriptionEvent,
     PipelineEvent,
     ResponseFailedEvent,
     ResponseGenerationDoneEvent,
     SpeechStartedEvent,
     TokenUsageEvent,
+    TranscriptionCompletedEvent,
     TranscriptionFailedEvent,
 )
 from speech_to_speech.pipeline.messages import (
@@ -40,8 +45,10 @@ from speech_to_speech.pipeline.messages import (
     AssistantTextPart,
     AssistantToolCallPart,
     AudioOutput,
+    EndOfResponse,
     GenerateResponseRequest,
     ResponsePrefetchTransaction,
+    TTSInput,
 )
 
 # ---------------------------------------------------------------------------
@@ -1458,3 +1465,164 @@ class TestPool:
             data = client.get("/v1/usage").json()
             assert data["errors_by_type"] == {"foo": 2, "bar": 1}
             assert data["total_errors"] == 3
+
+
+class TestSemanticFinalOutput:
+    @pytest.mark.parametrize("active", [False, True])
+    def test_silent_assistant_routes_later_final_through_semantic(self, active):
+        unit = _make_unit(0)
+        service = unit.service
+        decide = Mock(return_value=SemanticTurnDecision.YIELD)
+        service.semantic_turn_router = SimpleNamespace(decide=decide)
+        app = create_app(pool=[unit], stop_event=ThreadingEvent())
+        with TestClient(app) as client:
+            with client.websocket_connect("/v1/realtime?interruption_route=semantic") as ws:
+                ws.receive_json()
+                conn_id = unit.session.session_id
+                st = service._state(conn_id)
+                st.first_semantic_utterance_received = True
+                if active:
+                    service.response._ensure_response(conn_id, "active")
+                assert not unit.response_playing.is_set()
+                unit.text_output_queue.put(TranscriptionCompletedEvent(transcript="新的问题"))
+                if active:
+                    done = ws.receive_json()
+                    assert done["type"] == "response.done"
+                    assert done["response"]["status"] == "cancelled"
+                event = ws.receive_json()
+                assert event["type"] == "conversation.item.input_audio_transcription.completed"
+                assert event["semantic_decision"] == SemanticTurnDecision.YIELD.value
+                request = unit.text_prompt_queue.get(timeout=2)
+                assert isinstance(request, GenerateResponseRequest)
+                assert request.response is None
+                assert request.turn_id is None and request.turn_revision is None
+                assert st.pending_response_keys == {request.response_key}
+                assert st.runtime_config.chat.buffer[-1].content[0].text == "新的问题"
+                assert unit.text_prompt_queue.empty()
+                decide.assert_called_once_with(assistant_text="", user_asr="新的问题")
+                assert unit.cancel_scope.discarding
+                assert not st.in_response
+                assert not unit.response_playing.is_set()
+
+    @pytest.mark.parametrize("decision", list(SemanticTurnDecision))
+    def test_only_final_wait_or_yield_cancels_output(self, monkeypatch, decision):
+        unit = _make_unit(0)
+        service = unit.service
+        decide = Mock(return_value=decision)
+        service.semantic_turn_router = SimpleNamespace(decide=decide)
+        app = create_app(pool=[unit], stop_event=ThreadingEvent())
+        with TestClient(app) as client:
+            with client.websocket_connect("/v1/realtime?interruption_route=semantic") as ws:
+                ws.receive_json()
+                session = unit.session
+                conn_id = session.session_id
+                st = service._state(conn_id)
+                st.first_semantic_utterance_received = True
+                service.response._ensure_response(conn_id, "active")
+                unit.response_playing.set()
+                discard = Mock()
+                monkeypatch.setattr(session.transport, "discard_pending_audio", discard)
+                final_done = ThreadingEvent()
+                final_errors = []
+                original_dispatch = service.dispatch_pipeline_event
+
+                def capture_dispatch(*args, **kwargs):
+                    try:
+                        return original_dispatch(*args, **kwargs)
+                    except Exception as exc:
+                        final_errors.append(exc)
+                        raise
+                    finally:
+                        if isinstance(args[1], TranscriptionCompletedEvent):
+                            final_done.set()
+
+                dispatch = Mock(side_effect=capture_dispatch)
+                monkeypatch.setattr(service, "dispatch_pipeline_event", dispatch)
+                unit.text_output_queue.put(SpeechStartedEvent())
+                assert ws.receive_json()["type"] == "input_audio_buffer.speech_started"
+                partial = PartialTranscriptionEvent(delta="new input")
+                unit.text_output_queue.put(partial)
+                deadline = time.monotonic() + 2.0
+                while not any(call.args[1] is partial for call in dispatch.call_args_list):
+                    assert time.monotonic() < deadline, "partial transcript was not dispatched"
+                    time.sleep(0.01)
+                assert not unit.cancel_scope.discarding
+                assert unit.response_playing.is_set()
+                discard.assert_not_called()
+                decide.assert_not_called()
+                assert all("cancel_output" not in call.kwargs for call in dispatch.call_args_list)
+
+                stale = GenerateResponseRequest(runtime_config=st.runtime_config)
+                unit.text_prompt_queue.put(stale)
+                st.mark_response_pending(stale.response_key)
+                unit.text_output_queue.put(TranscriptionCompletedEvent(transcript="new input"))
+                assert final_done.wait(2.0), "final transcript was not dispatched"
+                assert not final_errors
+                final_call = next(
+                    call for call in dispatch.call_args_list
+                    if isinstance(call.args[1], TranscriptionCompletedEvent)
+                )
+                assert callable(final_call.kwargs["cancel_output"])
+                if decision is SemanticTurnDecision.CONTINUE:
+                    discard.assert_not_called()
+                    assert not unit.cancel_scope.discarding
+                    assert unit.text_prompt_queue.get_nowait() is stale
+                    assert unit.response_playing.is_set()
+                else:
+                    discard.assert_called_once()
+                    assert unit.cancel_scope.discarding
+                    assert not unit.response_playing.is_set()
+                    assert stale.response_key in st.closed_response_keys
+                    replacement = unit.text_prompt_queue.get_nowait()
+                    assert replacement is not stale
+                    assert replacement.turn_id is None
+                    assert replacement.response_key not in st.closed_response_keys
+                    assert st.response_pending
+                    if decision is SemanticTurnDecision.WAIT:
+                        assert replacement.response is not None
+                    else:
+                        assert replacement.response is None
+                    assert unit.text_prompt_queue.empty()
+
+    def test_cancel_flushes_generation_but_preserves_input_usage_and_sentinels(self):
+        unit = _make_unit(0)
+        conn_id = unit.service.register()
+        session = SessionState(session_id=conn_id)
+        unit.session = session
+        unit.tts_input_queue = Queue()
+        cfg = unit.service._state(conn_id).runtime_config
+        stale = GenerateResponseRequest(runtime_config=cfg)
+        unit.service._state(conn_id).mark_response_pending(stale.response_key)
+        unit.text_prompt_queue.put(stale)
+        unit.text_prompt_queue.put(SESSION_END)
+        unit.input_queue.put(b"unprocessed input")
+        usage = TokenUsageEvent(input_tokens=3, output_tokens=4, response_key=stale.response_key)
+        final = TranscriptionCompletedEvent(transcript="preserve me")
+        done = EndOfResponse(response_key=stale.response_key)
+        unit.tts_input_queue.put(TTSInput(text="obsolete"))
+        unit.tts_input_queue.put(done)
+        unit.tts_input_queue.put(SESSION_END)
+        unit.output_queue.put(b"obsolete audio")
+        unit.output_queue.put(AUDIO_RESPONSE_DONE)
+        unit.output_queue.put(PIPELINE_END)
+        unit.output_queue.put(SESSION_END)
+        session.pending_output_item = usage
+        session.pending_text_output_items = [AssistantOutputEvent(text="obsolete"), final]
+        unit.text_output_queue.put(AssistantOutputEvent(text="obsolete"))
+        unit.text_output_queue.put(usage)
+        unit.response_playing.set()
+
+        router_module._cancel_semantic_output(unit, session, conn_id)
+
+        assert unit.cancel_scope.discarding
+        assert not unit.response_playing.is_set()
+        assert session.pending_output_item is None
+        assert not session.pending_text_output_items
+        assert list(unit.input_queue.queue) == [b"unprocessed input"]
+        assert list(unit.text_prompt_queue.queue) == [SESSION_END]
+        assert list(unit.tts_input_queue.queue) == [done.model_copy(update={"cancel_generation": 0}), SESSION_END]
+        assert list(unit.output_queue.queue) == [
+            usage, AudioOutput(audio=AUDIO_RESPONSE_DONE, cancel_generation=0), PIPELINE_END, SESSION_END
+        ]
+        assert list(unit.text_output_queue.queue) == [final, usage]
+        assert stale.response_key in unit.service._state(conn_id).closed_response_keys

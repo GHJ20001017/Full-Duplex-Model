@@ -45,6 +45,13 @@ logger = logging.getLogger(__name__)
 
 AUDIO_INPUT_HISTORY_PLACEHOLDER = "[User audio input]"
 
+# Upstream thinking-mode servers (DeepSeek-V4-family and compatible) return the
+# model's chain of thought as ``reasoning_content`` and reject a multi-turn
+# request unless each prior assistant/tool-call turn echoes it back verbatim.
+# The SDK item models allow extra fields, so the text rides on the buffered item
+# itself and is serialized only when the backend that produced it asks for it.
+REASONING_CONTENT_KEY = "reasoning_content"
+
 # Anchor returned by :meth:`Chat.history_anchor_id` for an empty conversation,
 # so a generation that starts from empty history is still written before user
 # messages that arrive while it runs.
@@ -637,6 +644,12 @@ class Chat:
                 normalized.extend(outputs_by_call_id.get(item.call_id, []))
         return normalized
 
+    @staticmethod
+    def _reasoning_of(item: SupportedItem) -> str | None:
+        """Return the ``reasoning_content`` a provider attached to *item*, if any."""
+        value = getattr(item, REASONING_CONTENT_KEY, None)
+        return value if isinstance(value, str) and value else None
+
     def to_responses_api_chat(self, items: list[SupportedItem] | None = None) -> ResponseInputParam:
         """Serialize the chat (system prompt + buffer) for the OpenAI Responses API.
 
@@ -725,15 +738,27 @@ class Chat:
                 result.append(function_call_output)
         return result
 
-    def to_transformers_chat(self) -> list[dict[str, Any]]:
+    def to_transformers_chat(self, *, include_reasoning: bool = False) -> list[dict[str, Any]]:
         """Serialize the full chat for HuggingFace transformers ``apply_chat_template``.
 
         User messages with only text produce a plain string ``content`` value.
         User messages containing images keep ``content`` as a list of dicts so
         VLM pipelines can process them.
+
+        ``include_reasoning`` adds the provider's ``reasoning_content`` to each
+        assistant/tool-call turn that carries it. It is off by default because
+        local HF chat templates reject the unknown key; only the Chat Completions
+        backend (whose upstream may require the echo) turns it on.
         """
         with self._lock:
             messages: list[TransformersChatMessage] = []
+            # Provider reasoning for assistant-role messages, aligned by the order
+            # in which those messages were appended (tool messages are skipped).
+            reasoning_by_assistant_index: list[str | None] = []
+
+            def note_reasoning(item: SupportedItem) -> None:
+                reasoning_by_assistant_index.append(Chat._reasoning_of(item))
+
             if self.init_chat_message:
                 text = " ".join(p.text for p in self.init_chat_message.content if p.text)
                 messages.append(TransformersSystemMessage(content=text))
@@ -750,6 +775,7 @@ class Chat:
                 elif isinstance(item, RealtimeConversationItemAssistantMessage):
                     text = " ".join(p.text for p in item.content if p.text)
                     messages.append(TransformersAssistantMessage(content=text))
+                    note_reasoning(item)
                 elif isinstance(item, RealtimeConversationItemFunctionCall):
                     if item.call_id in self._pending_tool_calls:
                         continue
@@ -769,6 +795,7 @@ class Chat:
                             ]
                         )
                     )
+                    note_reasoning(item)
                 elif isinstance(item, RealtimeConversationItemFunctionCallOutput):
                     name = ""
                     for prev in reversed(messages):
@@ -786,7 +813,14 @@ class Chat:
                             content=item.output,
                         )
                     )
-            return [m.model_dump() for m in messages]
+            serialized = [m.model_dump() for m in messages]
+            if include_reasoning:
+                assistant_messages = [m for m in serialized if m.get("role") == "assistant"]
+                for message, reasoning in zip(assistant_messages, reasoning_by_assistant_index):
+                    if reasoning:
+                        message[REASONING_CONTENT_KEY] = reasoning
+            return serialized
+
 
     def copy(self, *, deep: bool = False) -> Chat:
         """Return a snapshot safe for concurrent read access."""

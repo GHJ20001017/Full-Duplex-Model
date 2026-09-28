@@ -1,0 +1,201 @@
+#!/bin/sh
+set -eu
+
+QWEN_AUDIO_AGENT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$QWEN_AUDIO_AGENT_ROOT"
+
+node <<'NODE'
+const { readFileSync } = require('node:fs')
+const { execFileSync } = require('node:child_process')
+
+const rootManifest = JSON.parse(readFileSync('package.json', 'utf8'))
+const expected = rootManifest.version
+if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(expected)) {
+  throw new Error(`package.json has invalid release version ${expected}`)
+}
+const manifests = [
+  'package.json',
+  'server/package.json',
+  'web/package.json',
+  'tui/package.json',
+  'desktop/package.json',
+  'cli/package.json',
+  'mobile/package.json',
+]
+
+for (const file of manifests) {
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  if (manifest.version !== expected) {
+    throw new Error(`${file} has version ${manifest.version}; expected ${expected}`)
+  }
+}
+for (const file of ['README.md', 'README_ZH.md']) {
+  const npmBadge = `img.shields.io/npm/v/${rootManifest.name}`
+  if (!readFileSync(file, 'utf8').includes(
+    npmBadge,
+  )) {
+    throw new Error(`${file} does not use the dynamic npm package badge`)
+  }
+}
+
+const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+if (lock.version !== expected || lock.packages?.['']?.version !== expected) {
+  throw new Error('package-lock.json does not match the release version')
+}
+for (const workspace of [
+  'server',
+  'web',
+  'tui',
+  'desktop',
+  'cli',
+  'mobile',
+]) {
+  if (lock.packages?.[workspace]?.version !== expected) {
+    throw new Error(`package-lock.json has the wrong version for ${workspace}`)
+  }
+}
+
+const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+const publicRepository = 'git+https://github.com/QwenAudio/qwen-audio-agent.git'
+const publicRegistry = 'https://registry.npmjs.org/'
+if (manifest.repository?.url !== publicRepository) {
+  throw new Error('package.json does not point to the public GitHub repository')
+}
+if (manifest.publishConfig?.registry !== publicRegistry) {
+  throw new Error('package.json does not force publishing to the public npm registry')
+}
+if (manifest.publishConfig?.access !== 'public') {
+  throw new Error('package.json is not configured for public npm access')
+}
+if (readFileSync('.npmrc', 'utf8').trim() !== 'registry=https://registry.npmjs.org/') {
+  throw new Error('.npmrc does not select the public npm registry')
+}
+if (manifest.main !== undefined) {
+  throw new Error('CLI package must not expose the Electron process as its main entry')
+}
+if (readFileSync('.nvmrc', 'utf8').trim() !== '22.22.2') {
+  throw new Error('.nvmrc does not match the minimum supported Node release')
+}
+if (!readFileSync('scripts/runtime/opencode.mjs', 'utf8').includes('opencode-ai@1.18.5')) {
+  throw new Error('OpenCode explicit package mode is not pinned')
+}
+if (!readFileSync('scripts/runtime/openclaw.mjs', 'utf8').includes('openclaw@2026.6.33')) {
+  throw new Error('OpenClaw explicit package mode is not pinned')
+}
+if (!readFileSync('scripts/runtime/codex-acp.mjs', 'utf8').includes(
+  '@agentclientprotocol/codex-acp@1.1.7',
+)) {
+  throw new Error('Codex ACP fallback package is not pinned')
+}
+if (!readFileSync('scripts/runtime/claude-code-acp.mjs', 'utf8').includes(
+  '@zed-industries/claude-code-acp@0.16.2',
+)) {
+  throw new Error('Claude Code ACP fallback package is not pinned')
+}
+if (!readFileSync('scripts/runtime/pi-acp.mjs', 'utf8').includes(
+  'pi-acp@0.0.33',
+)) {
+  throw new Error('Pi ACP fallback package is not pinned')
+}
+if (
+  manifest.devDependencies?.['electron-builder'] !== '26.16.0'
+  || manifest.overrides?.['@electron/asar'] !== '4.2.1'
+  || manifest.overrides?.['@electron/universal'] !== '3.0.6'
+) {
+  throw new Error('desktop build dependencies are not pinned to the reviewed versions')
+}
+if (
+  manifest.scripts?.prepare !== 'node scripts/prepare-build.mjs'
+  || !manifest.scripts?.build?.includes('--no-global')
+) {
+  throw new Error('npm and GitHub installation build lifecycle is not portable')
+}
+if (
+  manifest.scripts['desktop:build'].includes('hardenedRuntime=false')
+  || !manifest.scripts['desktop:build:local'].includes('hardenedRuntime=false')
+) {
+  throw new Error('signed and local-only desktop build commands are not separated')
+}
+const desktopBuildConfig = readFileSync('desktop/electron-builder.yml', 'utf8')
+const appEntitlements = readFileSync(
+  'desktop/build/entitlements.mac.plist',
+  'utf8',
+)
+const inheritedEntitlements = readFileSync(
+  'desktop/build/entitlements.mac.inherit.plist',
+  'utf8',
+)
+if (
+  !desktopBuildConfig.includes(
+    'entitlementsInherit: desktop/build/entitlements.mac.inherit.plist',
+  )
+  || !appEntitlements.includes('com.apple.security.cs.allow-jit')
+  || !inheritedEntitlements.includes('com.apple.security.cs.allow-jit')
+) {
+  throw new Error('signed Electron builds do not include the required JIT entitlements')
+}
+if (
+  !readFileSync('.github/workflows/release.yml', 'utf8')
+    .includes('GH_REPO: ${{ github.repository }}')
+) {
+  throw new Error('GitHub release job does not explicitly select its repository')
+}
+for (const workflow of [
+  '.github/workflows/ci.yml',
+  '.github/workflows/mobile.yml',
+  '.github/workflows/release.yml',
+]) {
+  const content = readFileSync(workflow, 'utf8')
+  const unpinnedAction = content.match(/uses:\s+[^#\s]+@(?![0-9a-f]{40}(?:\s|#|$))\S+/)
+  if (unpinnedAction) {
+    throw new Error(`${workflow} contains an unpinned action: ${unpinnedAction[0]}`)
+  }
+}
+
+const forbiddenFragments = [
+  ['gitlab.alibaba', '-inc.com'].join(''),
+  ['registry.anpm.alibaba', '-inc.com'].join(''),
+  ['lx', '513821'].join(''),
+  ['github.com/Qwen', 'LM/qwen-audio-agent'].join(''),
+]
+const trackedFiles = execFileSync('git', ['ls-files', '-z'])
+  .toString()
+  .split('\0')
+  .filter(Boolean)
+for (const file of trackedFiles) {
+  let content
+  try {
+    content = readFileSync(file, 'utf8')
+  } catch {
+    continue
+  }
+  for (const fragment of forbiddenFragments) {
+    if (content.includes(fragment)) {
+      throw new Error(`${file} contains private repository metadata`)
+    }
+  }
+}
+
+NODE
+
+node --check scripts/runtime/opencode.mjs
+node --check scripts/runtime/openclaw.mjs
+node --check scripts/runtime/opencode-server.mjs
+node --check scripts/runtime/openclaw-gateway.mjs
+node --check scripts/runtime/codex-acp.mjs
+node --check scripts/runtime/claude-code-acp.mjs
+node --check scripts/runtime/pi-acp.mjs
+node --check shared/runtime-environment.mjs
+node --check cli/src/runtime.mjs
+git diff --check
+npm run audit:release
+npm run lint
+npm test
+npm run build
+node scripts/verify-package.mjs
+
+QWEN_AUDIO_AGENT_RELEASE_VERSION=$(
+  node -p "require('./package.json').version"
+)
+printf '%s\n' \
+  "qwen-audio-agent ${QWEN_AUDIO_AGENT_RELEASE_VERSION} release checks passed."

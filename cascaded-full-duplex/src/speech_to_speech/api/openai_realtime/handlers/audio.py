@@ -273,6 +273,8 @@ class AudioHandler(RealtimeBaseHandler):
 
         events: list[ServerEvent] = []
         need_created = st.current_response_id is None
+        if need_created:
+            st.assistant_text = ""
         resp_id, item_id = response._ensure_response(conn_id, response_key)
         if need_created:
             events.append(

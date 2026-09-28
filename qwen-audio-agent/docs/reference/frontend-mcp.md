@@ -1,0 +1,128 @@
+# Frontend MCP client
+
+The frontend MCP client is the standards-based extension boundary for adding
+chatbot tools without coupling them to a realtime provider or a backend Agent.
+It is separate from the dedicated Web Search provider: Web Search keeps its
+small built-in fallback, while general MCP servers are configured by the user.
+
+Enable only the tools you need and describe their data sources and scope clearly. To replace web
+search, prefer a [Web Search Provider](../guides/web-search.md) instead of exposing the same search
+capability twice to the model.
+
+The Gateway discovers the explicitly enabled tools at startup, gives them
+stable names, and adds them to each Realtime session through the shared
+frontend tool registry and executor.
+
+## 1. Configure Remote Tools
+
+Set `QWEN_AUDIO_FRONTEND_MCP_CONFIG` to a versioned JSON file:
+
+```dotenv
+QWEN_AUDIO_FRONTEND_MCP_CONFIG=/absolute/path/to/frontend-mcp.json
+DOCUMENT_MCP_AUTHORIZATION=Bearer replace-me
+```
+
+```json
+{
+  "version": 1,
+  "servers": {
+    "documents": {
+      "enabled": true,
+      "transport": {
+        "type": "streamable-http",
+        "url": "https://mcp.example.com/mcp",
+        "headers": {
+          "authorization": "${DOCUMENT_MCP_AUTHORIZATION}"
+        }
+      },
+      "connectTimeoutMs": 8000,
+      "tools": {
+        "search": {
+          "enabled": true,
+          "timeoutMs": 10000,
+          "maxResultBytes": 32768,
+          "maxCallsPerTurn": 2,
+          "description": "Search the user's configured document source."
+        },
+        "create_issue": {
+          "enabled": true,
+          "description": "Create an issue in the configured tracker."
+        }
+      }
+    }
+  }
+}
+```
+
+## 2. Or Use Local stdio Tools
+
+Install the MCP server's required runtime first. This example starts a filesystem server with `npx` and exposes only directory listing. Replace `/absolute/path/to/documents` with an actual allowed directory:
+
+```json
+{
+  "version": 1,
+  "servers": {
+    "filesystem": {
+      "enabled": true,
+      "transport": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/documents"]
+      },
+      "tools": {
+        "list_directory": { "enabled": true }
+      }
+    }
+  }
+}
+```
+
+For compatibility, top-level `url` and `headers` fields still select Streamable
+HTTP. Top-level `command`, `args`, `env`, and `cwd` fields are also accepted as
+stdio shorthand. New configurations should use the explicit `transport` object.
+
+Each exposed tool receives a stable model-visible name:
+`mcp__<server>__<tool>`. Tools omitted from `tools`, or without
+`enabled: true`, are never exposed.
+
+## 3. Apply and Verify
+
+Save one of these JSON configurations at the configured path, supply real server/tool names and credentials, then [restart the Gateway](../operations/gateway.md#applying-configuration-changes). Test a simple call before enabling more tools. Use `qwenaudio doctor` and Gateway logs for connection failures.
+
+A configuration file alone is not enough: the service must be reachable, and the names in `tools` must match its actual tools. The remote domain above is a placeholder.
+
+## Support and Security
+
+- Streamable HTTP and stdio transports are supported. The legacy standalone SSE
+  transport is not supported.
+- Discovery and connection have a bounded timeout (8 seconds by default).
+- Each frontend MCP tool execution times out after 10 seconds by default; set the tool's `timeoutMs` to override it.
+- Remote servers require HTTPS. Loopback HTTP is allowed only without headers.
+- A server URL may be one exact environment reference such as `${MCP_URL}`.
+- Header values may reference one exact environment variable with
+  `${VARIABLE}`. A missing variable is a configuration error.
+- The Gateway starts stdio servers directly without a shell and closes their child
+  processes when it shuts down. `command`, arguments, environment values, and
+  `cwd` may use exact environment references; a configured `cwd` must be absolute.
+  The child receives only the SDK's safe base environment plus explicit `env` values.
+- stdio servers and backend Agents use the Gateway's shared user command search
+  path. After installing a command, run `qwenaudio gateway restart`; the CLI
+  refreshes the login-environment `PATH` cache used by the background service.
+- `tools` is an explicit allowlist. Enabled tools execute inline in the current
+  conversation turn; the Gateway does not insert a generic confirmation turn
+  based on whether a tool reads or writes.
+- Calls in one model response can execute concurrently. After all results are
+  returned and that response ends, the Gateway requests one result summary.
+  Later responses may call tools again, within the existing turn limits and deduplication rules.
+- Behavioral metadata such as `readOnlyHint` and `destructiveHint` belongs to
+  the MCP server's standard Tool Annotations. It is metadata, not Gateway policy.
+- MCP servers must enforce any required confirmation, authorization, or business
+  safety checks inside their own capability boundary.
+- Schemas, descriptions, calls, time, and results are bounded. MCP results are
+  treated as untrusted data and cannot override system or user instructions.
+- If an enabled tool is absent or invalid during discovery, that server fails
+  closed and exposes no partial tool set.
+
+Restart the Gateway after changing this file. Put variables required by the
+background service in the user `config.env`; do not commit secrets to JSON or
+rely on temporary exports that exist only in the current terminal.

@@ -22,8 +22,11 @@ class Qwen3MoshiConfig:
     depth_heads: int = 16
     depth_ffn_size: int = 4096
     acoustic_delay: int = 2
+    num_audio_streams: int = 2
 
     def __post_init__(self):
+        if self.num_audio_streams not in (1, 2):
+            raise ValueError("Expected one pre-training stream or two dialogue streams")
         self.codebook_sizes = tuple(self.codebook_sizes)
         if len(self.codebook_sizes) != 8 or min(self.codebook_sizes) <= 0:
             raise ValueError("Expected eight positive Mimi cardinalities")
@@ -121,7 +124,10 @@ class Qwen3Moshi(nn.Module):
             raise ValueError("Qwen3 configuration mismatch")
         self.config = config
         self.qwen_model = qwen_model
-        self.user_audio_embeddings = nn.ModuleList(nn.Embedding(n, config.hidden_size) for n in config.codebook_sizes)
+        self.user_audio_embeddings = (nn.ModuleList(
+            nn.Embedding(n, config.hidden_size) for n in config.codebook_sizes
+        ) if config.num_audio_streams == 2 else None)
+        # The generated stream keeps this name for dual-stream checkpoint compatibility.
         self.assistant_audio_embeddings = nn.ModuleList(nn.Embedding(n, config.hidden_size) for n in config.codebook_sizes)
         self.temporal_to_depth = nn.Linear(config.hidden_size, config.depth_hidden_size)
         self.depth_text_embedding = nn.Embedding(config.vocab_size, config.depth_hidden_size)
@@ -151,12 +157,17 @@ class Qwen3Moshi(nn.Module):
         During cached inference pass only new time steps and a full-prefix mask.
         Use a separate model/session per concurrent conversation.
         """
+        if text_history.ndim != 2:
+            raise ValueError("Expected [B,T] text history")
         expected = (text_history.shape[0], self.config.num_codebooks, text_history.shape[-1])
-        if text_history.ndim != 2 or user_history.shape != expected or assistant_history.shape != expected:
+        if assistant_history.shape != expected or (user_history is not None and user_history.shape != expected):
             raise ValueError("Expected matching [B,8,T] audio and [B,T] text")
+        if user_history is not None and self.user_audio_embeddings is None:
+            raise ValueError("Enable dual-stream mode before supplying user audio")
         inputs = self._embed(self.text_embedding, text_history)
         for k in range(self.config.num_codebooks):
-            inputs = inputs + self._embed(self.user_audio_embeddings[k], user_history[:, k])
+            if user_history is not None:
+                inputs = inputs + self._embed(self.user_audio_embeddings[k], user_history[:, k])
             inputs = inputs + self._embed(self.assistant_audio_embeddings[k], assistant_history[:, k])
         result = self.qwen_model.model(
             inputs_embeds=inputs, attention_mask=attention_mask,
@@ -180,27 +191,70 @@ class Qwen3Moshi(nn.Module):
     def prepare_batch(self, user, assistant, text, frame_mask=None):
         if text.ndim != 2 or text.shape[-1] == 0:
             raise ValueError("Expected nonempty [B,T] text")
-        if user.shape != assistant.shape or user.shape != (text.shape[0], 8, text.shape[1]):
+        if assistant.shape != (text.shape[0], 8, text.shape[1]) or (user is not None and user.shape != assistant.shape):
             raise ValueError("Stream shapes do not match")
         valid = torch.ones_like(text, dtype=torch.bool) if frame_mask is None else frame_mask.bool()
         if valid.shape != text.shape or torch.any(valid[:, 1:] & ~valid[:, :-1]):
             raise ValueError("frame_mask must be right-padded [B,T]")
         d = self.config.acoustic_delay
-        user = apply_delay(user.masked_fill(~valid[:, None], -1), d)
+        if user is not None:
+            user = apply_delay(user.masked_fill(~valid[:, None], -1), d)
         audio = apply_delay(assistant.masked_fill(~valid[:, None], -1), d)
         text = F.pad(text.masked_fill(~valid, -1), (0, d), value=-1)
         audio_mask = audio != -1
         text_mask = text != -1
-        attention = audio_mask.any(1) | (user != -1).any(1) | text_mask
+        attention = audio_mask.any(1) | text_mask
+        if user is not None:
+            attention = attention | (user != -1).any(1)
+        # Delay can create target-free interior steps that still carry shifted
+        # history. Keep the full prefix through the final target attendable.
+        attention = attention.flip(-1).long().cumsum(-1).flip(-1) > 0
         return dict(user=user, audio=audio, text=text, audio_mask=audio_mask,
                     text_mask=text_mask, attention_mask=attention)
 
+    def enable_dual_stream(self):
+        """Copy the pretrained audio embeddings into an independent user branch.
+
+        Call before constructing the dialogue optimizer or distributed wrapper.
+        Repeated calls preserve already-trained user weights.
+        """
+        import copy
+        if self.user_audio_embeddings is None:
+            self.user_audio_embeddings = copy.deepcopy(self.assistant_audio_embeddings)
+            self.config.num_audio_streams = 2
+            self.reset_stream_state()
+        return self
+
+    def forward_single_stream(self, audio_tokens, text_tokens, *, frame_mask=None,
+                              text_condition_mask=None):
+        """Predict one audio stream from its own history and aligned text history.
+
+        Construct with num_audio_streams=1 to omit the user branch entirely.
+        No duplicated audio or dummy user stream is embedded. A False value in
+        text_condition_mask hides conditioning from Temporal and Depth, while
+        retaining the original text target and its loss.
+        """
+        batch = self.prepare_batch(None, audio_tokens, text_tokens, frame_mask)
+        if text_condition_mask is not None:
+            if text_condition_mask.shape != text_tokens.shape or text_condition_mask.dtype != torch.bool:
+                raise ValueError("text_condition_mask must be boolean [B,T]")
+            condition = F.pad(text_condition_mask, (0, self.config.acoustic_delay), value=False)
+            batch['text_condition'] = batch['text'].masked_fill(~condition, -1)
+        return self._forward_batch(batch)
+
     def forward(self, user_audio_tokens, assistant_audio_tokens, text_tokens, *, frame_mask=None):
+        if self.user_audio_embeddings is None or user_audio_tokens is None:
+            raise ValueError("Use forward_single_stream or enable dual-stream mode")
         batch = self.prepare_batch(user_audio_tokens, assistant_audio_tokens, text_tokens, frame_mask)
-        hidden = self.temporal(shift_history(batch['user']), shift_history(batch['audio']),
-                               shift_history(batch['text']), attention_mask=batch['attention_mask'])
+        return self._forward_batch(batch)
+
+    def _forward_batch(self, batch):
+        user_history = None if batch['user'] is None else shift_history(batch['user'])
+        text_condition = batch.get('text_condition', batch['text'])
+        hidden = self.temporal(user_history, shift_history(batch['audio']),
+                               shift_history(text_condition), attention_mask=batch['attention_mask'])
         return dict(text_logits=self.text_head(hidden),
-                    audio_logits=self.depth_logits(hidden, batch['text'], batch['audio']), batch=batch)
+                    audio_logits=self.depth_logits(hidden, text_condition, batch['audio']), batch=batch)
 
     @staticmethod
     def _ce(logits, targets, mask, weights=None):
@@ -234,7 +288,7 @@ class Qwen3Moshi(nn.Module):
             raise ValueError("Call eval() and supply one already-shifted delayed frame")
         hidden = self.temporal(user_history, assistant_history, text_history, use_cache=True)
         text = self.text_head(hidden).argmax(-1)
-        audio = user_history.new_full(user_history.shape, -1)
+        audio = assistant_history.new_full(assistant_history.shape, -1)
         for k in range(8):
             audio[:, k] = self.depth_logits(hidden, text, audio)[k].argmax(-1)
         return text, audio

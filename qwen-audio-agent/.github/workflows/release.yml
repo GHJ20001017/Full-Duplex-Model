@@ -1,0 +1,343 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - CHANGELOG.md
+      - package.json
+      - package-lock.json
+      - server/package.json
+      - web/package.json
+      - tui/package.json
+      - desktop/package.json
+      - cli/package.json
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing package version to publish or recover
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      manual: ${{ steps.plan.outputs.manual }}
+      revision: ${{ steps.plan.outputs.revision }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect a release version change
+        id: plan
+        env:
+          RELEASE_BEFORE_SHA: ${{ github.event.before }}
+          RELEASE_REQUESTED_VERSION: ${{ inputs.version }}
+        run: node scripts/release-plan.mjs
+      - name: Verify the release PR branch
+        if: ${{ github.event_name == 'push' && steps.plan.outputs.release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -eu
+          RELEASE_HEAD=$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GH_REPO}/commits/${GITHUB_SHA}/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].head.ref // ""'
+          )
+          case "$RELEASE_HEAD" in
+            release/"$RELEASE_VERSION"|release/v"$RELEASE_VERSION"|release-"$RELEASE_VERSION"|release-v"$RELEASE_VERSION"|*/release-"$RELEASE_VERSION"|*/release-v"$RELEASE_VERSION")
+              ;;
+            *)
+              echo "Version changes must be merged from a dedicated release branch; got '${RELEASE_HEAD}'." >&2
+              exit 1
+              ;;
+          esac
+
+  verify:
+    needs: plan
+    if: ${{ needs.plan.outputs.release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm run release:check
+
+  tag:
+    needs: [plan, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create or verify the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_REVISION: ${{ needs.plan.outputs.revision }}
+        run: |
+          set -eu
+          if EXISTING=$(
+            gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}" \
+              --jq '.object.sha' 2>/dev/null
+          ); then
+            git fetch --force origin \
+              "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            RESOLVED=$(git rev-list -n 1 "$RELEASE_TAG")
+            if [ "$RESOLVED" != "$RELEASE_REVISION" ]; then
+              echo "${RELEASE_TAG} moved after planning: ${RESOLVED}, expected ${RELEASE_REVISION}." >&2
+              exit 1
+            fi
+          else
+            gh api \
+              --method POST \
+              "repos/${GH_REPO}/git/refs" \
+              -f "ref=refs/tags/${RELEASE_TAG}" \
+              -f "sha=${RELEASE_REVISION}"
+          fi
+
+  npm:
+    # Do not publish npm while a desktop package is still unverified.
+    needs: [plan, tag, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - name: Check whether npm already has this version
+        id: npm
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          if npm view "qwen-audio-agent@${RELEASE_VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: ${{ steps.npm.outputs.published != 'true' }}
+        run: npm ci
+      - if: ${{ steps.npm.outputs.published != 'true' }}
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  macos:
+    needs: [plan, tag]
+    if: ${{ needs.plan.outputs.release == 'true' }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - name: Validate macOS release credentials
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -eu
+          MISSING=""
+          for NAME in \
+            CSC_LINK \
+            CSC_KEY_PASSWORD \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID
+          do
+            VALUE="${!NAME}"
+            if [ -z "$VALUE" ]; then
+              MISSING="${MISSING} ${NAME}"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "Missing GitHub Actions secrets:${MISSING}" >&2
+            exit 1
+          fi
+      # Own the temporary keychain explicitly: electron-builder 26.16.0 uses
+      # the P12 password instead of the keychain password for partition access.
+      # Keep this in the workflow so recovery can package an existing tag.
+      - name: Import signing certificate into an isolated keychain
+        id: signing
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          SIGNING_DIR=$(mktemp -d "$RUNNER_TEMP/qwa-signing.XXXXXX")
+          echo "directory=$SIGNING_DIR" >> "$GITHUB_OUTPUT"
+          KEYCHAIN_PATH="$SIGNING_DIR/release.keychain-db"
+          CERTIFICATE_PATH="$SIGNING_DIR/certificate.p12"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 32)
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          trap 'rm -f "$CERTIFICATE_PATH"' EXIT
+          umask 077
+          printf '%s' "$CSC_LINK" | /usr/bin/base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -P "$CSC_KEY_PASSWORD"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # codesign also resolves identities through the user search list.
+          security list-keychains -d user > "$SIGNING_DIR/search-list.txt"
+          SEARCH_KEYCHAINS=()
+          while read -r ENTRY; do
+            SEARCH_KEYCHAINS+=("${ENTRY//\"/}")
+          done < "$SIGNING_DIR/search-list.txt"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${SEARCH_KEYCHAINS[@]}"
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | awk '/"Developer ID Application:/ { print $2; exit }')
+          if [[ ! "$SIGNING_IDENTITY" =~ ^[A-Fa-f0-9]{40}$ ]]; then
+            echo "No valid Developer ID Application identity in the signing certificate" >&2
+            exit 1
+          fi
+          # Fail before packaging if codesign cannot actually use the private key.
+          cp /usr/bin/true "$SIGNING_DIR/signing-probe"
+          codesign --force --sign "$SIGNING_IDENTITY" --keychain "$KEYCHAIN_PATH" \
+            --timestamp "$SIGNING_DIR/signing-probe"
+          codesign --verify --strict "$SIGNING_DIR/signing-probe"
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "CSC_NAME=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+      - name: Build, sign and notarize universal macOS DMG
+        run: npm run desktop:build -- --universal --publish never --config.forceCodeSigning=true
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Remove temporary signing keychain
+        if: ${{ always() && steps.signing.outputs.directory != '' }}
+        env:
+          SIGNING_DIR: ${{ steps.signing.outputs.directory }}
+        run: |
+          if [ -f "$SIGNING_DIR/search-list.txt" ]; then
+            SEARCH_KEYCHAINS=()
+            while read -r ENTRY; do
+              SEARCH_KEYCHAINS+=("${ENTRY//\"/}")
+            done < "$SIGNING_DIR/search-list.txt"
+            security list-keychains -d user -s "${SEARCH_KEYCHAINS[@]}"
+          fi
+          security delete-keychain "$SIGNING_DIR/release.keychain-db"
+      - name: Verify packaged macOS Gateway
+        run: node scripts/test/desktop-package-smoke.mjs "dist/desktop/mac-universal/Qwen Audio Agent.app"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-dmg
+          path: |
+            dist/desktop/*.dmg
+            dist/desktop/*.zip
+            dist/desktop/*.blockmap
+            dist/desktop/latest-mac.yml
+          if-no-files-found: error
+
+  windows:
+    needs: [plan, tag]
+    if: ${{ needs.plan.outputs.release == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - name: Build Windows NSIS installer
+        run: npm run desktop:build:win
+      - name: Verify packaged Windows Gateway
+        run: node scripts/test/desktop-package-smoke.mjs dist/desktop/win-unpacked
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-exe
+          path: |
+            dist/desktop/*.exe
+            dist/desktop/*.blockmap
+            dist/desktop/latest.yml
+          if-no-files-found: error
+
+  github-release:
+    needs: [plan, tag, npm, macos, windows]
+    if: ${{ always() && needs.npm.result == 'success' && (needs.macos.result == 'success' || needs.macos.result == 'skipped') && (needs.windows.result == 'success' || needs.windows.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ needs.macos.result == 'success' }}
+        with:
+          name: macos-dmg
+          path: artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: ${{ needs.windows.result == 'success' }}
+        with:
+          name: windows-exe
+          path: artifacts
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 \
+            || gh release create "$RELEASE_TAG" --verify-tag --generate-notes
+      - name: Upload macOS desktop artifacts
+        if: ${{ needs.macos.result == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" artifacts/* --clobber

@@ -47,7 +47,7 @@ from speech_to_speech.pipeline.events import (
     TranscriptionFailedEvent,
 )
 from speech_to_speech.pipeline.log_context import pipeline_log_ctx
-from speech_to_speech.pipeline.messages import AUDIO_RESPONSE_DONE, PIPELINE_END, AudioOutput
+from speech_to_speech.pipeline.messages import AUDIO_RESPONSE_DONE, PIPELINE_END, AudioOutput, EndOfResponse
 from speech_to_speech.pipeline.transcript_logging import log_exception
 
 # aiortc (the 'webrtc' extra) is optional. Import it here, at module load,
@@ -187,6 +187,7 @@ def _flush_queue(
     *,
     preserve: Callable[[QItem], bool] | None = None,
     on_discard: Callable[[QItem], None] | None = None,
+    transform_preserved: Callable[[QItem], QItem] | None = None,
 ) -> None:
     """Drain a queue, optionally preserving items matching *preserve*.
 
@@ -199,7 +200,7 @@ def _flush_queue(
         try:
             item = q.get_nowait()
             if preserve and preserve(item):
-                preserved.append(item)
+                preserved.append(transform_preserved(item) if transform_preserved else item)
             elif on_discard is not None:
                 on_discard(item)
         except Empty:
@@ -209,6 +210,60 @@ def _flush_queue(
             for item in reversed(preserved):
                 q.queue.appendleft(item)
             q.not_empty.notify(len(preserved))
+
+
+def _cancel_semantic_output(unit: PipelineUnit, session: SessionState, session_id: str) -> None:
+    """Replace generation only after the service accepts a final semantic decision.
+
+    The service owns response.done and queues the replacement *after* this
+    callback. Never drain input audio or lose transcription/usage/lifecycle
+    events while removing old prompt, synthesis and transport output.
+    """
+    old_generation = unit.cancel_scope.generation
+    unit.cancel_scope.cancel()
+    unit.service.close_pending_responses(session_id)
+    if session.transport is not None:
+        session.transport.discard_pending_audio()
+
+    def preserve(item: Any) -> bool:
+        return (
+            _keep_user_text_event(item)
+            or isinstance(item, (SpeechStartedEvent, TokenUsageEvent, PipelineControlMessage, EndOfResponse))
+            or _is_audio_done(item)
+            or _is_pipeline_end(item)
+        )
+
+    # Return held bookkeeping to the front, keeping its original ordering.
+    if session.pending_output_item is not None:
+        item = session.pending_output_item
+        session.pending_output_item = None
+        if preserve(item):
+            with unit.output_queue.mutex:
+                unit.output_queue.queue.appendleft(item)
+                unit.output_queue.not_empty.notify()
+    held_text = session.pending_text_output_items[:]
+    session.pending_text_output_items.clear()
+    with unit.text_output_queue.mutex:
+        for item in reversed(held_text):
+            if preserve(item):
+                unit.text_output_queue.queue.appendleft(item)
+        unit.text_output_queue.not_empty.notify_all()
+
+    def tag_terminal(item: Any) -> Any:
+        # Legacy untagged terminals still belong to the cancelled generation.
+        # Without this tag they could finish/clear the newly queued wait response.
+        if isinstance(item, EndOfResponse) and item.cancel_generation is None:
+            return item.model_copy(update={"cancel_generation": old_generation})
+        if _is_audio_done(item) and _audio_generation(item) is None:
+            if isinstance(item, AudioOutput):
+                return item.model_copy(update={"cancel_generation": old_generation})
+            return AudioOutput(audio=item, cancel_generation=old_generation)
+        return item
+
+    for queue in (unit.text_prompt_queue, unit.tts_input_queue, unit.output_queue, unit.text_output_queue):
+        if queue is not None:
+            _flush_queue(queue, preserve=preserve, transform_preserved=tag_terminal)
+    unit.response_playing.clear()
 
 
 def _clean_unit(
@@ -582,7 +637,32 @@ def create_app(
         try:
             session_id = unit.service.register()
             unit.session.session_id = session_id
-            logger.info(f"Client connected to pipeline {unit.index} (session {session_id})")
+            requested_route = ws.query_params.get("interruption_route", "keyword").strip().lower()
+            if requested_route not in {"keyword", "semantic"}:
+                await send_ws_event(
+                    ws,
+                    build_error_event(
+                        "interruption_route must be 'keyword' or 'semantic'",
+                        error_type="invalid_interruption_route",
+                    ),
+                )
+                return
+            if requested_route == "semantic" and unit.service.semantic_turn_router is None:
+                await send_ws_event(
+                    ws,
+                    build_error_event(
+                        "semantic route is unavailable; set S2S_SEMANTIC_TURN_URL",
+                        error_type="semantic_route_unavailable",
+                    ),
+                )
+                return
+            unit.service._state(session_id).runtime_config.interruption_route = requested_route
+            logger.info(
+                "Client connected to pipeline %s (session %s, interruption_route=%s)",
+                unit.index,
+                session_id,
+                requested_route,
+            )
 
             # Defensive: drain edge queues and reset events so stale data from a
             # previous session that survived SESSION_END propagation doesn't leak.
@@ -886,14 +966,26 @@ def create_app(
                         was_response_pending = st.response_pending
 
                     if transport is not None and isinstance(text_msg, PipelineEvent) and session_id:
-                        events = unit.service.dispatch_pipeline_event(session_id, text_msg)
+                        if (
+                            isinstance(text_msg, TranscriptionCompletedEvent)
+                            and unit.service._state(session_id).runtime_config.interruption_route == "semantic"
+                        ):
+                            events = unit.service.dispatch_pipeline_event(
+                                session_id,
+                                text_msg,
+                                cancel_output=lambda: _cancel_semantic_output(unit, session, session_id),
+                            )
+                        else:
+                            events = unit.service.dispatch_pipeline_event(session_id, text_msg)
                         if events:
                             await transport.send_events(events)
 
                     if isinstance(text_msg, SpeechStartedEvent) and session_id:
                         active_cfg = unit.service._state(session_id).runtime_config
-                        interrupt_enabled = text_msg.interrupt_response and (
-                            active_cfg is None or active_cfg.interrupt_response_enabled
+                        interrupt_enabled = (
+                            text_msg.interrupt_response
+                            and (active_cfg is None or active_cfg.interrupt_response_enabled)
+                            and (active_cfg is None or active_cfg.interruption_route != "semantic")
                         )
                         if interrupt_enabled and transport is not None:
                             # Flush even when no response is active: the WebRTC

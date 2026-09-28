@@ -1,0 +1,79 @@
+# Extending qwen-audio-agent
+
+This section is for developers integrating clients, voice services, Backend Agents, or knowledge systems through existing extension interfaces.
+To configure built-in capabilities, start with [Configuration](configuration.md) and [Quickstart](getting-started/quickstart.md).
+
+The core logical components are the Frontend Agent, Orchestration Runtime, and Backend Agent. The Gateway exposes runtime capabilities as a service; clients own I/O and environment interaction. Extend the relevant model provider, tool, BackendPort, or client protocol without moving business logic into transport. See the [Architecture Overview](architecture/overview.md).
+
+## Frontend Tools: MCP, OpenAPI, Profiles
+
+Add chatbot tools without touching the voice path: connect MCP servers through
+the frontend MCP client, expose selected REST operations from an OpenAPI 3.x
+document, or bundle persona plus tool configuration as a versioned Frontend
+Profile.
+
+→ [Frontend MCP client](reference/frontend-mcp.md) ·
+[Frontend OpenAPI adapter](reference/frontend-openapi.md) ·
+[Frontend Profiles](reference/frontend-profile.md)
+
+## Voice Frontend: Custom Realtime Provider
+
+Swap the realtime speech model for another cloud service or your own stack by
+implementing the provider contract and registering it in the provider
+registry.
+
+→ [Custom Provider](voice-frontends/custom-provider.md)
+
+## Knowledge: Retrieval Provider
+
+The runtime connects knowledge modules through a small Provider interface.
+Use the built-in basic library, or connect the knowledge system you already operate.
+
+→ [Knowledge Retrieval Provider](reference/knowledge.md)
+
+The [LightRAG integration example](scenarios/lightrag.md) shows how to connect a complete,
+independently deployed knowledge system while leaving its models, indexes, and data under
+LightRAG's control.
+
+## Backend: Connect a New Agent
+
+Four paths put a backend behind the protocol-neutral `BackendPort`: the
+zero-code generic ACP entry, a remote A2A agent, a custom adapter via the
+Backend Adapter SDK, or a first-class backend with one-click install.
+
+→ [Connecting a New Backend](backends/extend.md) ·
+[Backend Adapter SDK](reference/backend-adapter-sdk.md) ·
+[A2A Backend Adapter](reference/a2a-backend-adapter.md)
+
+## Persona and Memory
+
+The default assistant name, personality, and expression style live in `ASSISTANT.md`; output voice is configured separately.
+The default Markdown provider stores user preferences and durable facts in `USER.md` /
+`MEMORY.md`; configure the optional VoiceMem connector, or replace the
+provider with another memory engine, without changing the voice runtime.
+
+→ [Assistant Profile and User Preferences](reference/personalization.md) ·
+[Memory Provider](reference/memory-provider.md)
+
+VoiceMem installation and configuration example:
+[`examples/voicemem`](https://github.com/QwenAudio/qwen-audio-agent/tree/main/examples/voicemem).
+
+## Client: Build Your Own
+
+The Gateway speaks typed events over a single WebSocket. Build a custom client
+against the client protocol, or embed the assistant into a host page through
+the stability contract — the same channel the desktop orb, TUI, and WebUI use.
+
+The [AI Passport example](scenarios/ai-passport.md) connects Qwen
+Voice Bean to the Gateway through a LAN relay. It currently supports half-duplex
+only; firmware and audio drivers are maintained in the external project.
+
+→ [Gateway Client Protocol](gateway-protocol.md) ·
+[Gateway Contract](contract.md)
+
+## Desktop Appearance
+
+The desktop orb renders replaceable pet skins: a `pet.json` manifest plus a
+spritesheet.
+
+→ [Pet Skin Spec](desktop/pet-skin-spec.md)

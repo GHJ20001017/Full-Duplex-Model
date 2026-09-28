@@ -1,0 +1,129 @@
+# 为 AI Agent 构建全双工语音前台：对话不该停下来
+
+> 本文基于 qwen-audio-agent 的真实实现，讲清楚一个问题：
+> 当 Agent 在后台查资料、跑工具、处理任务时，语音对话如何保持连续？
+
+## 问题：说完一句话，就陷入等待
+
+今天几乎所有语音助手都是"半双工"的：你说完一句，它处理，它回答，你再说话。
+一旦 Agent 需要调用工具、查资料或执行一个长任务，整场对话就暂停了——
+用户面对的是一段沉默，和一个不知道还要多久的转圈。
+
+但真正的交流不是这样的。两个人协作时，一方去处理事情，
+另一方可以继续聊别的、可以追问进度，事情做完对方会自然地说一句"好了"。
+
+我们希望 Agent 也是这样：**对话继续，任务也在继续。**
+
+## 架构：前台语音运行时 + 后台 Agent
+
+qwen-audio-agent 把系统切成两层：
+
+```
+┌────────────────────────────────────────────┐
+│  语音前台（Realtime Voice Runtime）          │
+│  · 全双工语音流（WebSocket）                 │
+│  · 打断检测与播放队列管理                    │
+│  · 前台模型：能直接回答的立即回答            │
+└───────────────┬────────────────────────────┘
+                │ ACP（Agent Client Protocol）
+┌───────────────▼────────────────────────────┐
+│  后台 Agent（OpenCode / OpenClaw / Qoder / │
+│  Kimi Code / Claude Code / Codex …）       │
+│  · 异步执行任务                             │
+│  · 结果回流到当前对话                       │
+└────────────────────────────────────────────┘
+```
+
+前台的核心编排入口是 `server/src/voice/realtime-session-runtime.mjs`；输入、展示和连接
+生命周期分别由 `realtime-input-runtime.mjs`、`realtime-presentation-runtime.mjs`
+和 `realtime-provider-session.mjs` 管理。后台复用用户已有的 Agent，通过
+`server/src/backend/adapters/acp/` 中统一的 ACP 边界接入。两层没有产品级强耦合：
+换后台 Agent 时，语音层不用跟着改。
+
+## 关键设计一：能答的立即答，要干活的交出去
+
+用户的一句话进来后，先由前台模型判断：
+
+- **能直接回答**（闲聊、知识问答）→ 前台模型立即流式回答，延迟最低；
+- **需要工具或长时间处理** → 打包成任务委派给后台 Agent，前台先用一句话
+  确认（"我去查一下，你先忙别的"），对话不断线。
+
+这个路由由前台模型基于系统规则和工具描述完成。需要后台执行时，模型调用
+`spawn_thinking`；Gateway 中的 `AgentTaskRuntime`
+（`server/src/frontend/tools/agent-task-runtime.mjs`）立即创建 Task，并返回一张受理回执：
+
+```js
+{
+  status: 'accepted',
+  task_id: '…',
+  message: '工作已受理，请自然确认一次，不要再次调用工具。'
+}
+```
+
+这张回执只确认任务已进入 Gateway，不等待后台往返。Task 的事实状态和结果由
+`TaskManager` 管理，客户端接收结构化 Task 事件；任务完成后，
+`AnnouncementManager` 再把结果转换成统一的 `AgentDelivery`，交给前台模型生成自然、
+简短的口语回复。后台不能自行注入一套面向 UI 的展示结构，执行与表达保持分离。
+
+## 关键设计二：打断是状态机，不是一个事件
+
+全双工最难的点是打断（barge-in）。用户随时可能开口，此时系统里可能同时存在：
+正在合成的回复、排队中的播放片段、后台任务的进度播报。
+
+我们把打断处理做成一条明确的状态链：
+
+1. Provider 报告 `speech_started`，输入运行时确认这是一次用户打断；
+2. Gateway 发出 `playback.clear`（`reason=user_interruption`），WebUI、TUI 或桌面端
+   清空尚未播放的音频，并回传 `playback.cancelled`；
+3. `RealtimePresentationRuntime.cancelPlayback()` 把对应响应标记为 `suppressed`；
+   只有确实开始播放过的响应才产生 `response.interrupted`；
+4. `RealtimeProviderSession.cancelResponse()` 调用前台 Provider 的 `cancel()`，
+   向上游发送 `response.cancel`，停止继续生成；
+5. 打断后立刻进入新一轮对话——用户感知不到"系统在善后"。
+
+这条链分别落在 `realtime-input-runtime.mjs`、`realtime-presentation-runtime.mjs`
+和 `realtime-provider-session.mjs`，客户端只负责真实的音频播放状态。
+
+其中"墓碑"是个容易被忽略的细节：实时系统里到处是异步回调，
+一个被取消的响应如果在几百毫秒后被迟到的 `response.done` 事件触发，
+用户就会听到一句已经不想听的话。显式保留取消状态、拒绝迟到事件，
+是全双工系统稳定性的关键之一。
+
+## 关键设计三：任务结果自然回流
+
+后台任务完成后，不是弹一个通知，而是**回到当前对话里**：
+
+- 任务状态（`task.cancelling` / `task.cancelled` / `task.completed` / `task.failed`）
+  作为事件流进入前台；
+- 完成时由 Gateway 把结果交回前台模型，生成自然的口语播报
+  （"刚才那个任务好了，结果是……"）；
+- 用户可以立刻追问、修改或再派一个新任务，上下文不丢失。
+
+这就是"Agent 始终在场"的具体含义：它不是一问一答的机器，
+而是一个可以边干活边交流的对象。
+
+## 关键设计四：连接是语音系统的生命线
+
+WebSocket 长连接在真实网络下一定会断。Client → Gateway 的恢复由
+`shared/gateway/client-sdk.mjs` 管理，Gateway → Realtime Provider 的退避策略位于
+`server/src/voice/reconnect-backoff.mjs`。连接生命周期与持久化的对话、Task 状态
+相互解耦；连接恢复后再从服务端重放和校准，用户几乎无感。
+
+## 经验总结
+
+做了一段时间语音前台，最深的三点体会：
+
+1. **语音层必须和 Agent 解耦**。Agent 生态变化太快（每个月都有新的
+   CLI Agent 出现），语音层如果和某个 Agent 绑死，就是给自己判了死刑。
+   协议层（我们用 ACP）是唯一可持续的边界。
+2. **打断的工程质量决定产品口碑**。用户对"打断没反应""打断后又冒出半句话"
+   的容忍度是零。异步事件的生命周期管理要做成显式状态机。
+3. **结构化状态和口语表达分离**。客户端消费 Task 事件，前台模型负责把结果
+   说得自然。所有"把聊天窗口的回答直接念出来"的设计都会失败；语音输出要重写，
+   不是截断。
+
+---
+
+qwen-audio-agent 是开源项目（Apache-2.0），支持 WebUI、终端 TUI 和
+macOS 桌面悬浮球三种形态。欢迎在 GitHub 上交流：
+https://github.com/QwenAudio/qwen-audio-agent

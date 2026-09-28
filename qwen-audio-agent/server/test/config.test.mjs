@@ -1,0 +1,299 @@
+import assert from 'node:assert/strict'
+import { dirname, resolve } from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+import {
+  numberSetting,
+  resolveDisabledFrontendTools,
+  resolveBackendModels,
+  resolveBackendWorkspace,
+  resolveOpenCodeCoordinatorAgent,
+  resolveWebSearchConfiguration,
+} from '../src/core/config.mjs'
+import {
+  resolveRealtimeFrontendConfiguration,
+} from '../../shared/realtime-provider-catalog.mjs'
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+
+test('treats missing and blank numeric settings as unset', () => {
+  for (const value of [null, undefined, '', '   ', '\t\n']) {
+    assert.equal(numberSetting(value, 120, { min: 0, max: 1000 }), 120)
+  }
+})
+
+test('preserves explicit zero numeric settings', () => {
+  assert.equal(numberSetting('0', 120, { min: 0, max: 1000 }), 0)
+  assert.equal(numberSetting(0, 120, { min: 0, max: 1000 }), 0)
+})
+
+test('keeps optional frontend tools enabled unless explicitly disabled', () => {
+  assert.deepEqual(resolveDisabledFrontendTools({}), [])
+  assert.deepEqual(resolveDisabledFrontendTools({
+    QWEN_AUDIO_SCHEDULE_TOOL_ENABLED: 'false',
+    QWEN_AUDIO_WEB_TOOLS_ENABLED: 'false',
+    QWEN_AUDIO_KNOWLEDGE_TOOL_ENABLED: 'off',
+    QWEN_AUDIO_NOTES_TOOL_ENABLED: '0',
+    QWEN_AUDIO_RECALL_TOOL_ENABLED: 'no',
+  }), [
+    'schedule_reminder',
+    'web_search',
+    'fetch_url',
+    'knowledge',
+    'notes',
+    'recall',
+  ])
+})
+
+test('uses a key-free fallback until the user configures a search provider', () => {
+  assert.deepEqual(resolveWebSearchConfiguration({}), {
+    provider: 'so360',
+    mcpUrl: '',
+    mcpToken: '',
+    mcpTool: 'web_search',
+  })
+  assert.deepEqual(resolveWebSearchConfiguration({
+    QWEN_AUDIO_WEB_SEARCH_MCP_URL: 'https://search.example/mcp',
+    QWEN_AUDIO_WEB_SEARCH_MCP_TOKEN: 'search-key',
+    QWEN_AUDIO_WEB_SEARCH_MCP_TOOL: 'search_web',
+  }), {
+    provider: 'mcp',
+    mcpUrl: 'https://search.example/mcp',
+    mcpToken: 'search-key',
+    mcpTool: 'search_web',
+  })
+  assert.deepEqual(resolveWebSearchConfiguration({
+    DASHSCOPE_API_KEY: 'dashscope-key',
+    QWEN_AUDIO_WEB_SEARCH_PROVIDER: 'bailian',
+  }), {
+    provider: 'bailian',
+    mcpUrl: 'https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp',
+    mcpToken: 'dashscope-key',
+    mcpTool: 'bailian_web_search',
+  })
+  assert.equal(resolveWebSearchConfiguration({
+    DASHSCOPE_API_KEY: 'dashscope-key',
+  }).provider, 'so360')
+  assert.equal(resolveWebSearchConfiguration({
+    DASHSCOPE_API_KEY: 'dashscope-key',
+    QWEN_AUDIO_WEB_SEARCH_MCP_URL: 'https://search.example/mcp',
+  }).mcpToken, '')
+  assert.equal(resolveWebSearchConfiguration({
+    QWEN_AUDIO_WEB_SEARCH_MCP_URL: 'https://search.example/mcp',
+    QWEN_AUDIO_WEB_SEARCH_PROVIDER: 'none',
+  }).provider, 'none')
+  assert.throws(
+    () => resolveWebSearchConfiguration({
+      QWEN_AUDIO_WEB_SEARCH_PROVIDER: 'unknown',
+    }),
+    /不支持的 Web Search Provider/,
+  )
+  assert.throws(
+    () => resolveWebSearchConfiguration({
+      QWEN_AUDIO_WEB_SEARCH_PROVIDER: 'duckduckgo',
+    }),
+    /不支持的 Web Search Provider/,
+  )
+})
+
+test('uses the shared user data workspace for the default OpenCode workspace', () => {
+  const directory = resolve('/home/user/.config/qwaudio')
+  assert.equal(
+    resolveBackendWorkspace('opencode', {}, directory),
+    resolve(directory, 'workspace'),
+  )
+})
+
+test('uses only the explicit OPENCODE_WORKSPACE setting', () => {
+  assert.equal(
+    resolveBackendWorkspace('opencode', {
+      OPENCODE_WORKSPACE: 'projects/voice',
+      OPENCODE_DIRECTORY: 'legacy',
+    }),
+    resolve(root, 'projects/voice'),
+  )
+})
+
+test('uses the default ACP Session mode unless a custom OpenCode Agent is explicit', () => {
+  assert.equal(resolveOpenCodeCoordinatorAgent({}), '')
+  assert.equal(resolveOpenCodeCoordinatorAgent({
+    OPENCODE_COORDINATOR_AGENT: 'qwen-audio-agent-backend',
+  }), '')
+  assert.equal(resolveOpenCodeCoordinatorAgent({
+    OPENCODE_COORDINATOR_AGENT: 'custom-coordinator',
+  }), 'custom-coordinator')
+  assert.equal(resolveOpenCodeCoordinatorAgent({
+    QWEN_AUDIO_AGENT_BACKEND_AGENT: 'shared-agent',
+    OPENCODE_COORDINATOR_AGENT: 'custom-coordinator',
+  }), 'shared-agent')
+})
+
+test('uses the shared user data workspace for the default Qoder workspace', () => {
+  const directory = resolve('/home/user/.config/qwaudio')
+  assert.equal(
+    resolveBackendWorkspace('qoder', {}, directory),
+    resolve(directory, 'workspace'),
+  )
+})
+
+test('shares one default workspace across additional backends', () => {
+  const directory = resolve('/home/user/.config/qwaudio')
+  for (const backend of ['hermes', 'kimi', 'codebuddy', 'codex', 'qwen', 'minimax', 'pi', 'muse']) {
+    assert.equal(
+      resolveBackendWorkspace(backend, {}, directory),
+      resolve(directory, 'workspace'),
+    )
+  }
+})
+
+test('maps managed provider IDs while preserving backend-native model IDs', () => {
+  assert.deepEqual(resolveBackendModels({
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen3.7-plus',
+  }), {
+    common: 'qwen3.7-plus',
+    openCode: 'alibaba-cn/qwen3.7-plus',
+    openClaw: 'bailian/qwen3.7-plus',
+    qoder: 'qwen3.7-plus',
+    qwen: 'qwen3.7-plus',
+    minimax: 'qwen3.7-plus',
+    kimi: 'qwen3.7-plus',
+    hermes: 'qwen3.7-plus',
+    codeBuddy: 'qwen3.7-plus',
+    codex: 'qwen3.7-plus',
+    claude: 'qwen3.7-plus',
+    pi: 'qwen3.7-plus',
+    muse: 'qwen3.7-plus',
+    deepSeekHarness: '',
+    acp: 'qwen3.7-plus',
+  })
+})
+
+test('ignores backend-native model variables as Gateway overrides', () => {
+  assert.deepEqual(resolveBackendModels({
+    OPENCODE_MODEL: 'custom-open/code-model',
+    QODER_MODEL: 'qoder-model',
+  }), {
+    common: '',
+    openCode: '',
+    openClaw: '',
+    qoder: '',
+    qwen: '',
+    minimax: '',
+    kimi: '',
+    hermes: '',
+    codeBuddy: '',
+    codex: '',
+    claude: '',
+    pi: '',
+    muse: '',
+    deepSeekHarness: '',
+    acp: '',
+  })
+})
+
+test('treats legacy auto as no backend model override', () => {
+  assert.deepEqual(resolveBackendModels({
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'AUTO',
+  }), {
+    common: '',
+    openCode: '',
+    openClaw: '',
+    qoder: '',
+    qwen: '',
+    minimax: '',
+    kimi: '',
+    hermes: '',
+    codeBuddy: '',
+    codex: '',
+    claude: '',
+    pi: '',
+    muse: '',
+    deepSeekHarness: '',
+    acp: '',
+  })
+})
+
+test('uses only the unified backend model override', () => {
+  assert.deepEqual(resolveBackendModels({
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen3.7-max',
+    OPENCODE_MODEL: 'custom-open/code-model',
+  }), {
+    common: 'qwen3.7-max',
+    openCode: 'alibaba-cn/qwen3.7-max',
+    openClaw: 'bailian/qwen3.7-max',
+    qoder: 'qwen3.7-max',
+    qwen: 'qwen3.7-max',
+    minimax: 'qwen3.7-max',
+    kimi: 'qwen3.7-max',
+    hermes: 'qwen3.7-max',
+    codeBuddy: 'qwen3.7-max',
+    codex: 'qwen3.7-max',
+    claude: 'qwen3.7-max',
+    pi: 'qwen3.7-max',
+    muse: 'qwen3.7-max',
+    deepSeekHarness: '',
+    acp: 'qwen3.7-max',
+  })
+})
+
+test('preserves opaque backend model IDs outside managed provisioning', () => {
+  const models = resolveBackendModels({
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'provider/model-id',
+  })
+  assert.equal(models.openCode, 'alibaba-cn/model-id')
+  assert.equal(models.openClaw, 'bailian/model-id')
+  for (const backend of [
+    'qoder', 'qwen', 'minimax', 'kimi', 'hermes', 'codeBuddy', 'codex', 'claude', 'pi', 'muse', 'acp',
+  ]) {
+    assert.equal(models[backend], 'provider/model-id')
+  }
+})
+
+test('uses a DeepSeek-specific model without leaking unrelated overrides', () => {
+  assert.equal(resolveBackendModels({
+    DEEPSEEK_HARNESS_MODEL: 'deepseek-v4-flash',
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'qwen3.7-max',
+  }).deepSeekHarness, 'deepseek-v4-flash')
+  assert.equal(resolveBackendModels({
+    QWEN_AUDIO_AGENT_BACKEND_MODEL: 'deepseek-v4-pro',
+  }).deepSeekHarness, '')
+})
+
+test('changes the realtime configuration signature when only the model changes', () => {
+  const shared = {
+    DASHSCOPE_API_KEY: 'same-key',
+    QWEN_AUDIO_REALTIME_BASE_URL: 'wss://gateway.example/realtime',
+    QWEN_AUDIO_REALTIME_VOICE: 'same-voice',
+  }
+  const first = resolveRealtimeFrontendConfiguration({
+    ...shared,
+    QWEN_AUDIO_REALTIME_MODEL: 'qwen-audio-3.0-realtime-plus',
+  })
+  const second = resolveRealtimeFrontendConfiguration({
+    ...shared,
+    QWEN_AUDIO_REALTIME_MODEL: 'qwen3.5-omni-plus-realtime',
+  })
+
+  assert.notEqual(first.active.signature, second.active.signature)
+})
+
+test('selects only the explicit voice override for the active model family', () => {
+  const legacy = resolveRealtimeFrontendConfiguration({
+    DASHSCOPE_API_KEY: 'same-key',
+    QWEN_AUDIO_REALTIME_MODEL: 'qwen-audio-3.0-realtime-plus',
+    QWEN_AUDIO_REALTIME_VOICE: 'Cherry',
+  })
+  const omni = resolveRealtimeFrontendConfiguration({
+    DASHSCOPE_API_KEY: 'same-key',
+    QWEN_AUDIO_REALTIME_MODEL: 'qwen3.5-omni-plus-realtime',
+    QWEN_OMNI_REALTIME_VOICE: 'Ethan-custom',
+  })
+  const defaults = resolveRealtimeFrontendConfiguration({
+    DASHSCOPE_API_KEY: 'same-key',
+    QWEN_AUDIO_REALTIME_MODEL: 'qwen3.5-omni-plus-realtime',
+  })
+
+  assert.equal(legacy.active.voice, 'Cherry')
+  assert.equal(omni.active.voice, 'Ethan-custom')
+  assert.equal(defaults.active.voice, '')
+})

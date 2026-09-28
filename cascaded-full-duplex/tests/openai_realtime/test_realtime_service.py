@@ -9,6 +9,7 @@ import json
 from queue import Queue
 from threading import Event, Thread
 from time import sleep
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -47,6 +48,7 @@ from openai.types.realtime.conversation_item import (
     RealtimeConversationItemUserMessage,
 )
 
+from speech_to_speech.api.openai_realtime.semantic_turn_router import SemanticTurnDecision
 from speech_to_speech.api.openai_realtime.service import (
     CHUNK_SIZE_BYTES,
     RealtimeService,
@@ -94,6 +96,257 @@ def _make_audio_append(audio_b64: str) -> InputAudioBufferAppendEvent:
 # ===================================================================
 # Connection lifecycle
 # ===================================================================
+
+
+class TestSemanticFinalTranscription:
+    @pytest.fixture(autouse=True)
+    def semantic_route(self, service, runtime_config):
+        runtime_config.interruption_route = "semantic"
+        service.semantic_turn_router = Mock()
+        service.turn_controller = Mock()
+
+    @pytest.mark.parametrize("active", [False, True])
+    def test_first_nonempty_final_bypasses_router_even_during_wake(
+        self, service, conn_id, text_prompt_queue, active
+    ):
+        state = service._state(conn_id)
+        if active:
+            service.response._ensure_response(conn_id, "wake_response")
+        cancel = Mock()
+        events = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="你是谁", language_code="zh", turn_id="first", turn_revision=0),
+            cancel_output=cancel,
+        )
+        request = text_prompt_queue.get_nowait()
+        assert request.language_code == "zh"
+        assert request.turn_id is None and request.turn_revision is None
+        assert request.response is None
+        assert state.first_semantic_utterance_received
+        assert state.runtime_config.chat.buffer[-1].content[0].text == "你是谁"
+        assert state.in_response is active
+        assert not any(isinstance(event, ResponseDoneEvent) for event in events)
+        completed = next(event for event in events if isinstance(event, ConversationItemInputAudioTranscriptionCompletedEvent))
+        assert "semantic_decision" not in json.loads(completed.model_dump_json())
+        service.semantic_turn_router.decide.assert_not_called()
+        cancel.assert_not_called()
+
+    @pytest.mark.parametrize("activity", ["idle", "active", "pending", "active_and_pending"])
+    @pytest.mark.parametrize("decision", list(SemanticTurnDecision))
+    def test_later_final_routes_semantic_decision_independent_of_activity(
+        self, service, conn_id, text_prompt_queue, activity, decision, monkeypatch
+    ):
+        state = service._state(conn_id)
+        state.first_semantic_utterance_received = True
+        state.runtime_config.session.instructions = "Keep the original persona."
+        if "active" in activity:
+            service.response._ensure_response(conn_id, "old_active")
+        if "pending" in activity:
+            state.mark_response_pending("old_pending")
+        state.assistant_text = "正在介绍天气"
+        state.pending_barge_in = True
+        original_chat = list(state.runtime_config.chat.buffer)
+        service.semantic_turn_router.decide.return_value = decision
+        order = []
+        original_put = text_prompt_queue.put
+
+        def put(request):
+            assert order == ["cancel"]
+            assert not state.in_response
+            assert "old_pending" not in state.pending_response_keys
+            order.append("queue")
+            original_put(request)
+
+        monkeypatch.setattr(text_prompt_queue, "put", put)
+        cancel = Mock(side_effect=lambda: order.append("cancel"))
+        events = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="完整的最终识别", language_code="zh", turn_id="later", turn_revision=0),
+            cancel_output=cancel,
+        )
+        service.semantic_turn_router.decide.assert_called_once_with(
+            assistant_text="正在介绍天气", user_asr="完整的最终识别"
+        )
+        service.turn_controller.decide.assert_not_called()
+        completed = next(event for event in events if isinstance(event, ConversationItemInputAudioTranscriptionCompletedEvent))
+        assert json.loads(completed.model_dump_json())["semantic_decision"] == decision.value
+        done = [event for event in events if isinstance(event, ResponseDoneEvent)]
+        if decision is SemanticTurnDecision.CONTINUE:
+            assert order == []
+            assert state.in_response is ("active" in activity)
+            assert ("old_pending" in state.pending_response_keys) is ("pending" in activity)
+            assert not done
+        else:
+            cancel.assert_called_once_with()
+            assert not state.in_response
+            assert "old_pending" not in state.pending_response_keys
+            assert ("old_pending" in state.closed_response_keys) is ("pending" in activity)
+            assert bool(done) is ("active" in activity)
+            if done:
+                assert done[0].response.status == "cancelled"
+        if decision in (SemanticTurnDecision.WAIT, SemanticTurnDecision.YIELD):
+            assert order == ["cancel", "queue"]
+            request = text_prompt_queue.get_nowait()
+            assert isinstance(request, GenerateResponseRequest)
+            if decision is SemanticTurnDecision.WAIT:
+                assert request.response.instructions.startswith("Keep the original persona.")
+                assert "澄清" in request.response.instructions
+            else:
+                assert request.response is None
+            assert request.turn_id is None and request.turn_revision is None
+            assert request.language_code == "zh"
+            assert state.pending_response_keys == {request.response_key}
+            assert len(state.runtime_config.chat.buffer) == len(original_chat) + 1
+            assert state.runtime_config.chat.buffer[:-1] == original_chat
+            assert state.runtime_config.chat.buffer[-1].role == "user"
+            assert state.runtime_config.chat.buffer[-1].content[0].text == "完整的最终识别"
+        else:
+            assert state.runtime_config.chat.buffer == original_chat
+            assert order == []
+        assert text_prompt_queue.empty()
+        assert state.runtime_config.session.instructions == "Keep the original persona."
+
+    @pytest.mark.parametrize("first_received", [False, True])
+    def test_partial_never_calls_semantic_or_keyword_controller(
+        self, service, conn_id, text_prompt_queue, first_received
+    ):
+        state = service._state(conn_id)
+        state.first_semantic_utterance_received = first_received
+        service.response._ensure_response(conn_id, "active")
+        state.pending_barge_in = True
+        service.dispatch_pipeline_event(conn_id, SpeechStartedEvent())
+        cancel = Mock()
+        for text in ("嗯", "停止", "等一下"):
+            events = service.dispatch_pipeline_event(
+                conn_id, PartialTranscriptionEvent(delta=text), cancel_output=cancel
+            )
+            assert not any(isinstance(event, ResponseDoneEvent) for event in events)
+        assert state.in_response
+        assert state.first_semantic_utterance_received is first_received
+        assert text_prompt_queue.empty()
+        assert not state.runtime_config.chat.buffer
+        service.semantic_turn_router.decide.assert_not_called()
+        service.turn_controller.decide.assert_not_called()
+        cancel.assert_not_called()
+
+    @pytest.mark.parametrize("first_received", [False, True])
+    @pytest.mark.parametrize("transcript", ["", "  \n\t"])
+    def test_empty_final_does_not_consume_first_utterance_or_disrupt_response(
+        self, service, conn_id, text_prompt_queue, first_received, transcript
+    ):
+        state = service._state(conn_id)
+        state.first_semantic_utterance_received = first_received
+        service.response._ensure_response(conn_id, "active")
+        cancel = Mock()
+        service.dispatch_pipeline_event(
+            conn_id, TranscriptionCompletedEvent(transcript=transcript), cancel_output=cancel
+        )
+        assert state.first_semantic_utterance_received is first_received
+        assert state.in_response
+        assert not state.runtime_config.chat.buffer
+        assert text_prompt_queue.empty()
+        service.semantic_turn_router.decide.assert_not_called()
+        cancel.assert_not_called()
+
+    @pytest.mark.parametrize("decision", [None, *list(SemanticTurnDecision)])
+    def test_duplicate_terminal_is_not_routed_or_queued_twice(
+        self, service, conn_id, text_prompt_queue, decision
+    ):
+        state = service._state(conn_id)
+        state.first_semantic_utterance_received = decision is not None
+        service.semantic_turn_router.decide.return_value = decision or SemanticTurnDecision.CONTINUE
+        service.dispatch_pipeline_event(conn_id, SpeechStartedEvent(turn_id="dedup", turn_revision=0))
+        final = TranscriptionCompletedEvent(transcript="请说明", turn_id="dedup", turn_revision=0)
+        cancel = Mock()
+        first = service.dispatch_pipeline_event(conn_id, final, cancel_output=cancel)
+        assert first
+        queue_size = text_prompt_queue.qsize()
+        chat = list(state.runtime_config.chat.buffer)
+        expected_requests = int(decision is not SemanticTurnDecision.CONTINUE)
+        assert queue_size == expected_requests
+        assert len(chat) == expected_requests
+        if expected_requests:
+            assert chat[0].role == "user"
+            assert chat[0].content[0].text == "请说明"
+        pending_before_duplicate = set(state.pending_response_keys)
+        second = service.dispatch_pipeline_event(conn_id, final, cancel_output=cancel)
+        assert second == []
+        assert text_prompt_queue.qsize() == queue_size
+        assert state.runtime_config.chat.buffer == chat
+        assert state.pending_response_keys == pending_before_duplicate
+        if expected_requests:
+            request = text_prompt_queue.get_nowait()
+            assert isinstance(request, GenerateResponseRequest)
+            if decision is SemanticTurnDecision.WAIT:
+                assert "澄清" in request.response.instructions
+            else:
+                assert request.response is None
+            assert state.pending_response_keys == {request.response_key}
+        assert text_prompt_queue.empty()
+        assert service.semantic_turn_router.decide.call_count == int(decision is not None)
+        assert cancel.call_count == int(decision in (SemanticTurnDecision.WAIT, SemanticTurnDecision.YIELD))
+
+    @pytest.mark.parametrize("missing_router", [False, True])
+    def test_failure_preserves_active_and_pending_response_without_keyword_fallback(
+        self, service, conn_id, text_prompt_queue, missing_router
+    ):
+        state = service._state(conn_id)
+        state.first_semantic_utterance_received = True
+        service.response._ensure_response(conn_id, "active")
+        state.mark_response_pending("pending")
+        response_id = state.current_response_id
+        state.assistant_text = "still speaking"
+        if missing_router:
+            service.semantic_turn_router = None
+        else:
+            service.semantic_turn_router.decide.side_effect = TimeoutError("semantic timeout")
+        cancel = Mock()
+        events = service.dispatch_pipeline_event(
+            conn_id, TranscriptionCompletedEvent(transcript="停止"), cancel_output=cancel,
+        )
+        assert any(isinstance(event, ConversationItemInputAudioTranscriptionCompletedEvent) for event in events)
+        error = next(event for event in events if isinstance(event, RealtimeErrorEvent))
+        assert error.error.type == "semantic_turn_failed"
+        assert not any(isinstance(event, ResponseDoneEvent) for event in events)
+        assert state.in_response and state.current_response_id == response_id
+        assert state.current_response_key == "active"
+        assert state.pending_response_keys == {"pending"}
+        assert not state.closed_response_keys
+        assert state.assistant_text == "still speaking"
+        assert not state.runtime_config.chat.buffer
+        assert text_prompt_queue.empty()
+        service.turn_controller.decide.assert_not_called()
+        cancel.assert_not_called()
+
+    @pytest.mark.parametrize("clarification", [False, True])
+    def test_semantic_request_output_survives_speculative_revision_advance(
+        self, service, conn_id, text_prompt_queue, clarification
+    ):
+        service.speculative_turns = SpeculativeTurnTracker()
+        state = service._state(conn_id)
+        state.first_semantic_utterance_received = clarification
+        service.semantic_turn_router.decide.return_value = SemanticTurnDecision.WAIT
+        service.dispatch_pipeline_event(
+            conn_id, TranscriptionCompletedEvent(transcript="你好", turn_id="turn", turn_revision=0),
+        )
+        request = text_prompt_queue.get_nowait()
+        assert request.turn_id is None and request.turn_revision is None
+        service.speculative_turns.observe("turn", 1)
+        service.semantic_turn_router.decide.return_value = SemanticTurnDecision.CONTINUE
+        service.dispatch_pipeline_event(
+            conn_id, TranscriptionCompletedEvent(transcript="嗯", turn_id="turn", turn_revision=1),
+        )
+        events = service.dispatch_pipeline_event(
+            conn_id,
+            AssistantOutputEvent(
+                text="Uninterrupted answer", response_key=request.response_key,
+                turn_id=request.turn_id, turn_revision=request.turn_revision,
+            ),
+        )
+        assert any(isinstance(event, ResponseCreatedEvent) for event in events)
+        assert state.in_response
+        assert state.current_response_key == request.response_key
+        assert text_prompt_queue.empty()
 
 
 class TestConnectionLifecycle:
@@ -1713,6 +1966,22 @@ class TestHandleResponseCreate:
         assert prefetch.response_key not in st.generation_done_tool_calls
         assert st.response_pending is True
 
+    def test_semantic_route_does_not_suppress_normal_final_transcription(
+        self, service, conn_id, runtime_config, text_prompt_queue
+    ):
+        runtime_config.interruption_route = "semantic"
+
+        events = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="你是谁", language_code="zh"),
+        )
+
+        queued = text_prompt_queue.get_nowait()
+        assert isinstance(queued, GenerateResponseRequest)
+        assert queued.language_code == "zh"
+        assert service._state(conn_id).runtime_config.chat.buffer[-1].content[0].text == "你是谁"
+        assert any(event.type == "conversation.item.input_audio_transcription.completed" for event in events)
+
     def test_response_create_while_implicit_response_pending(self, service, conn_id, text_prompt_queue):
         service.dispatch_pipeline_event(
             conn_id,
@@ -2759,7 +3028,32 @@ class TestDispatchPipelineEvent:
         assert evt.audio_start_ms == 0
         assert evt.item_id.startswith("item_")
 
+    def test_first_user_utterance_is_not_a_barge_in(self, service, conn_id, runtime_config, text_prompt_queue):
+        runtime_config.interruption_route = "semantic"
+        service.response._ensure_response(conn_id)
+
+        service.dispatch_pipeline_event(conn_id, SpeechStartedEvent())
+        state = service._state(conn_id)
+        assert state.pending_barge_in is False
+
+        events = service.dispatch_pipeline_event(
+            conn_id,
+            TranscriptionCompletedEvent(transcript="你是谁", language_code="zh"),
+        )
+
+        request = text_prompt_queue.get_nowait()
+        assert isinstance(request, GenerateResponseRequest)
+        assert request.language_code == "zh"
+        assert any(event.type == "conversation.item.input_audio_transcription.completed" for event in events)
+
     def test_turn_controller_cancels_after_meaningful_transcription(self, service, conn_id):
+        service._state(conn_id).runtime_config.chat.add_item(
+            RealtimeConversationItemUserMessage(
+                type="message",
+                role="user",
+                content=[{"type": "input_text", "text": "previous"}],
+            )
+        )
         service.response._ensure_response(conn_id)
         started_events = service.dispatch_pipeline_event(
             conn_id,
@@ -2792,6 +3086,13 @@ class TestDispatchPipelineEvent:
         assert service._state(conn_id).in_response is True
 
     def test_backchannel_final_does_not_enqueue_new_response(self, service, conn_id, text_prompt_queue):
+        service._state(conn_id).runtime_config.chat.add_item(
+            RealtimeConversationItemUserMessage(
+                type="message",
+                role="user",
+                content=[{"type": "input_text", "text": "previous"}],
+            )
+        )
         service.response._ensure_response(conn_id)
         service.dispatch_pipeline_event(conn_id, SpeechStartedEvent())
 

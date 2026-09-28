@@ -59,4 +59,29 @@ PYTHONPATH=. python3 scripts/inspect_qwen3_moshi.py \
   --local-files-only
 ```
 
-该命令不会自动下载权重；Mimi 的实际 codebook cardinality 确认后，应通过 `load_qwen3_moshi(..., mimi_codebook_sizes=...)` 传入，而不是使用示例默认值替代配置。
+## Step4: 第一阶段 Emilia 单流预训练
+
+在 `end-to-end-full-duplex/` 目录运行以下命令，先用已有的 schema 2 Emilia 时间戳文件做 10 步小规模训练检查。将模型路径替换为实际位置，并先将环境变量 `TEXT_PAD_TOKEN_ID` 设为已确认的、Qwen 现有词表中的文本占位 token ID；脚本不会自动猜测或新增 token。
+
+```bash
+python -m trainer.train_stage1 \
+  --manifest outputs/emilia-qwen-raw-smoke.jsonl \
+  --qwen-model /absolute/path/to/qwen3-1.7b \
+  --mimi-checkpoint /absolute/path/to/tokenizer-e351c8d8-checkpoint125.safetensors \
+  --output-dir outputs/stage1-smoke \
+  --cache-dir outputs/emilia-token-cache \
+  --text-pad-token-id "${TEXT_PAD_TOKEN_ID:?请先设置文本占位token ID}" \
+  --device cuda:0 \
+  --precision bf16 \
+  --gradient-checkpointing \
+  --batch-size 1 \
+  --max-samples 32 \
+  --max-duration 10 \
+  --max-steps 10 \
+  --validation-interval 0 \
+  --validation-fraction 0
+```
+
+该命令需要支持 bf16 的 CUDA 环境；Mimi 保持冻结，训练使用单路音频流。小样本检查显式关闭验证，避免同一来源的数据无法划出独立验证集；正式训练应使用完整时间戳文件，并启用按来源分组的验证划分。
+
+训练输出为 `outputs/stage1-smoke/checkpoint.pt` 和 `metrics.jsonl`。断点恢复时保持原配置（尤其是 `--max-steps`）不变并追加 `--resume`；若需提前暂停，使用 `--stop-after-steps`，不要通过改变 `--max-steps` 模拟暂停。

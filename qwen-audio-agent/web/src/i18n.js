@@ -1,0 +1,216 @@
+const translations = {
+  '待命': 'Standby',
+  '正在听': 'Listening',
+  '正在说': 'Speaking',
+  '正在处理任务': 'Working on a task',
+  '等待你的确认': 'Waiting for your confirmation',
+  '正在启动': 'Starting',
+  '正在连接语音前台': 'Connecting voice frontend',
+  '其他入口正在使用': 'In use by another client',
+  '已隐藏': 'Hidden',
+  '正在显示': 'Showing',
+  '桌面端': 'Desktop',
+  '终端': 'Terminal',
+  '其他入口': 'another client',
+  '正在检查后台 Agent': 'Checking backend agent',
+  '请求失败（{status}）': 'Request failed ({status})',
+  '没有提交成功：{message}': 'Submission failed: {message}',
+  'Gateway 已连接': 'Gateway connected',
+  '能力服务尚未连接': 'Backend service not connected',
+  'qwen-audio-agent Gateway 尚未连接': 'qwen-audio-agent Gateway not connected',
+  '正在听你说': 'Listening',
+  'qwen-audio-agent Gateway 已断开，正在重连': 'qwen-audio-agent Gateway disconnected, reconnecting',
+  '网关重连后未找到这次后台执行，请重新提交。': 'This background task was not found after the gateway reconnected. Please submit it again.',
+  '{holder}正在使用语音': '{holder} is using voice',
+  '正在接入语音': 'Connecting voice',
+  '正在回复': 'Replying',
+  '正在处理': 'Processing',
+  '已安排': 'Scheduled',
+  '下次触发：{time}': 'Next: {time}',
+  '时间待定': 'Time pending',
+  '一次': 'Once',
+  '每天': 'Daily',
+  '每周': 'Weekly',
+  '工作日': 'Weekdays',
+  '排队中': 'Queued',
+  '进行中': 'In progress',
+  '正在处理 · {seconds} 秒': 'Processing · {seconds}s',
+  '正在整理项目结果': 'Finalizing project results',
+  '正在取消': 'Cancelling',
+  '正在继续处理': 'Resuming',
+  '正在准备回复': 'Preparing reply',
+  '处理完成': 'Completed',
+  '后台失败：{error}': 'Background task failed: {error}',
+  '已取消': 'Cancelled',
+  '已创建新会话': 'New session created',
+  '等待{holder}释放语音': 'Waiting for {holder} to release voice',
+  '正在显示悬浮球': 'Showing the orb',
+  '连接异常': 'Connection error',
+  '语音控制': 'Voice controls',
+  '麦克风静音': 'Mute microphone',
+  '取消等待语音': 'Cancel waiting for voice',
+  '开启麦克风': 'Enable microphone',
+  '设置': 'Settings',
+  '打开对话': 'Open conversation',
+  '收起': 'Collapse',
+  '收起为悬浮球': 'Collapse to orb',
+  '退出': 'Quit',
+  '后台任务': 'Background tasks',
+  '折叠后台任务': 'Collapse background tasks',
+  '展开后台任务': 'Expand background tasks',
+  '取消提醒': 'Cancel reminder',
+  '取消计划': 'Cancel scheduled task',
+  '正在提交': 'Submitting',
+  '允许此任务': 'Allow task',
+  '始终允许': 'Always allow',
+  '权限决定': 'Permission decision',
+  '允许此任务及后续操作，任务结束后失效': 'Allow this task and its subsequent operations until it ends',
+  '本会话后续权限请求自动允许': 'Automatically allow later permission requests in this session',
+  '拒绝当前操作': 'Deny this operation',
+  '拒绝': 'Deny',
+  '你': 'You',
+  '已打断': 'Interrupted',
+  '来源': 'Sources',
+  '打开 {label}': 'Open {label}',
+  '模型信息不可用': 'Model information unavailable',
+  '模型能力信息不可用': 'Model capability information unavailable',
+  '视频通话': 'Video call',
+  '开启视频': 'Enable video',
+  '关闭视频': 'Disable video',
+  '开启摄像头': 'Enable camera',
+  '关闭摄像头': 'Disable camera',
+  '摄像头已关闭': 'Camera off',
+  '正在开启摄像头': 'Starting camera',
+  '关闭视频，保留语音': 'Close video, keep voice',
+  '相机预览': 'Camera preview',
+  '实时视觉已开启 · 已发送 {count} 帧': 'Live vision enabled · {count} frames sent',
+  '实时视觉已暂停，连接恢复后将自动继续': 'Live vision paused · reconnecting automatically',
+  '请先开启麦克风': 'Enable the microphone first',
+  '当前浏览器无法使用相机': 'Camera access is unavailable in this browser',
+  '无法打开相机': 'Could not open the camera',
+  '相机连接已断开': 'Camera disconnected',
+  '视觉输入连接不可用': 'Live vision connection is unavailable',
+  '视觉帧超过大小限制': 'Visual frame exceeds the size limit',
+  '无法采集视觉画面': 'Could not capture a visual frame',
+  '新会话': 'New session',
+  '资料库': 'Library',
+  '把本机的手册、规章、教材交给助手': 'Hand local manuals, policies and textbooks to the assistant',
+  '粘贴本机文件路径，例如 /Users/me/手册.md': 'Paste a local file path, e.g. /Users/me/manual.md',
+  '加入资料库': 'Add to library',
+  '支持 Markdown、txt 等文本；复杂文档会先提取文字。': 'Supports text files such as Markdown and txt; text is extracted from richer document formats first.',
+  '还没有资料。加进来之后，助手就知道该去查哪一份。': 'No documents yet. Once added, the assistant knows which one to consult.',
+  '资料库功能未开启。': 'The document library is not enabled.',
+  '读不到资料列表': 'Cannot read the document list',
+  '正在加入…': 'Adding…',
+  '正在加入资料库': 'Adding to the knowledge library',
+  '已收进资料库：{name}': 'Added to the library: {name}',
+  '已移除：{name}': 'Removed: {name}',
+  '“{name}” 已收进资料库': '“{name}” was added to the library',
+  '“{name}” 提取失败': 'Could not extract “{name}”',
+  '导入失败（{status}）': 'Import failed ({status})',
+  '导入失败，请稍后再试': 'Import failed, please try again later',
+  '移除失败，请稍后再试': 'Could not remove it, please try again later',
+  '待摘要': 'summary pending',
+  '移除': 'Remove',
+  '关闭语音': 'Disable voice',
+  '取消等待': 'Cancel waiting',
+  '开启语音': 'Enable voice',
+  '语音交互': 'Voice interaction',
+  '你说，我来调度。': 'You speak, I orchestrate.',
+  '试着说': 'Try saying',
+  '“帮我查一下今天的 AI 新闻，并整理成三点摘要。”': '"Look up today\'s AI news and summarize it in three points."',
+  '输入文字，或粘贴、拖入图片和文件': 'Type a message, or paste and drop images and files',
+  '输入文字或图片': 'Type text or add an image',
+  '添加图片或文件': 'Add images or files',
+  '移除附件': 'Remove attachment',
+  '发送': 'Send',
+  'Gateway 尚未连接': 'Gateway is not connected yet',
+  '无法读取文件': 'Unable to read file',
+  '文件 {name} 超过 8 MB 限制': 'File {name} exceeds the 8 MB limit',
+  '处理失败': 'Failed',
+  '连接已中断': 'Connection lost',
+  '正在整理结果': 'Organizing results',
+  '后台正在请求执行权限': 'Backend is requesting permission to proceed',
+  '这项工作已停止': 'This task has stopped',
+  '项目结果已返回，协调 Agent 正在整理': 'Project results returned, coordinator agent is organizing them',
+  '正在等待后台确认停止': 'Waiting for backend to confirm cancellation',
+  '结果已经返回，正在准备语音回复': 'Results returned, preparing voice reply',
+  '结果已经发送': 'Results delivered',
+  '正在等待与后台重新连接': 'Waiting to reconnect to backend',
+  '正在连接后台 Agent': 'Connecting to backend agent',
+  '当前模式：{mode}': 'Current mode: {mode}',
+  '会话：{title}': 'Session: {title}',
+  '未知': 'Unknown',
+  '正在生成图片': 'Generating image',
+  '正在查询相关信息': 'Searching for information',
+  '正在读取相关内容': 'Reading content',
+  '正在修改内容': 'Editing content',
+  '一个处理步骤已完成，正在继续': 'A step completed, continuing',
+  '正在执行任务': 'Running a task',
+  '执行结果': 'Result',
+  '当前浏览器不支持实时语音播放': 'This browser does not support realtime voice playback',
+  '语音播放没有成功启用，请再点一次开启语音': 'Voice playback failed to start. Click "Enable voice" again.',
+  '语音播放失败': 'Voice playback failed',
+  '语音播放尚未启用': 'Voice playback is not enabled yet',
+  '语音前台连接异常，正在重试': 'Voice frontend connection error, retrying',
+  '实时语音连接中断，正在重连': 'Realtime voice connection lost, reconnecting',
+  'Gateway 正由另一个客户端使用': 'Gateway is in use by another client',
+  '当前连接已被另一个客户端接管': 'This connection was taken over by another client',
+  '当前设备的访问权限已被撤销，请重新配对': 'Access for this device was revoked. Pair it again.',
+  '另一个客户端正在使用语音助手，是否接管？': 'Another client is using the voice assistant. Take over?',
+  '无法打开麦克风': 'Could not open the microphone',
+  '麦克风权限未开启，请在系统设置中允许后重试': 'Microphone permission is disabled. Allow it in system settings and try again.',
+  '未检测到可用麦克风': 'No microphone detected',
+  '麦克风正被其他应用占用，请稍后重试': 'The microphone is in use by another app. Try again shortly.',
+  '当前环境不支持麦克风输入': 'Microphone input is not supported in this environment',
+  '正在切换麦克风': 'Switching microphone',
+  '未检测到可用麦克风，连接设备后会自动恢复': 'No microphone detected. Input will recover automatically when a device is connected.',
+  '无法初始化实时语音播放': 'Could not initialize realtime voice playback',
+  '加载远程图片': 'Load remote image',
+  '加载远程音频': 'Load remote audio',
+  '加载远程视频': 'Load remote video',
+  '打开链接': 'Open link',
+  '任务产物': 'Task artifacts',
+  '任务产物 {number}': 'Task artifact {number}',
+  '文件 {number}': 'File {number}',
+}
+
+let runtimeLanguage = ''
+
+export function setRuntimeLanguage(language = '') {
+  runtimeLanguage = String(language || '').trim()
+  syncDocumentLanguage()
+}
+
+export function syncDocumentLanguage() {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = isChinese(currentLanguage()) ? 'zh-CN' : 'en'
+  }
+}
+
+function currentLanguage() {
+  if (runtimeLanguage) return runtimeLanguage
+  try {
+    const requested = new URLSearchParams(globalThis.location?.search || '').get('lang')
+    if (requested) return requested
+  } catch {
+    // Ignore malformed or unavailable locations.
+  }
+  // WebUI has no language preference control. An old/debug localStorage value
+  // must not silently override the browser's current preferred language.
+  return globalThis.navigator?.languages?.[0] || globalThis.navigator?.language || 'zh-CN'
+}
+
+function isChinese(language) {
+  return /^zh(-|$)/i.test(language)
+}
+
+export function t(zh, params) {
+  const text = isChinese(currentLanguage()) ? zh : (translations[zh] ?? zh)
+  if (!params) return text
+  return text.replace(/\{(\w+)\}/g, (match, key) => (
+    key in params ? String(params[key]) : match
+  ))
+}
+
+syncDocumentLanguage()

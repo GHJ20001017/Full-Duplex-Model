@@ -1,0 +1,1360 @@
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  safeStorage,
+  screen,
+  shell,
+  Tray,
+} from 'electron'
+import {
+  existsSync,
+  readFileSync,
+} from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { parseEnv } from 'node:util'
+import {
+  loadRuntimeEnvironment,
+} from '../../shared/runtime-environment.mjs'
+import { mergeSearchPath } from '../../shared/path-environment.mjs'
+import { createLogger } from '../../shared/logger.mjs'
+import {
+  desktopOrbUrl,
+  isLoopbackUrl,
+  isSafeExternalUrl,
+  isSameOrigin,
+  validateAppUrl,
+} from './security.mjs'
+import {
+  desktopTranslator,
+  effectiveDesktopLanguage,
+} from './i18n.mjs'
+import { readGatewayHealth } from '../../shared/gateway/http-client.mjs'
+import { GatewayConnectionProfileStore } from '../../shared/gateway/connection-profiles.mjs'
+import {
+  desktopGatewayCredential,
+  parseDesktopGatewayInput,
+  prepareDesktopGatewayConnection,
+} from './gateway-connection.mjs'
+import {
+  findRunningGateway,
+} from '../../shared/gateway/lease.mjs'
+import {
+  desktopGatewayCompatibility,
+  desktopGatewayEnvironment,
+  EmbeddedGateway,
+  resolveBorrowedGatewayAttachment,
+} from './gateway-process.mjs'
+import {
+  DESKTOP_ORB_HEIGHT,
+  DESKTOP_ORB_WIDTH,
+  desktopConversationPanelBounds,
+  desktopOrbAnchorFromPanel,
+  desktopOrbBounds,
+  desktopSurfaceLayout,
+} from './desktop-surface-layout.mjs'
+import { createOrbPlacement } from './orb-placement.mjs'
+import { bindOrbShell, configureOrbWindow } from './orb-shell.mjs'
+import { createSettingsStore } from './settings-store.mjs'
+import { desktopClientPaths } from './client-paths.mjs'
+import { createDesktopBackendManagement } from './backend/management.mjs'
+import {
+  clientSettingsPatch,
+  realtimeSettingsConfigured,
+  realtimeSettingsConfiguration,
+  updateSettingsContent,
+} from './settings-config.mjs'
+import { runtimePathEnvironment, userConfigDirectory } from '../../shared/runtime-paths.mjs'
+import { DesktopWakeWordRuntime } from './wake-word/runtime.mjs'
+import {
+  effectiveOrbSkin as resolveEffectiveOrbSkin,
+  importSkin,
+  listSkins,
+  removeSkin,
+} from './skin-store.mjs'
+import {
+  BUILTIN_ORB_SKINS,
+} from '../../shared/orb-skin-catalog.mjs'
+import {
+  startDesktopRendererServer,
+} from './renderer-server.mjs'
+import {
+  expandProcessPath,
+} from './process-path.mjs'
+import {
+  createDesktopUpdater,
+} from './updater.mjs'
+import { createGracefulShutdown } from './graceful-shutdown.mjs'
+import { DesktopPresence } from './desktop-presence.mjs'
+import { createElectronGatewayCredentialStore } from './gateway-credential-store.mjs'
+
+// Gateway paths belong to the Gateway; Electron's userData holds only client
+// preferences, credentials, presentation assets and local caches.
+app.setName('Qwen Audio Agent')
+const clientPaths = desktopClientPaths(app.getPath('userData'))
+
+const here = dirname(fileURLToPath(import.meta.url))
+const sourceRoot = resolve(here, '../..')
+const runtimeRoot = app.isPackaged
+  ? resolve(process.resourcesPath, 'runtime')
+  : sourceRoot
+const expectedConfigPath = resolve(
+  userConfigDirectory(process.env),
+  'config.env',
+)
+const configExistedAtLaunch = existsSync(expectedConfigPath)
+const runtimeEnvironment = loadRuntimeEnvironment({
+  root: runtimeRoot,
+  defaultStateDirectory: 'state/desktop',
+  prepareBackendRuntime: false,
+  generateSecret: false,
+})
+// Child Gateway processes must use the selected Gateway state root.
+process.env.QWAUDIO_STATE_DIR = runtimeEnvironment.stateDirectory
+expandProcessPath({ cacheFile: clientPaths.pathCacheFile })
+const logger = createLogger({
+  component: 'desktop',
+  fileName: 'desktop.log',
+  directory: clientPaths.logDirectory,
+})
+const skinsRoot = clientPaths.skinsDirectory
+// 设置表单读写共享配置目录的 config.env；悬浮球摆位等
+// 窗口状态是桌面专属，经 ui-state.json 留在桌面版自己的数据目录。
+const desktopSettingsStore = createSettingsStore({
+  configDir: runtimeEnvironment.configDirectory,
+  clientDir: clientPaths.directory,
+})
+const desktopGatewayCredentials = createElectronGatewayCredentialStore({
+  filePath: clientPaths.credentialsPath,
+  safeStorage,
+})
+const desktopGatewayProfiles = new GatewayConnectionProfileStore({
+  filePath: clientPaths.connectionsPath,
+  credentialStore: desktopGatewayCredentials,
+})
+let desktopConversationSessionId = desktopSettingsStore.conversationSession.load()
+const desktopGatewayClientInstanceId = desktopSettingsStore.gatewayClientInstance.load()
+const orbPlacement = createOrbPlacement({
+  getDisplays: () => screen.getAllDisplays(),
+  orbSize: { width: DESKTOP_ORB_WIDTH, height: DESKTOP_ORB_HEIGHT },
+  loadState: () => desktopSettingsStore.orbPosition.load(),
+  saveState: state => desktopSettingsStore.orbPosition.save(state),
+})
+
+// 生效皮肤：内置 id 直接用；导入皮肤缺包时回退 fluid（skin-store 单一实现）。
+function effectiveOrbSkin(orbSkin) {
+  return resolveEffectiveOrbSkin(orbSkin, { skinsRoot })
+}
+logger.info('desktop.starting', {
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  platform: process.platform,
+  arch: process.arch,
+})
+const fallbackPage = resolve(here, 'orb-unavailable.html')
+const fallbackUrl = pathToFileURL(fallbackPage).href
+const settingsPage = resolve(here, 'settings.html')
+const webRoot = resolve(sourceRoot, 'web/dist')
+const initialSettings = desktopSettingsStore.load()
+let desktopLanguage = initialSettings.language
+let desktopWakeWordEnabled = initialSettings.wakeWordEnabled
+const desktopText = (text, params) => desktopTranslator(
+  desktopLanguage,
+  app.getLocale(),
+)(text, params)
+let configuredGatewayOrigin = validateAppUrl(initialSettings.gatewayUrl)
+let appOrigin = configuredGatewayOrigin
+let setupRequired = (
+  !configExistedAtLaunch
+  || (
+    isLoopbackUrl(configuredGatewayOrigin)
+    && !realtimeSettingsConfigured(initialSettings)
+  )
+)
+const preloadPath = resolve(here, 'preload.cjs')
+
+let mainWindow = null
+let settingsWindow = null
+let rendererServer = null
+let desktopTaskCount = 0
+let desktopTaskPlacement = 'below'
+let desktopOrbOffsetX = 0
+let desktopSurfaceMode = 'orb'
+let reconnectTimer = null
+let embeddedGateway = null
+let borrowedGatewayOrigin = ''
+let gatewayCrashCount = 0
+let lastRuntimeError = ''
+let desktopUpdater = null
+let tray = null
+let gatewayAccessToken = String(
+  process.env.QWEN_AUDIO_GATEWAY_CLIENT_TOKEN
+  || process.env.QWEN_AUDIO_AGENT_ACCESS_TOKEN
+  || '',
+).trim()
+let pendingGatewayPairingCode = null
+
+const desktopPresence = new DesktopPresence({
+  getWindow: () => mainWindow,
+  globalShortcut,
+  logger,
+})
+
+const desktopWakeWord = new DesktopWakeWordRuntime({
+  modelRoot: clientPaths.wakeWordModelDirectory,
+  onDetected: () => desktopPresence.wake('wake-word'),
+  onError: error => logger.warn('wake_word.failed', { error }),
+})
+desktopWakeWord.setEnabled(desktopWakeWordEnabled)
+
+ipcMain.on('qwen-audio-agent:wake-word-audio', (event, payload) => {
+  if (
+    !desktopWakeWordEnabled
+    || desktopPresence.state !== 'hidden'
+    || !mainWindow
+    || mainWindow.isDestroyed()
+    || event.sender !== mainWindow.webContents
+  ) return
+  const audio = typeof payload?.audio === 'string' ? payload.audio : ''
+  const sampleRate = Number(payload?.sampleRate)
+  if (!audio || audio.length > 128 * 1024 || sampleRate !== 16_000) return
+  desktopWakeWord.accept(audio, sampleRate)
+})
+
+const MAX_GATEWAY_CRASH_RESTARTS = 3
+
+function configuredOrigin() {
+  const settings = desktopSettingsStore.load()
+  return {
+    origin: validateAppUrl(settings.gatewayUrl),
+    settings,
+  }
+}
+
+async function selectDesktopGatewayCredential(origin) {
+  gatewayAccessToken = await desktopGatewayCredential(
+    origin, desktopGatewayProfiles, process.env.QWEN_AUDIO_GATEWAY_CLIENT_TOKEN || '',
+  )
+  return gatewayAccessToken
+}
+
+function readDesktopGatewayHealth(origin) {
+  return readGatewayHealth(origin, fetch, { accessToken: gatewayAccessToken })
+}
+
+function configuredGatewayEnvironment() {
+  const raw = readFileSync(runtimeEnvironment.configPath, 'utf8')
+  const configured = parseEnv(raw)
+  // 自动休眠超时必须与 orb 前端一致：客户端配置可能缺省（首次安装），
+  // 这里总是注入归一化后的有效值，避免前端 60 秒隐藏
+  // 而网关 sleepTimeoutMs=0 永不休眠的分歧。
+  const settings = desktopSettingsStore.load()
+  return desktopGatewayEnvironment({
+    env: process.env,
+    configured: {
+      ...configured,
+      ...runtimePathEnvironment(runtimeEnvironment),
+      QWEN_AUDIO_DESKTOP_AUTO_HIDE_SECONDS: String(settings.autoHideSeconds),
+    },
+    runtimeRoot,
+    sourceRoot,
+  })
+}
+
+function gatewayPort(origin) {
+  const port = Number(new URL(origin).port)
+  return Number.isInteger(port) && port > 0 ? port : 3101
+}
+
+function attachRunningGateway(active, environment, event = 'gateway.reused') {
+  const attachment = resolveBorrowedGatewayAttachment(active, environment)
+  borrowedGatewayOrigin = attachment.origin
+  const fields = {
+    origin: attachment.origin,
+    instanceId: active.lease.instanceId,
+    owner: active.lease.owner,
+    configurationMatch: attachment.compatibility.compatible,
+  }
+  if (attachment.compatibility.compatible) {
+    logger.info(event, fields)
+  } else {
+    logger.warn(`${event}_with_runtime_configuration`, {
+      ...fields,
+      mismatch: attachment.compatibility.code,
+      reason: attachment.compatibility.reason,
+    })
+  }
+  return attachment.origin
+}
+
+async function startLocalGateway(origin, accessToken = gatewayAccessToken) {
+  if (!isLoopbackUrl(origin)) return origin
+  if (embeddedGateway?.running) return embeddedGateway.start()
+  if (await readGatewayHealth(origin, fetch, { accessToken })) {
+    borrowedGatewayOrigin = origin
+    return origin
+  }
+  const environment = configuredGatewayEnvironment()
+  const active = await findRunningGateway(runtimeEnvironment.stateDirectory, {
+    readHealth: readGatewayHealth,
+  })
+  if (active) {
+    return attachRunningGateway(active, environment)
+  }
+  borrowedGatewayOrigin = ''
+  if (!embeddedGateway) {
+    embeddedGateway = new EmbeddedGateway({
+      preferredPort: gatewayPort(origin),
+      envFactory: configuredGatewayEnvironment,
+      logger: logger.child({ subsystem: 'embedded_gateway' }),
+    })
+    embeddedGateway.onGatewayMessage = message => {
+      if (message?.type !== 'qwen-audio-agent:offline-notification') return
+      const task = message.task || {}
+      new Notification({
+        title: '千问 Audio 提醒',
+        body: String(task.result || task.objective || ''),
+      }).show()
+    }
+    embeddedGateway.onUnexpectedExit = () => {
+      lastRuntimeError = '内置 Gateway 意外退出'
+      if (gatewayCrashCount >= MAX_GATEWAY_CRASH_RESTARTS) return
+      gatewayCrashCount += 1
+      const gateway = embeddedGateway
+      setTimeout(() => {
+        if (embeddedGateway !== gateway || gateway.running) return
+        gateway.start().then(restarted => {
+          lastRuntimeError = ''
+          appOrigin = restarted
+          process.env.QWEN_AUDIO_AGENT_URL = restarted
+          if (
+            mainWindow
+            && !mainWindow.isDestroyed()
+            && desktopPresence.state !== 'hidden'
+          ) {
+            void loadQwenAudioAgent(mainWindow)
+          }
+        }).catch(error => {
+          lastRuntimeError = error?.message || String(error)
+          logger.error('gateway.restart_failed', { error })
+        })
+      }, 1000)
+    }
+  }
+  let started
+  try {
+    started = await embeddedGateway.start({
+      preferredPort: gatewayPort(origin),
+    })
+  } catch (error) {
+    const winner = await findRunningGateway(
+      runtimeEnvironment.stateDirectory,
+      {
+        readHealth: readGatewayHealth,
+        timeoutMs: 3000,
+      },
+    )
+    if (!winner) throw error
+    embeddedGateway = null
+    return attachRunningGateway(
+      winner,
+      environment,
+      'gateway.reused_after_race',
+    )
+  }
+  borrowedGatewayOrigin = ''
+  gatewayCrashCount = 0
+  return started
+}
+
+async function ensureDesktopUi() {
+  if (!rendererServer) {
+    rendererServer = await startDesktopRendererServer({
+      webRoot,
+      target: () => appOrigin,
+      skinsRoot,
+      accessToken: () => gatewayAccessToken,
+    })
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow()
+  }
+}
+
+async function startConfiguredRuntime(settings = configuredOrigin().settings) {
+  configuredGatewayOrigin = validateAppUrl(settings.gatewayUrl)
+  await selectDesktopGatewayCredential(configuredGatewayOrigin)
+  appOrigin = isLoopbackUrl(configuredGatewayOrigin)
+    ? await startLocalGateway(configuredGatewayOrigin)
+    : configuredGatewayOrigin
+  process.env.QWEN_AUDIO_AGENT_URL = appOrigin
+  process.env.QWEN_AUDIO_ORB_STYLE = settings.orbStyle
+  process.env.QWEN_AUDIO_ORB_SKIN = settings.orbSkin
+  await ensureDesktopUi()
+  lastRuntimeError = ''
+  return appOrigin
+}
+
+async function runtimeStatus(target = appOrigin) {
+  const health = await readDesktopGatewayHealth(target)
+  return {
+    gatewayConnected: Boolean(health),
+    gatewayUrl: String(target || ''),
+    realtimeProvider: health?.realtimeProvider || null,
+    realtimeLabel: health?.realtimeLabel || null,
+    realtimeModel: health?.realtimeModel || null,
+    realtimeModelProfile: health?.realtimeModelProfile || null,
+    voiceConfigured: health?.voiceConfigured === true,
+    realtimeConnection: health?.voiceClients?.realtime || null,
+    backend: health?.backend
+      ? {
+          protocol: health.backend.kind || health.backend.protocol || null,
+          label: health.backend.label || null,
+          baseUrl: health.backend.baseUrl || null,
+          model: health.backend.model || null,
+          connected: health.backend.ok === true,
+          status: health.backend.status || null,
+          code: health.backend.code || null,
+          error: health.backend.error || null,
+        }
+      : null,
+  }
+}
+
+function isDesktopRendererUrl(value) {
+  return Boolean(
+    rendererServer
+    && isSameOrigin(value, rendererServer.origin),
+  )
+}
+
+function configurePermissions(window) {
+  const electronSession = window.webContents.session
+  electronSession.setPermissionCheckHandler((
+    _webContents,
+    permission,
+    requestingOrigin,
+    details,
+  ) => {
+    const origin = details?.securityOrigin || requestingOrigin
+    return permission === 'media' && isDesktopRendererUrl(origin)
+  })
+  electronSession.setPermissionRequestHandler((
+    webContents,
+    permission,
+    callback,
+    details,
+  ) => {
+    const source = details?.requestingUrl
+      || details?.securityOrigin
+      || webContents.getURL()
+    const mediaTypes = details?.mediaTypes || []
+    const audioOnly = !mediaTypes.length
+      || mediaTypes.every(type => type === 'audio')
+    callback(
+      permission === 'media'
+      && audioOnly
+      && isDesktopRendererUrl(source),
+    )
+  })
+}
+
+async function showUnavailable(window) {
+  if (window.isDestroyed()) return
+  await window.loadFile(fallbackPage, {
+    query: { target: appOrigin },
+  })
+  clearTimeout(reconnectTimer)
+  reconnectTimer = setTimeout(() => {
+    if (mainWindow === window && !window.isDestroyed()) {
+      void loadQwenAudioAgent(window)
+    }
+  }, 3000)
+}
+
+async function loadQwenAudioAgent(window) {
+  try {
+    if (!rendererServer) throw new Error('desktop renderer is unavailable')
+    const settings = desktopSettingsStore.load()
+    await window.loadURL(desktopOrbUrl(rendererServer.baseUrl, {
+      orbSkin: effectiveOrbSkin(settings.orbSkin),
+      autoHideSeconds: settings.autoHideSeconds,
+      wakeWordEnabled: settings.wakeWordEnabled,
+      language: effectiveDesktopLanguage(settings.language, app.getLocale()),
+      surfaceMode: desktopSurfaceMode,
+      sessionId: desktopConversationSessionId,
+    }))
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  } catch {
+    await showUnavailable(window)
+  }
+}
+
+function sendDesktopClientSettings(window, settings) {
+  if (!window || window.isDestroyed()) return
+  window.webContents.send('qwen-audio-agent:client-settings', {
+    orbSkin: effectiveOrbSkin(settings.orbSkin),
+    autoHideSeconds: settings.autoHideSeconds,
+    wakeWordEnabled: settings.wakeWordEnabled,
+    language: effectiveDesktopLanguage(settings.language, app.getLocale()),
+  })
+}
+
+function showDesktop(reason = 'tray') {
+  if (setupRequired) {
+    showSettings()
+    return
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    desktopPresence.wake(reason)
+    return
+  }
+  startConfiguredRuntime().then(() => {
+    desktopPresence.wake(reason)
+  }).catch(error => {
+    lastRuntimeError = error?.message || String(error)
+    logger.error('runtime.show_failed', { error })
+    showSettings()
+  })
+}
+
+function createTray() {
+  if (!tray) {
+    const iconPath = resolve(
+      sourceRoot,
+      process.platform === 'darwin'
+        ? 'desktop/build/trayTemplate.png'
+        : 'desktop/build/icon.png',
+    )
+    let icon = nativeImage.createFromPath(iconPath)
+    if (process.platform !== 'darwin' && !icon.isEmpty()) {
+      icon = icon.resize({ width: 18, height: 18 })
+    }
+    if (process.platform === 'darwin') icon.setTemplateImage(true)
+    tray = new Tray(icon)
+    tray.setToolTip('Qwen Audio Agent')
+  }
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: desktopText('显示悬浮球'),
+      click: () => showDesktop('tray'),
+    },
+    {
+      label: desktopText('设置…'),
+      click: () => showSettings(),
+    },
+    { type: 'separator' },
+    {
+      label: desktopText('退出 Qwen Audio Agent'),
+      click: () => app.quit(),
+    },
+  ]))
+  return tray
+}
+
+function createWindow() {
+  const { workArea } = screen.getPrimaryDisplay()
+  const width = DESKTOP_ORB_WIDTH
+  const height = DESKTOP_ORB_HEIGHT
+  const initialPosition = orbPlacement.initialPosition()
+  const window = new BrowserWindow({
+    width,
+    height,
+    minWidth: width,
+    minHeight: height,
+    maxWidth: workArea.width,
+    maxHeight: workArea.height,
+    x: initialPosition.x,
+    y: initialPosition.y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    title: 'qwen-audio-agent',
+    autoHideMenuBar: true,
+    skipTaskbar: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      // The floating window is normally unfocused. Keep its renderer timers
+      // aligned with Web Audio so playback receipts are not delayed and retried.
+      backgroundThrottling: false,
+      preload: preloadPath,
+    },
+  })
+
+  // 悬浮层级与全屏空间可见性统一走 orb-shell 契约（与嵌入宿主同一配方）。
+  configureOrbWindow(window)
+  configurePermissions(window)
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isDesktopRendererUrl(url) || url.startsWith(fallbackUrl)) return
+    event.preventDefault()
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
+  })
+  window.once('ready-to-show', () => window.show())
+  window.on('blur', () => {
+    orbShell.cancelDrag()
+  })
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+      mainWindow = null
+      desktopTaskCount = 0
+      desktopTaskPlacement = 'below'
+      desktopOrbOffsetX = 0
+      desktopSurfaceMode = 'orb'
+    }
+  })
+
+  loadQwenAudioAgent(window)
+  return window
+}
+
+function createSettingsWindow() {
+  const { width: workAreaWidth, height: workAreaHeight } = screen
+    .getDisplayNearestPoint(screen.getCursorScreenPoint())
+    .workAreaSize
+  const settingsWindowWidth = Math.max(
+    460,
+    Math.min(600, workAreaWidth - 48),
+  )
+  const settingsWindowHeight = Math.max(
+    600,
+    Math.min(800, workAreaHeight - 48),
+  )
+  const window = new BrowserWindow({
+    width: settingsWindowWidth,
+    height: settingsWindowHeight,
+    minWidth: 460,
+    minHeight: 600,
+    title: desktopText('设置'),
+    backgroundColor: '#f4f5f6',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: preloadPath,
+    },
+  })
+  window.setMenuBarVisibility(false)
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', event => event.preventDefault())
+  window.once('ready-to-show', () => window.show())
+  window.on('closed', () => {
+    if (settingsWindow === window) {
+      settingsWindow = null
+      if (desktopPresence.shortcutPaused) desktopPresence.resumeShortcut()
+    }
+  })
+  void window.loadFile(settingsPage)
+  return window
+}
+
+function showSettings() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (settingsWindow.isMinimized()) settingsWindow.restore()
+    settingsWindow.show()
+    settingsWindow.focus()
+    return
+  }
+  settingsWindow = createSettingsWindow()
+}
+
+// 悬浮球 IPC（拖拽、生命周期、打开设置、请求退出）统一走 orb-shell 契约
+// 绑定：桌面版与嵌入宿主共用同一份实现，防止两个外壳漂移。
+const orbShell = bindOrbShell({
+  ipc: ipcMain,
+  getWindow: () => mainWindow,
+  presence: desktopPresence,
+  logger,
+  onOpenSettings: () => showSettings(),
+  onLoadSurface: () => desktopSurfaceMode,
+  onSetSurface: mode => {
+    const selected = setDesktopSurfaceMode(mode)
+    if (selected === 'panel') desktopPresence.wake('panel')
+    return selected
+  },
+  onSetConversationSession: sessionId => {
+    desktopConversationSessionId = desktopSettingsStore.conversationSession.save(sessionId)
+    return desktopConversationSessionId
+  },
+  onQuit: () => app.quit(),
+  onDragEnd: () => {
+    const [x, y] = mainWindow.getPosition()
+    orbPlacement.recordPosition({ x, y })
+    updateDesktopTaskSurface(desktopTaskCount)
+  },
+})
+
+function sendDesktopTaskPlacement() {
+  mainWindow?.webContents.send(
+    'qwen-audio-agent:task-card-placement',
+    {
+      placement: desktopTaskPlacement,
+      orbOffsetX: desktopOrbOffsetX,
+    },
+  )
+}
+
+function setDesktopSurfaceMode(requestedMode) {
+  if (!mainWindow || mainWindow.isDestroyed()) return 'orb'
+  const mode = requestedMode === 'panel' ? 'panel' : 'orb'
+  if (mode === desktopSurfaceMode) return mode
+
+  const bounds = mainWindow.getBounds()
+  if (mode === 'panel') {
+    const orbBounds = desktopOrbBounds(bounds, {
+      taskCount: desktopTaskCount,
+      placement: desktopTaskPlacement,
+      orbOffsetX: desktopOrbOffsetX,
+    })
+    const workArea = screen.getDisplayMatching(orbBounds).workArea
+    desktopSurfaceMode = 'panel'
+    orbShell.cancelDrag()
+    mainWindow.setAlwaysOnTop(false)
+    mainWindow.setVisibleOnAllWorkspaces(false)
+    mainWindow.setSkipTaskbar(false)
+    mainWindow.setHasShadow(true)
+    mainWindow.setBounds(desktopConversationPanelBounds({
+      orbBounds,
+      workArea,
+    }), false)
+    mainWindow.show()
+    mainWindow.focus()
+    return desktopSurfaceMode
+  }
+
+  const workArea = screen.getDisplayMatching(bounds).workArea
+  const orbAnchor = desktopOrbAnchorFromPanel({ bounds, workArea })
+  desktopSurfaceMode = 'orb'
+  mainWindow.setSkipTaskbar(true)
+  mainWindow.setHasShadow(false)
+  configureOrbWindow(mainWindow)
+  orbPlacement.recordPosition(orbAnchor)
+  const layout = desktopSurfaceLayout({
+    bounds: orbAnchor,
+    currentTaskCount: 0,
+    taskCount: desktopTaskCount,
+    placement: desktopTaskPlacement,
+    workArea,
+  })
+  desktopTaskPlacement = layout.placement
+  desktopOrbOffsetX = layout.orbOffsetX
+  sendDesktopTaskPlacement()
+  mainWindow.setBounds(layout.bounds, false)
+  return desktopSurfaceMode
+}
+
+function updateDesktopTaskSurface(value) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const taskCount = Math.min(100, Math.max(0, Math.floor(Number(value) || 0)))
+  if (desktopSurfaceMode === 'panel') {
+    desktopTaskCount = taskCount
+    return
+  }
+  const bounds = mainWindow.getBounds()
+  const orbBounds = desktopOrbBounds(bounds, {
+    taskCount: desktopTaskCount,
+    placement: desktopTaskPlacement,
+    orbOffsetX: desktopOrbOffsetX,
+  })
+  const workArea = screen.getDisplayMatching(orbBounds).workArea
+  const layout = desktopSurfaceLayout({
+    bounds,
+    currentTaskCount: desktopTaskCount,
+    taskCount,
+    placement: desktopTaskPlacement,
+    orbOffsetX: desktopOrbOffsetX,
+    workArea,
+  })
+  desktopTaskCount = taskCount
+  desktopTaskPlacement = layout.placement
+  desktopOrbOffsetX = layout.orbOffsetX
+  sendDesktopTaskPlacement()
+  const next = layout.bounds
+  if (
+    bounds.x !== next.x
+    || bounds.y !== next.y
+    || bounds.width !== next.width
+    || bounds.height !== next.height
+  ) {
+    // The orb is the visual anchor. Animating the transparent window bounds
+    // makes the orb appear to slide before the renderer applies its offset.
+    mainWindow.setBounds(next, false)
+  }
+}
+
+ipcMain.on('qwen-audio-agent:task-card-count', (event, value) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return
+  updateDesktopTaskSurface(value)
+})
+
+ipcMain.handle('qwen-audio-agent:wake-shortcut-pause', event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权修改显示快捷键')
+  }
+  desktopPresence.pauseShortcut()
+  return true
+})
+
+ipcMain.handle('qwen-audio-agent:wake-shortcut-resume', event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权修改显示快捷键')
+  }
+  return desktopPresence.resumeShortcut()
+})
+
+ipcMain.on('qwen-audio-agent:open-external', async (event, value) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) return
+  let target
+  try {
+    target = new URL(String(value))
+  } catch {
+    return
+  }
+  if (target.protocol !== 'https:') return
+  const { response } = await dialog.showMessageBox(settingsWindow, {
+    type: 'question',
+    buttons: [desktopText('打开'), desktopText('取消')],
+    defaultId: 0,
+    cancelId: 1,
+    title: desktopText('打开外部链接'),
+    message: desktopText('即将在浏览器中打开：{url}', { url: target.href }),
+  })
+  if (response === 0) void shell.openExternal(target.href)
+})
+
+ipcMain.handle('qwen-audio-agent:settings-load', async event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权读取设置')
+  }
+  const settings = desktopSettingsStore.load()
+  return {
+    settings,
+    skins: [...BUILTIN_ORB_SKINS, ...listSkins(skinsRoot)],
+    runtime: setupRequired
+      ? {
+          gatewayConnected: false,
+          gatewayUrl: String(appOrigin || ''),
+          realtimeProvider: null,
+          realtimeLabel: null,
+          realtimeModel: null,
+          voiceConfigured: false,
+          realtimeConnection: null,
+          backend: null,
+        }
+      : await runtimeStatus(),
+    setupRequired,
+    firstRun: !configExistedAtLaunch,
+    runtimeError: lastRuntimeError || null,
+    wakeShortcutRegistered: desktopPresence.shortcutRegistered,
+    restartRequired: false,
+  }
+})
+
+ipcMain.handle('qwen-audio-agent:set-node-path', async (event, nodePath) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权设置 Node.js 路径')
+  }
+  const trimmed = String(nodePath || '').trim()
+  if (!trimmed) throw new Error('路径不能为空')
+
+  if (!existsSync(trimmed)) {
+    throw new Error(`目录不存在：${trimmed}`)
+  }
+
+  // Node discovery is a local Gateway launch setting, persisted by the store.
+  desktopSettingsStore.save({ nodePath: trimmed })
+
+  // 立即生效：直接操作 PATH，不依赖 spawnSync（打包后可能不可用）
+  process.env.QWEN_AUDIO_AGENT_NODE_PATH = trimmed
+  process.env.PATH = mergeSearchPath(process.env.PATH, trimmed, {
+    platform: process.platform,
+    prepend: false,
+  })
+
+  // 再跑 expandProcessPath 利用 where/reg 补充其他路径（失败不影响已设置的路径）
+  try {
+    expandProcessPath({ cacheFile: clientPaths.pathCacheFile })
+  } catch {
+    logger.warn('node-path.expand-failed', { path: trimmed })
+  }
+
+  logger.info('node-path.set', { path: trimmed })
+  return { ok: true }
+})
+
+ipcMain.handle('qwen-audio-agent:settings-runtime-status', async event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权读取运行状态')
+  }
+  return runtimeStatus()
+})
+
+ipcMain.handle('qwen-audio-agent:open-logs', async event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权打开日志目录')
+  }
+  logger.info('logs.opened', { directory: logger.directory })
+  const failure = await shell.openPath(logger.directory)
+  if (failure) throw new Error(`无法打开日志目录：${failure}`)
+  return logger.directory
+})
+
+const backendManagement = createDesktopBackendManagement({
+  configPath: runtimeEnvironment.configPath,
+  pathCacheFile: clientPaths.pathCacheFile,
+  confirmScript: async step => {
+    if (!settingsWindow || settingsWindow.isDestroyed()) return false
+    const { response } = await dialog.showMessageBox(settingsWindow, {
+      type: 'warning',
+      message: desktopText('即将执行官方安装脚本'),
+      detail: desktopText(
+        '该后台 Agent 没有 npm 安装包，主进程将执行官方安装脚本：\n\n{command}\n\n请确认你信任该脚本来源后再继续。',
+        { command: step.command },
+      ),
+      buttons: [desktopText('执行'), desktopText('取消')],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    return response === 0
+  },
+  onInstallProgress: progress => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send(
+        'qwen-audio-agent:backend-install-progress',
+        progress,
+      )
+    }
+  },
+  onConfigured: ({ backend, result }) => {
+    logger.info('backend.configuration_opened', {
+      backend,
+      action: result.action?.kind,
+    })
+  },
+})
+
+ipcMain.handle('qwen-audio-agent:settings-detect-backends', async (event, options) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权检测后台 Agent')
+  }
+  return backendManagement.detectBackends({ force: options?.force === true })
+})
+
+ipcMain.handle('qwen-audio-agent:backend-install', async (event, payload) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权安装后台 Agent')
+  }
+  return backendManagement.install(payload)
+})
+
+ipcMain.handle('qwen-audio-agent:backend-configure', async (event, payload) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权启动后台 Agent 配置')
+  }
+  return backendManagement.configure(payload)
+})
+
+ipcMain.handle('qwen-audio-agent:updater-status', event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权读取更新状态')
+  }
+  return desktopUpdater?.state() || null
+})
+
+ipcMain.handle('qwen-audio-agent:updater-check', async event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权检查更新')
+  }
+  return desktopUpdater ? desktopUpdater.check() : null
+})
+
+// 仅在安装包已下载完成时允许触发安装，避免误重启。
+ipcMain.handle('qwen-audio-agent:updater-install', event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权安装更新')
+  }
+  if (desktopUpdater?.state().phase === 'downloaded') {
+    desktopUpdater.install()
+  }
+})
+
+ipcMain.handle('qwen-audio-agent:settings-save', async (event, settings) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权保存设置')
+  }
+  return applyDesktopSettings(settings)
+})
+
+async function applyDesktopSettings(settings) {
+  const target = parseDesktopGatewayInput(settings.gatewayUrl)
+  const { origin: nextOrigin, remote } = target
+  // Remote configuration belongs to its Gateway host. Only client preferences
+  // are applied here; stale local model/backend fields must not block pairing.
+  settings = { ...(remote ? clientSettingsPatch(settings) : settings), gatewayUrl: nextOrigin }
+  const current = readFileSync(runtimeEnvironment.configPath, 'utf8')
+  const previous = desktopSettingsStore.load()
+  const content = updateSettingsContent(current, settings, { scope: 'gateway', realtimeDrafts: previous })
+  const normalized = desktopSettingsStore.preview(settings)
+  const connection = await prepareDesktopGatewayConnection(target, {
+    profileStore: desktopGatewayProfiles,
+    clientInstanceId: desktopGatewayClientInstanceId,
+    label: app.getName(),
+    fallbackAccessToken: process.env.QWEN_AUDIO_GATEWAY_CLIENT_TOKEN || '',
+  })
+  const credentialChanged = connection.credential !== gatewayAccessToken
+  if (!remote && !connection.connected && !realtimeSettingsConfigured(normalized)) {
+    throw new Error(realtimeSettingsConfiguration(normalized).missingConfigurationMessage)
+  }
+  const gatewayChanged = nextOrigin !== configuredGatewayOrigin
+  const realtimeChanged = realtimeSettingsConfiguration(previous).active.signature
+    !== realtimeSettingsConfiguration(normalized).active.signature
+  const realtimeProviderChanged = (
+    previous.realtimeProvider !== normalized.realtimeProvider
+  )
+  const backendChanged = previous.agentProtocol !== normalized.agentProtocol
+  const backendModelChanged = previous.backendModel !== normalized.backendModel
+  const backendConnectionChanged = (
+    previous.backendOwnership !== normalized.backendOwnership
+    || previous.backendUrl !== normalized.backendUrl
+    || previous.backendCredential !== normalized.backendCredential
+  )
+  const orbSkinChanged = previous.orbSkin !== normalized.orbSkin
+  const autoHideChanged = (
+    previous.autoHideSeconds !== normalized.autoHideSeconds
+  )
+  const wakeShortcutChanged = previous.wakeShortcut !== normalized.wakeShortcut
+  const wakeWordChanged = (
+    previous.wakeWordEnabled !== normalized.wakeWordEnabled
+  )
+  const languageChanged = previous.language !== normalized.language
+  const gatewayRuntimeChanged = (
+    gatewayChanged
+    || realtimeChanged
+    || backendChanged
+    || backendModelChanged
+    || backendConnectionChanged
+  )
+  if (!remote && nextOrigin === borrowedGatewayOrigin && gatewayRuntimeChanged) {
+    const borrowedHealth = await readDesktopGatewayHealth(borrowedGatewayOrigin)
+    if (borrowedHealth) {
+      const nextEnvironment = desktopGatewayEnvironment({
+        env: process.env,
+        configured: parseEnv(content),
+        runtimeRoot,
+        sourceRoot,
+      })
+      const compatibility = desktopGatewayCompatibility(
+        borrowedHealth,
+        nextEnvironment,
+      )
+      if (!compatibility.compatible) {
+        throw new Error(
+          `${compatibility.reason}；当前 Gateway 由其他进程管理，请先停止它再应用该设置`,
+        )
+      }
+    }
+    if (!borrowedHealth) borrowedGatewayOrigin = ''
+  }
+  if (
+    wakeShortcutChanged
+    && !desktopPresence.registerShortcut(normalized.wakeShortcut)
+  ) {
+    throw new Error('这个显示快捷键已被其他应用占用，请选择另一个')
+  }
+  try {
+    desktopSettingsStore.save(settings)
+  } catch (error) {
+    if (wakeShortcutChanged) desktopPresence.registerShortcut(previous.wakeShortcut)
+    throw error
+  }
+  desktopLanguage = normalized.language
+  desktopWakeWordEnabled = normalized.wakeWordEnabled
+  desktopWakeWord.setEnabled(desktopWakeWordEnabled)
+  createTray()
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.setTitle(desktopText('设置'))
+  }
+  logger.info('settings.applied', {
+    realtimeProvider: normalized.realtimeProvider,
+    backend: normalized.agentProtocol,
+    remoteGateway: remote,
+    changes: {
+      gateway: gatewayChanged,
+      realtime: realtimeChanged,
+      realtimeProvider: realtimeProviderChanged,
+      backend: backendChanged,
+      backendModel: backendModelChanged,
+      backendConnection: backendConnectionChanged,
+      orbSkin: orbSkinChanged,
+      autoHide: autoHideChanged,
+      wakeShortcut: wakeShortcutChanged,
+      wakeWord: wakeWordChanged,
+      language: languageChanged,
+    },
+  })
+  let restarted = false
+  configuredGatewayOrigin = nextOrigin
+  if (remote || (connection.connected && gatewayChanged && nextOrigin !== embeddedGateway?.origin)) {
+    if (embeddedGateway) {
+      await embeddedGateway.stop()
+      embeddedGateway = null
+    }
+    borrowedGatewayOrigin = remote ? '' : nextOrigin
+    appOrigin = nextOrigin
+  } else if (
+    embeddedGateway?.running
+    && gatewayRuntimeChanged
+  ) {
+    appOrigin = await embeddedGateway.restart({
+      preferredPort: gatewayPort(nextOrigin),
+    })
+    restarted = true
+  } else if (!embeddedGateway?.running) {
+    appOrigin = await startLocalGateway(nextOrigin, connection.credential)
+    restarted = !borrowedGatewayOrigin
+  }
+  setupRequired = false
+  lastRuntimeError = ''
+  gatewayAccessToken = connection.credential
+  process.env.QWEN_AUDIO_AGENT_URL = appOrigin
+  process.env.QWEN_AUDIO_ORB_STYLE = normalized.orbStyle
+  process.env.QWEN_AUDIO_ORB_SKIN = normalized.orbSkin
+  await ensureDesktopUi()
+  const desktopRendererChanged = (
+    (gatewayChanged || credentialChanged)
+    && mainWindow
+    && !mainWindow.isDestroyed()
+  )
+  if (desktopRendererChanged) {
+    // Applying runtime settings is an explicit desktop interaction. A
+    // previously auto-hidden orb must rejoin the new Gateway as an active
+    // client instead of carrying its wake-word-only sleep state across the
+    // restart.
+    desktopPresence.wake('settings')
+    void loadQwenAudioAgent(mainWindow)
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
+    // Client-owned presentation and presence preferences are hot-applied in
+    // the renderer. They must not replace the Gateway Client connection (and
+    // therefore the Realtime Session) as a side effect of changing a skin,
+    // language or idle policy.
+    sendDesktopClientSettings(mainWindow, normalized)
+  }
+  const runtime = await runtimeStatus(appOrigin)
+  return {
+    settings: normalized,
+    restarted,
+    restartRequired: false,
+    runtime,
+    wakeShortcutRegistered: desktopPresence.shortcutRegistered,
+  }
+}
+
+ipcMain.handle('qwen-audio-agent:skin-import', async event => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权导入皮肤')
+  }
+  const selection = await dialog.showOpenDialog(settingsWindow, {
+    title: desktopText('导入皮肤'),
+    // macOS 支持同时选文件与文件夹；其余平台选 zip 或皮肤包里的 pet.json。
+    properties: process.platform === 'darwin'
+      ? ['openFile', 'openDirectory']
+      : ['openFile'],
+    filters: [{ name: desktopText('皮肤包'), extensions: ['zip', 'json'] }],
+  })
+  if (selection.canceled || !selection.filePaths.length) return null
+  const imported = await importSkin({
+    source: selection.filePaths[0],
+    skinsRoot,
+  })
+  logger.info('skin.imported', { id: imported.id })
+  return imported
+})
+
+ipcMain.handle('qwen-audio-agent:skin-remove', async (event, id) => {
+  if (!settingsWindow || event.sender !== settingsWindow.webContents) {
+    throw new Error('无权删除皮肤')
+  }
+  const removed = removeSkin({ id, skinsRoot })
+  if (removed) logger.info('skin.removed', { id: String(id) })
+  return { removed }
+})
+
+function gatewayPairingCodeFromArguments(argv = []) {
+  return argv.find(value => String(value || '').startsWith('qwaudio://connect')) || null
+}
+
+async function applyGatewayPairingCode(value) {
+  const { settings } = await applyDesktopSettings({
+    ...desktopSettingsStore.load(),
+    gatewayUrl: value,
+  })
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.reload()
+  }
+  logger.info('gateway.remote_paired', {
+    gatewayUrl: settings.gatewayUrl,
+  })
+  return settings
+}
+
+async function consumeGatewayPairingCode(value) {
+  if (!value) return
+  try {
+    await applyGatewayPairingCode(value)
+    dialog.showMessageBox({
+      type: 'info',
+      title: desktopText('Gateway 已连接'),
+      message: desktopText('远程 Gateway 连接凭证已保存。'),
+    })
+  } catch (error) {
+    logger.warn('gateway.remote_pairing_failed', { error })
+    dialog.showErrorBox(
+      desktopText('Gateway 连接失败'),
+      String(error?.message || error),
+    )
+  }
+}
+
+if (process.defaultApp && process.argv[1]) {
+  app.setAsDefaultProtocolClient('qwaudio', process.execPath, [resolve(process.argv[1])])
+} else {
+  app.setAsDefaultProtocolClient('qwaudio')
+}
+
+app.on('open-url', (event, value) => {
+  event.preventDefault()
+  if (app.isReady()) void consumeGatewayPairingCode(value)
+  else pendingGatewayPairingCode = value
+})
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const pairingCode = gatewayPairingCodeFromArguments(argv)
+    if (pairingCode) {
+      void consumeGatewayPairingCode(pairingCode)
+      return
+    }
+    if (setupRequired || !mainWindow) {
+      showSettings()
+      return
+    }
+    desktopPresence.wake('second-instance')
+  })
+
+  app.whenReady().then(async () => {
+    if (process.platform === 'darwin' && process.defaultApp) {
+      app.setActivationPolicy('accessory')
+      app.dock?.hide()
+    }
+    createTray()
+    const launchPairingCode = pendingGatewayPairingCode
+      || gatewayPairingCodeFromArguments(process.argv)
+    pendingGatewayPairingCode = null
+    if (launchPairingCode) {
+      await consumeGatewayPairingCode(launchPairingCode)
+    }
+    const refreshDesktopTaskSurface = () => {
+      updateDesktopTaskSurface(desktopTaskCount)
+    }
+    screen.on('display-added', refreshDesktopTaskSurface)
+    screen.on('display-removed', refreshDesktopTaskSurface)
+    screen.on('display-metrics-changed', refreshDesktopTaskSurface)
+    if (!desktopPresence.registerShortcut(initialSettings.wakeShortcut)) {
+      logger.warn('desktop.wake_shortcut_unavailable', {
+        accelerator: initialSettings.wakeShortcut,
+      })
+    }
+    desktopUpdater = createDesktopUpdater({
+      currentVersion: app.getVersion(),
+      enabled: app.isPackaged,
+      notify: status => {
+        if (settingsWindow && !settingsWindow.isDestroyed()) {
+          settingsWindow.webContents.send(
+            'qwen-audio-agent:updater-status',
+            status,
+          )
+        }
+      },
+    })
+    const startupSettings = configuredOrigin().settings
+    if (setupRequired) {
+      showSettings()
+    } else {
+      try {
+        await startConfiguredRuntime(startupSettings)
+      } catch (error) {
+        lastRuntimeError = error?.message || String(error)
+        setupRequired = true
+        logger.error('runtime.start_failed', { error })
+        showSettings()
+      }
+    }
+    app.on('activate', () => {
+      if (setupRequired) {
+        showSettings()
+        return
+      }
+      if (!BrowserWindow.getAllWindows().length) {
+        void ensureDesktopUi().then(() => desktopPresence.wake('activate'))
+        return
+      }
+      desktopPresence.wake('activate')
+    })
+  }).catch(error => {
+    const message = error?.stack || error?.message || String(error)
+    logger.fatal('desktop.start_failed', { error, message })
+    dialog.showErrorBox('Qwen Audio Agent 无法启动', message)
+    app.quit()
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+
+  app.on('before-quit', createGracefulShutdown({
+    app,
+    cleanup: async () => {
+      logger.info('desktop.stopping')
+      desktopPresence.destroy()
+      desktopWakeWord.stop()
+      tray?.destroy()
+      tray = null
+      const server = rendererServer
+      rendererServer = null
+      const gateway = embeddedGateway
+      embeddedGateway = null
+      await Promise.allSettled([
+        server?.close(),
+        gateway?.stop(),
+      ])
+      await logger.flush?.()
+    },
+    onError: error => logger.error('desktop.stop_failed', { error }),
+  }))
+}

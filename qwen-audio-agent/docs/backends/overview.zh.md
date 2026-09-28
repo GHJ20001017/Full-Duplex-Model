@@ -1,0 +1,118 @@
+# 后台 Agent
+
+后台 Agent 负责需要工具、文件操作或持续处理的任务。前台语音 LLM 判断请求
+需要执行时，会把目标交给后台 Agent 异步执行，结果完成后自然回到当前对话。
+
+## 支持的 Agent
+
+| 后台 Agent | 接入方式 | 接入准备 | Skills | 推荐指数 |
+| --- | --- | --- | --- | --- |
+| 无 | N/A | 仅前台模式，无需配置 | — | ★★★★★ |
+| Qwen Code | 原生 ACP | 支持一键安装，需用户配置 | `~/.qwen/skills/` | ★★★★★ |
+| OpenCode | 原生 ACP | 支持一键安装和百炼配置 | `~/.config/opencode/skills/` | ★★★★★ |
+| OpenClaw | 内置 ACP 桥接 | 支持一键安装和百炼配置 | `~/.openclaw/skills/` | ★★★★★ |
+| Qoder | 原生 ACP | 支持一键安装，需用户配置 | `~/.qoder/skills/` | ★★★★★ |
+| MiniMax Code | 原生 ACP | 支持一键安装，需用户配置 | 由 MiniMax Code 自行管理 | ★★★★☆ |
+| Kimi Code | 原生 ACP | 支持一键安装，需用户配置 | `~/.agents/skills/` | ★★★★★ |
+| Hermes | 原生 ACP | 支持一键安装，需用户配置 | `~/.hermes/skills/` | ★★★★☆ |
+| CodeBuddy | 原生 ACP | 支持一键安装，需用户配置 | `~/.codebuddy/skills/` | ★★★★☆ |
+| Codex | 外部 ACP 适配 | 支持一键安装本体与适配器，需用户配置 | `~/.codex/skills/` | ★★★★☆ |
+| Claude Code | 外部 ACP 适配 | 支持一键安装本体与适配器，需用户配置 | `~/.claude/skills/` | ★★★★☆ |
+| DeepSeek | 原生 ACP | 支持一键安装，需 DeepSeek API Key | `~/.agents/skills/` | ★★★★☆ |
+| Pi | 外部 ACP 适配 | 支持一键安装本体与适配器，需用户配置 | `~/.pi/agent/skills/` | ★★★★☆ |
+| Muse Code | 原生 MSP 适配 | 按需安装本体与 SDK，需用户配置 | 由 Muse Code 自行管理 | 实验性 |
+
+通过 `qwenaudio skill install` 安装一次标准 Agent Skill 后，会自动写入上表中声明
+skills.sh 安装器的后台用户级目录；MiniMax Code 和 Muse Code 的扩展由自身管理。详见
+[技能管理](../guides/skills.zh.md)。
+
+推荐指数综合反映当前集成完整度、兼容性和实际验证程度：五星表示已经过充分测试的
+推荐集成，四星表示正在开发或尚未完成同等范围验证。
+
+## 一键安装
+
+未安装的后台 Agent 可用统一命令安装到本机：
+
+```bash
+qwenaudio install codex
+qwenaudio install deepseek
+qwenaudio install minimax
+qwenaudio install muse
+```
+
+安装前先检测，**只补齐缺失的组件**：本体缺失时装本体；需要独立适配器的后台
+仅缺适配器时只装适配器；组件齐全时不重复安装。
+安装完成不等于配置就绪，仍需完成所选后台要求的登录与配置。桌面版设置页
+的“后台 Agent”列表中，未安装且支持一键安装的后台行尾会显示“安装”按钮，与 CLI
+使用同一份安装逻辑。
+
+DeepSeek Harness 当前处于 Developer Preview。初步接入支持语音发起任务、权限确认、
+取消当前执行和最终结果回传；其 ACP 暂不支持历史 Session 续接、Gateway MCP 注入与
+细粒度工具进度。安装后运行 `dsh web`，在 DeepSeek 的模型设置中配置 API Key；
+`DEEPSEEK_API_KEY` 仍可作为单次运行覆盖。可用
+`DEEPSEEK_HARNESS_MODEL` 选择 `deepseek-v4-pro`（默认）或 `deepseek-v4-flash`。
+
+查看当前可用的后台 Agent：
+
+```bash
+qwenaudio setup
+```
+
+该命令只检查，不会安装、下载或验证凭据。只检查指定后台或获取机器可读结果：
+
+```bash
+qwenaudio setup --backend codex
+qwenaudio setup --json
+```
+
+## 选择后台
+
+`AGENT_PROTOCOL` 是可选配置。留空时，Gateway 以仅前台模式运行，实时语音聊天
+保持可用；需要后台执行的请求会返回明确说明，不会创建任务或猜测执行结果。
+也可以在命令行中使用 `qwenaudio --backend none`，明确要求仅启动前台模式。
+
+```dotenv
+AGENT_PROTOCOL=openclaw
+```
+
+OpenCode 和 OpenClaw 支持自动下载安装；配置 `DASHSCOPE_API_KEY` 和
+`QWEN_AUDIO_AGENT_BACKEND_MODEL` 后即可自动接入百炼模型。其他后台需先安装并完成
+原生配置；所选协议支持时，qwen-audio-agent 会复用其用户级模型、工具、MCP、Skill
+和认证。MiniMax Code 与 Muse Code 的模型、Provider、认证和扩展配置仍由其自身管理。
+
+使用其他支持 ACP stdio 的 Agent：
+
+```dotenv
+AGENT_PROTOCOL=acp
+ACP_COMMAND=your-agent
+ACP_ARGS=["--acp"]
+```
+
+命令、参数、显示名称和工作目录可分别通过 `ACP_COMMAND`、`ACP_ARGS`、
+`ACP_LABEL` 和 `ACP_WORKSPACE` 配置。通用 ACP 入口不提供一键安装，请自行安装。
+
+## 权限模式
+
+`QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE` 可设为：
+
+- `native`（默认）：权限由后台 Agent 自己判断和询问，Gateway 转发真实请求并执行已授予的任务 / 会话授权。
+- `full`：启动时明确授予最高权限，后台可直接执行命令、读写文件，不再逐次确认。
+
+`full` 当前支持 OpenCode、Qoder、Qwen Code、MiniMax Code、Kimi Code、Hermes、CodeBuddy、
+Codex、Claude Code、DeepSeek 和 Muse Code，Gateway 会自动批准这些后台发起的权限请求。OpenClaw 的执行授权受
+exec approvals、elevated 等配置约束，无法由统一开关表达，选择 `full` 时
+Gateway 会明确拒绝启动。最高权限会放大误操作风险，只应在可信项目中启用。
+
+Pi 是特例：它没有任何内置沙箱或权限审批机制，适配器 pi-acp 也未实现 ACP
+`session/request_permission`，因此无论配置哪种权限模式，Pi 都始终等效
+`full` 权限运行——不存在任何审批环节，语音会话中也不会出现权限确认。只在
+可信项目和可信提示词环境中使用。
+
+当前社区适配器尚未把 ACP `mcpServers` 接入 Pi，因此该后台不提供 Gateway
+Session 工具和第三层独立任务委派；Pi 会使用自身工具在当前 Session 内完成工作。
+
+## 后台常驻
+
+希望 Gateway 常驻时，见[Gateway 运行与常驻](../operations/gateway.zh.md)。
+后台配置与权限见[通用设置](../configuration/backend.zh.md)，模型、命令和目录等后端差异见
+[各后台详细配置](configuration.zh.md)。

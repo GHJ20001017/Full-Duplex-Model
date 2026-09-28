@@ -1,8 +1,8 @@
 import logging
-from time import monotonic
 from collections.abc import Mapping
 from queue import Queue
 from threading import Event as ThreadingEvent
+from time import monotonic
 from typing import Any, Callable, Literal, Optional, TypeVar, Union, cast
 
 from openai.types.realtime import (
@@ -53,6 +53,10 @@ from speech_to_speech.api.openai_realtime.handlers import (
 )
 from speech_to_speech.api.openai_realtime.input_state import InputItemState
 from speech_to_speech.api.openai_realtime.runtime_config import RuntimeConfig
+from speech_to_speech.api.openai_realtime.semantic_turn_router import (
+    SemanticTurnDecision,
+    router_from_environment,
+)
 from speech_to_speech.api.openai_realtime.turn_controller import TurnController, TurnDecision
 from speech_to_speech.LLM.chat import Chat, make_user_message
 from speech_to_speech.pipeline.events import (
@@ -265,6 +269,9 @@ class ConnState(BaseModel):
     pending_barge_in_response_key: str | None = None
     pending_barge_in_turn_id: str | None = None
     pending_barge_in_turn_revision: int | None = None
+    pending_barge_in_transcript: str = ""
+    assistant_text: str = ""
+    first_semantic_utterance_received: bool = False
 
     def mark_response_pending(self, response_key: str) -> None:
         """Track an implicit response from queueing until its first output."""
@@ -324,6 +331,7 @@ class RealtimeService:
         self.response = ResponseHandler(self)
         self.conversation = ConversationHandler(self)
         self.turn_controller = TurnController()
+        self.semantic_turn_router = router_from_environment()
 
         self._pipeline_dispatch: dict[type[PipelineEvent], Callable[..., list[ServerEvent]]] = {
             SpeechStartedEvent: self.audio.on_speech_started,
@@ -547,9 +555,20 @@ class RealtimeService:
         self.response.maybe_start_tool_followup_prefetch(conn_id)
         return events
 
-    def dispatch_pipeline_event(self, conn_id: str, event: PipelineEvent) -> list[ServerEvent]:
+    def dispatch_pipeline_event(
+        self,
+        conn_id: str,
+        event: PipelineEvent,
+        *,
+        cancel_output: Callable[[], None] | None = None,
+    ) -> list[ServerEvent]:
         """Route an internal pipeline event to the appropriate handler."""
-        events = self._dispatch_pipeline_event(conn_id, event, wait_for_pending_reopen=True)
+        events = self._dispatch_pipeline_event(
+            conn_id,
+            event,
+            wait_for_pending_reopen=True,
+            cancel_output=cancel_output,
+        )
         return [] if events is None else events
 
     def try_dispatch_pipeline_event(self, conn_id: str, event: PipelineEvent) -> list[ServerEvent] | None:
@@ -582,6 +601,7 @@ class RealtimeService:
         event: PipelineEvent,
         *,
         wait_for_pending_reopen: bool,
+        cancel_output: Callable[[], None] | None = None,
     ) -> list[ServerEvent] | None:
         # Provider-reported usage is billable accounting, not client-visible
         # assistant output. Cancellation must not make it stale.
@@ -615,6 +635,9 @@ class RealtimeService:
 
         self._observe_turn_event(event)
         if isinstance(event, AssistantOutputEvent):
+            st = self._state(conn_id)
+            if event.text:
+                st.assistant_text = (st.assistant_text + event.text)[-4000:]
             return self.response.on_assistant_output(
                 conn_id,
                 event,
@@ -622,6 +645,13 @@ class RealtimeService:
             )
         if isinstance(event, AssistantResponseDoneEvent):
             return self.response.on_assistant_response_done(conn_id, event)
+        if (
+            isinstance(event, TranscriptionCompletedEvent)
+            and self._state(conn_id).runtime_config.interruption_route == "semantic"
+        ):
+            return self._on_semantic_transcription_completed(
+                conn_id, event, cancel_output=cancel_output
+            )
         handler = self._pipeline_dispatch.get(type(event))
         if handler is None:
             logger.debug("Unhandled pipeline event type: %s", type(event).__name__)
@@ -683,17 +713,27 @@ class RealtimeService:
         st.pending_barge_in_response_key = None
         st.pending_barge_in_turn_id = None
         st.pending_barge_in_turn_revision = None
+        st.pending_barge_in_transcript = ""
 
     def begin_barge_in_candidate(self, conn_id: str, event: SpeechStartedEvent) -> None:
         """Remember a VAD candidate without cancelling the assistant yet."""
         st = self._state(conn_id)
+        if st.runtime_config.interruption_route == "semantic":
+            return
         if not (event.interrupt_response and st.runtime_config.interrupt_response_enabled and st.in_response):
+            return
+        # The wake acknowledgement can still be finishing when the user's first
+        # utterance starts. It is not a response to an earlier user turn, so the
+        # first utterance must enter the normal STT -> LLM path rather than being
+        # treated as a semantic barge-in.
+        if not any(getattr(item, "role", None) == "user" for item in st.runtime_config.chat.buffer):
             return
         st.pending_barge_in = True
         st.pending_barge_in_started_at = monotonic()
         st.pending_barge_in_response_key = st.current_response_key
         st.pending_barge_in_turn_id = event.turn_id
         st.pending_barge_in_turn_revision = event.turn_revision
+        st.pending_barge_in_transcript = ""
         logger.debug("Barge-in candidate started for response=%s", st.current_response_key)
 
     def _evaluate_barge_in(
@@ -706,6 +746,8 @@ class RealtimeService:
         final: bool = False,
     ) -> TurnDecision | None:
         st = self._state(conn_id)
+        if st.runtime_config.interruption_route == "semantic":
+            return None
         if not st.pending_barge_in:
             return None
         if st.pending_barge_in_turn_id is not None and (
@@ -770,8 +812,79 @@ class RealtimeService:
         events.extend(self.conversation.on_partial_transcription(conn_id, event))
         return events
 
+    def _on_semantic_transcription_completed(
+        self,
+        conn_id: str,
+        event: TranscriptionCompletedEvent,
+        *,
+        cancel_output: Callable[[], None] | None = None,
+    ) -> list[ServerEvent]:
+        """Gate complete user utterances after the first, regardless of assistant activity."""
+        st = self._state(conn_id)
+        completed_events = self.conversation.on_transcription_completed(conn_id, event)
+        # The conversation handler owns terminal-event deduplication.
+        if not completed_events or not event.transcript.strip():
+            return completed_events
+        self._clear_barge_in_candidate(conn_id)
+        decision = None
+        if st.first_semantic_utterance_received:
+            try:
+                if self.semantic_turn_router is None:
+                    raise RuntimeError("Semantic turn service is not configured")
+                decision = self.semantic_turn_router.decide(
+                    assistant_text=st.assistant_text, user_asr=event.transcript
+                )
+            except Exception:
+                logger.exception("Semantic turn service failed; preserving current response")
+                return [*completed_events, self.make_error("Semantic turn service failed", "semantic_turn_failed")]
+            completed_events[0].__pydantic_extra__ = {
+                **(completed_events[0].__pydantic_extra__ or {}),
+                "semantic_decision": decision.value,
+            }
+            logger.info("Semantic final decision=%s", decision.value)
+        else:
+            st.first_semantic_utterance_received = True
+
+        if decision is SemanticTurnDecision.CONTINUE:
+            return completed_events
+
+        interruption_events: list[ServerEvent] = []
+        if decision in (SemanticTurnDecision.YIELD, SemanticTurnDecision.WAIT):
+            if cancel_output is not None:
+                cancel_output()
+            self.close_pending_responses(conn_id)
+            interruption_events = self._cancel_confirmed_barge_in(conn_id)
+
+        cfg = st.runtime_config
+        self.response.discard_tool_followup_prefetch(conn_id)
+        cfg.chat.add_item(make_user_message(event.transcript))
+        response = None
+        if decision is SemanticTurnDecision.WAIT:
+            response = RealtimeResponseCreateParams(
+                instructions=(
+                    (cfg.session.instructions or "")
+                    + "\n用户刚才的话意图尚不明确。请根据这句话提出一个简短、具体的澄清问题，"
+                    "询问用户想做什么；不要擅自推断意图或直接执行任务。"
+                ),
+                tool_choice="none",
+            )
+        if self.text_prompt_queue is not None:
+            request = GenerateResponseRequest(
+                runtime_config=cfg,
+                response=response,
+                language_code=event.language_code,
+                # A later VAD turn must not invalidate output before Semantic
+                # chooses wait/yield. Cancellation is generation-based here.
+                speech_stopped_at_s=event.speech_stopped_at_s,
+            )
+            st.mark_response_pending(request.response_key)
+            self.text_prompt_queue.put(request)
+        return [*interruption_events, *completed_events]
+
     def _on_transcription_completed(self, conn_id: str, event: TranscriptionCompletedEvent) -> list[ServerEvent]:
         """Handle a final STT transcription: emit protocol event, append to chat, trigger LM."""
+        if self._state(conn_id).runtime_config.interruption_route == "semantic":
+            return self._on_semantic_transcription_completed(conn_id, event)
         st = self._state(conn_id)
         decision = self._evaluate_barge_in(
             conn_id,

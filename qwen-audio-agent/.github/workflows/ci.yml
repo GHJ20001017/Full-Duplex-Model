@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22.22.2, 24.15.0]
+        # The package advertises Node 26 support. Validate the new major on
+        # Linux without multiplying the full cross-platform matrix.
+        include:
+          - os: ubuntu-latest
+            node: 26.0.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      # Test the GitLab-only synchronizer against disposable local repositories.
+      # GitHub Actions never runs the real synchronization job or needs its token.
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: node --test .gitlab/sync-github.test.mjs
+      - run: npm ci
+      - run: npm ci --prefix examples/memcode --ignore-scripts
+      - run: npm test --prefix examples/memcode
+      - run: npm test
+        env:
+          # The default spec reporter omits test-file exitCode/signal (#413).
+          # TAP preserves them, including in nested workspace test commands.
+          # Do not retry or change the exit status of a failing test run.
+          NODE_OPTIONS: ${{ runner.os == 'Windows' && '--test-reporter=tap' || '' }}
+      - run: npm run test:x-omni
+      - run: npm run build
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run example:x-omni:build
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npx playwright install --with-deps chromium
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run test:web-browser
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run test:x-omni-browser
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run example:webrtc:install
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run test:x-omni-webrtc
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: QWAUDIO_TEST_WEBRTC_NATIVE=1 node --test server/test/webrtc-native.test.mjs
+      - if: ${{ failure() && matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-voice-diagnostics
+          path: output/playwright/browser-webui-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+      # Smart Cockpit has its own Vite/ESLint toolchain outside the root
+      # workspace graph. Exercise it once on the baseline Linux job instead of
+      # duplicating the same frontend build across the full OS/Node matrix.
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm ci --prefix examples/smart-cockpit/client --ignore-scripts
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run example:smart-cockpit:lint
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run example:smart-cockpit:build
+      - if: ${{ matrix.os == 'macos-latest' && matrix.node == '22.22.2' }}
+        run: npm run test:desktop-smoke
+      # Validate the delivered runtime and ASAR as well as source-level tests.
+      # This builds unsigned into a temporary directory and uses isolated data.
+      - if: ${{ matrix.os != 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: npm run test:desktop-package
+      # 真实消费者验收：打包 → 装进只含已声明依赖的裸消费者 → CLI 与
+      # Gateway 契约全链路。跑在基线 Node 上，一并证明基线可用。
+      - if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22.22.2' }}
+        run: QWEN_AUDIO_CONSUMER_PROBE=1 node --test test/consumer-install.test.mjs
+      - run: node scripts/verify-package.mjs
+
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm run release:check
+        env:
+          # Pull requests remain deterministic during a transient npm audit
+          # outage. The release workflow stays fail-closed.
+          QWEN_AUDIO_AGENT_AUDIT_ALLOW_UNAVAILABLE: '1'
+
+  # One stable branch-protection context. The matrix job names change whenever
+  # the supported OS/Node set changes; this aggregate keeps main protection
+  # bound to the complete CI result instead of a fragile list of matrix names.
+  required:
+    name: required
+    if: ${{ always() }}
+    needs: [test, release-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          RELEASE_CHECK_RESULT: ${{ needs.release-check.result }}
+        run: |
+          test "$TEST_RESULT" = success
+          test "$RELEASE_CHECK_RESULT" = success

@@ -130,10 +130,13 @@ def test_warmup_uses_request_scoped_sdk_retries():
     assert handler.client.last_options == {"max_retries": base_mod.WARMUP_MAX_RETRIES}
 
 
-def _chunk(content=None, tool_calls=None, usage=None):
+def _chunk(content=None, tool_calls=None, usage=None, reasoning=None):
     choices = []
-    if content is not None or tool_calls is not None:
-        choices = [SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=tool_calls), finish_reason=None)]
+    if content is not None or tool_calls is not None or reasoning is not None:
+        delta = SimpleNamespace(content=content, tool_calls=tool_calls)
+        if reasoning is not None:
+            delta.reasoning_content = reasoning
+        choices = [SimpleNamespace(delta=delta, finish_reason=None)]
     return SimpleNamespace(choices=choices, usage=usage)
 
 
@@ -983,6 +986,131 @@ def test_out_of_band_does_not_commit_to_default_conversation():
     assert "Background note." in text
     # Default conversation keeps only the seeded user turn — no assistant commit.
     assert not any(getattr(i, "role", None) == "assistant" for i in chat.buffer)
+
+
+# ── reasoning_content passthrough (thinking-mode upstreams) ───────────────────
+
+
+def test_streaming_reasoning_content_attached_to_tool_call_and_echoed():
+    """A thinking-mode server streams reasoning_content before a tool call. It is
+    not spoken, but must be carried on the buffered call and echoed back on the
+    next serialization, otherwise the upstream rejects the follow-up turn."""
+    h = _make_handler(stream=True)
+    h.client.chat.completions.create = lambda **k: _FakeStream(
+        [
+            _chunk(reasoning="Let me "),
+            _chunk(reasoning="think."),
+            _chunk(tool_calls=[_tc_delta(0, id="srv_1", name="calc", arguments="{}")]),
+        ]
+    )
+    text, tools, _usage, chat, _end = _drive(
+        h, tools=[{"type": "function", "name": "calc", "parameters": {"type": "object"}}]
+    )
+    # Reasoning is never spoken.
+    assert text == ""
+    call = next(item for item in chat.buffer if isinstance(item, RealtimeConversationItemFunctionCall))
+    assert getattr(call, "reasoning_content", None) == "Let me think."
+    # Calls are only serialized once paired with their output.
+    chat.append_tool_output(
+        call.call_id,
+        RealtimeConversationItemFunctionCallOutput(type="function_call_output", call_id=call.call_id, output="3"),
+    )
+    # Echoed on the wire for the next request.
+    serialized = h._serialize(chat)
+    assistant = next(m for m in serialized if m["role"] == "assistant")
+    assert assistant["reasoning_content"] == "Let me think."
+
+
+def test_streaming_reasoning_echoed_on_precall_text_and_tool_call():
+    """A turn that speaks before calling a tool is serialized as two assistant
+    messages (text, then call). Thinking-mode upstreams require the echo on
+    *every* assistant message of that turn -- omitting it on the pre-call text is
+    exactly the 400 'reasoning_content ... must be passed back' seen in the wild."""
+    h = _make_handler(stream=True)
+    h.client.chat.completions.create = lambda **k: _FakeStream(
+        [
+            _chunk(reasoning="Need a tool."),
+            _chunk(content="Let me look that up."),
+            _chunk(tool_calls=[_tc_delta(0, id="srv_1", name="calc", arguments="{}")]),
+        ]
+    )
+    text, _tools, _usage, chat, _end = _drive(
+        h, tools=[{"type": "function", "name": "calc", "parameters": {"type": "object"}}]
+    )
+    assert text == "Let me look that up."
+    call = next(item for item in chat.buffer if isinstance(item, RealtimeConversationItemFunctionCall))
+    chat.append_tool_output(
+        call.call_id,
+        RealtimeConversationItemFunctionCallOutput(type="function_call_output", call_id=call.call_id, output="3"),
+    )
+    serialized = h._serialize(chat)
+    assistants = [m for m in serialized if m["role"] == "assistant"]
+    assert len(assistants) == 2  # text message + tool-call message
+    assert all(m.get("reasoning_content") == "Need a tool." for m in assistants)
+
+
+def test_streaming_reasoning_content_attached_to_assistant_message():
+    """A plain (non tool-call) thinking turn carries its reasoning on the assistant
+    message and echoes it, while the spoken text stays clean."""
+    h = _make_handler(stream=True)
+    h.client.chat.completions.create = lambda **k: _FakeStream(
+        [
+            _chunk(reasoning="hidden chain"),
+            _chunk(content="Hello there."),
+        ]
+    )
+    text, _tools, _usage, chat, _end = _drive(h)
+    assert text == "Hello there."
+    _user, assistant = h._serialize(chat)[-2:]
+    assert assistant["content"] == "Hello there."
+    assert assistant["reasoning_content"] == "hidden chain"
+
+
+def test_non_streaming_reasoning_content_is_echoed():
+    h = _make_handler(stream=False)
+    h.client.chat.completions.create = lambda **k: SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content="Hi.",
+                    reasoning_content="r1",
+                    tool_calls=[],
+                )
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
+    )
+    text, _tools, _usage, chat, _end = _drive(h)
+    assert text == "Hi."
+    assistant = next(m for m in h._serialize(chat) if m["role"] == "assistant")
+    assert assistant["reasoning_content"] == "r1"
+
+
+def test_transformers_chat_omits_reasoning_by_default():
+    """The local HF path must not receive the non-standard key: only the
+    Chat Completions serializer opts in."""
+    chat = Chat(10)
+    chat.add_item(make_user_message("hi"))
+    item = RealtimeConversationItemFunctionCall(
+        type="function_call", name="f", arguments="{}", call_id="call_1", id="fc_1", status="completed"
+    )
+    item.reasoning_content = "secret"
+    chat.add_ordered_function_call(item)
+    chat.append_tool_output(
+        "call_1",
+        RealtimeConversationItemFunctionCallOutput(type="function_call_output", call_id="call_1", output="ok"),
+    )
+    assert all("reasoning_content" not in m for m in chat.to_transformers_chat())
+    included = chat.to_transformers_chat(include_reasoning=True)
+    assert next(m for m in included if m["role"] == "assistant")["reasoning_content"] == "secret"
+
+
+def test_reasoning_absent_when_provider_sends_none():
+    """A non-thinking upstream (e.g. reasoning_effort=none) yields no echo."""
+    h = _make_handler(stream=True)
+    h.client.chat.completions.create = lambda **k: _FakeStream([_chunk(content="Plain.")])
+    _text, _tools, _usage, chat, _end = _drive(h)
+    assert all("reasoning_content" not in m for m in h._serialize(chat))
 
 
 # ── Standalone runner (no pytest required) ────────────────────────────────────

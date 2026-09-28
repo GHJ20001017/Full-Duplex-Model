@@ -15,15 +15,15 @@ import logging
 import signal
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib import import_module
 from importlib.util import module_from_spec, spec_from_file_location
 from ipaddress import ip_address
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Lock
-from typing import Any, Optional
-from urllib.parse import urlsplit, urlunsplit
+from typing import Any, Literal, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jsonschema import SchemaError, ValidationError
 from jsonschema.validators import validator_for
@@ -85,6 +85,7 @@ class RealtimeAudioClientConfig:
     # 本地对话窗口：在浏览器里渲染用户/助手对话。终端输出始终保留。
     ui: bool = True
     ui_open_browser: bool = True
+    interruption_route: Literal["keyword", "semantic"] = "keyword"
 
     def __post_init__(self) -> None:
         if not 0 <= self.playback_buffer_ms < float("inf"):
@@ -165,8 +166,8 @@ def normalize_realtime_url(url: str) -> tuple[str, str]:
     parsed = urlsplit(url.strip())
     if parsed.scheme not in {"ws", "wss", "http", "https"} or not parsed.netloc:
         raise ValueError("--url must be an absolute ws://, wss://, http://, or https:// URL")
-    if parsed.query or parsed.fragment:
-        raise ValueError("--url must not include a query string or fragment")
+    if parsed.fragment:
+        raise ValueError("--url must not include a fragment")
 
     path = parsed.path.rstrip("/")
     if not path.endswith("/realtime"):
@@ -175,13 +176,21 @@ def normalize_realtime_url(url: str) -> tuple[str, str]:
     sdk_path = path[: -len("/realtime")]
     websocket_scheme = "wss" if parsed.scheme in {"wss", "https"} else "ws"
     http_scheme = "https" if websocket_scheme == "wss" else "http"
-    websocket_base_url = urlunsplit((websocket_scheme, parsed.netloc, sdk_path, "", ""))
+    websocket_base_url = urlunsplit((websocket_scheme, parsed.netloc, sdk_path, parsed.query, ""))
     base_url = urlunsplit((http_scheme, parsed.netloc, sdk_path, "", ""))
     return base_url, websocket_base_url
 
 
 def _make_client(config: RealtimeAudioClientConfig) -> AsyncOpenAI:
     base_url, websocket_base_url = normalize_realtime_url(config.url)
+    # openai-python appends ``/realtime`` to ``websocket_base_url`` by
+    # manipulating the raw path.  Keeping a query string in that base URL
+    # makes it append after the query (for example ``/v1?x=y/realtime``),
+    # which the server/proxy rejects before FastAPI sees the WebSocket route.
+    parsed_websocket_url = urlsplit(websocket_base_url)
+    websocket_base_url = urlunsplit(
+        (parsed_websocket_url.scheme, parsed_websocket_url.netloc, parsed_websocket_url.path, "", "")
+    )
     client_kwargs: dict[str, Any] = {
         "base_url": base_url,
         "websocket_base_url": websocket_base_url,
@@ -490,6 +499,7 @@ def handle_server_event(
     playback: PlaybackBuffer,
     renderer: _FriendlyEventRenderer,
     print_json: bool,
+    interruption_route: Literal["keyword", "semantic"] = "keyword",
 ) -> None:
     """处理一个 Realtime 生命周期事件，更新播放缓冲区和终端状态。
 
@@ -511,7 +521,8 @@ def handle_server_event(
         renderer.push_ui({"event": "status", "value": "connected"})
     elif event.type == "input_audio_buffer.speech_started":
         renderer.finish_live_assistant_text()
-        playback.cancel_active_response()
+        if interruption_route != "semantic":
+            playback.cancel_active_response()
         if renderer.saw_user_speech:
             print("", flush=True)
         renderer.saw_user_speech = True
@@ -529,6 +540,10 @@ def handle_server_event(
         if event.delta:
             renderer.stream_user_transcript(event.delta, final=False, item_id=item_id)
     elif event.type == "conversation.item.input_audio_transcription.completed":
+        if interruption_route == "semantic" and getattr(event, "semantic_decision", None) in {"yield", "wait"}:
+            # Final semantic decisions replace output, even if response.done has
+            # already released the response ID while its audio remains queued.
+            playback.cancel_active_response()
         renderer.finish_live_assistant_text()
         item_id = getattr(event, "item_id", None)
         transcript = (event.transcript or "").strip()
@@ -1027,6 +1042,7 @@ async def _run_audio_session(
     stop_event: Event,
 ) -> None:
     import sounddevice as sd
+
     from speech_to_speech.api.openai_realtime.aec3 import AEC3Processor
 
     aec3 = AEC3Processor(config.send_rate)
@@ -1108,6 +1124,7 @@ async def _run_audio_session(
                 playback=playback,
                 renderer=renderer,
                 print_json=config.print_json,
+                interruption_route=config.interruption_route,
             )
 
     opened_streams: list[Any] = []
@@ -1174,6 +1191,17 @@ async def _run_audio_session(
                 logger.exception("Failed to close local audio stream")
 
 
+def _url_with_interruption_route(url: str, route: str) -> str:
+    parsed = urlsplit(url)
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != "interruption_route"
+    ]
+    query_items.append(("interruption_route", route))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
+
+
 async def listen_and_play_realtime(
     config: RealtimeAudioClientConfig,
     *,
@@ -1183,14 +1211,19 @@ async def listen_and_play_realtime(
 
     owned_stop_event = stop_event is None
     stop_event = stop_event or Event()
+    config = replace(config, url=_url_with_interruption_route(config.url, config.interruption_route))
     client = _make_client(config)
+    realtime_query = dict(parse_qsl(urlsplit(config.url).query, keep_blank_values=True))
     connected = False
     retry_started = time.monotonic()
 
     try:
         while not stop_event.is_set():
             try:
-                async with client.realtime.connect(model=config.model) as conn:
+                async with client.realtime.connect(
+                    model=config.model,
+                    extra_query=realtime_query,
+                ) as conn:
                     connected = True
                     await conn.send(build_session_update(config))  # type: ignore[arg-type]
                     await _run_audio_session(

@@ -1,0 +1,45 @@
+{
+  "id": "firefly",
+  "displayName": "流萤",
+  "description": "由生成式皮肤工具制作的流萤桌宠。",
+  "spriteVersionNumber": 1,
+  "spritesheetPath": "spritesheet.webp",
+  "animations": {
+    "idle": {
+      "frames": [0, 1, 2, 3],
+      "fps": 3
+    },
+    "running-right": {
+      "frames": [8, 9, 10],
+      "fps": 6
+    },
+    "running-left": {
+      "frames": [16, 17, 18],
+      "fps": 6
+    },
+    "waving": {
+      "frames": [24, 25, 26, 27],
+      "fps": 8
+    },
+    "jumping": {
+      "frames": [32, 33, 34, 35],
+      "fps": 6
+    },
+    "failed": {
+      "frames": [40, 41, 42, 43],
+      "fps": 6
+    },
+    "waiting": {
+      "frames": [48, 49, 50, 51],
+      "fps": 4
+    },
+    "running": {
+      "frames": [56, 57, 58, 59],
+      "fps": 8
+    },
+    "review": {
+      "frames": [64, 65, 66, 67],
+      "fps": 4
+    }
+  }
+}

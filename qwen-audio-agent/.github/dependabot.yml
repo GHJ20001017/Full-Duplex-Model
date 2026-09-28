@@ -1,0 +1,37 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    # 2.0 release freeze: pause version updates, not security updates.
+    # Restore to 3 after the 2.0 release has been verified.
+    open-pull-requests-limit: 0
+    groups:
+      npm-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    # 2.0 release freeze; restore to 1 after release verification.
+    open-pull-requests-limit: 0
+    groups:
+      github-actions:
+        patterns:
+          - "*"

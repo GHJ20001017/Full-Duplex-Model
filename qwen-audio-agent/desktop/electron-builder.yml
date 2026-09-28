@@ -1,0 +1,101 @@
+appId: ai.qwenaudio.agent
+productName: Qwen Audio Agent
+# Resolve Electron from the installed, lockfile-pinned desktop dependency.
+afterPack: scripts/desktop-after-pack.mjs
+asar: true
+npmRebuild: false
+asarUnpack:
+  - node_modules/sherpa-onnx/**/*.wasm
+  # open-computer-use is spawned by external backend Agent processes (plain
+  # node + native runtimes), which cannot read files inside the asar archive.
+  - node_modules/@qwen-code/open-computer-use/**/*
+extraMetadata:
+  main: desktop/src/main.mjs
+
+protocols:
+  - name: Qwen Audio Gateway Pairing
+    schemes:
+      - qwaudio
+
+directories:
+  output: dist/desktop
+
+# 更新元数据（latest-mac.yml）指向 GitHub Releases，由 electron-updater
+# 在运行时发现新版本；CI 发布时随 dmg 与 blockmap 一并上传。
+publish:
+  - provider: github
+    owner: QwenAudio
+    repo: qwen-audio-agent
+
+files:
+  - desktop/src/**/*
+  - desktop/build/icon.png
+  - desktop/build/trayTemplate*.png
+  - server/src/**/*
+  - shared/**/*
+  - web/dist/**/*
+  - package.json
+  - LICENSE
+  - NOTICE
+  - THIRD_PARTY_NOTICES.md
+
+extraResources:
+  - from: scripts
+    to: runtime/scripts
+    filter:
+      - "runtime/**/*"
+  - from: config
+    to: runtime/config
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.productivity
+  icon: desktop/build/icon.icns
+  hardenedRuntime: true
+  entitlements: desktop/build/entitlements.mac.plist
+  entitlementsInherit: desktop/build/entitlements.mac.inherit.plist
+  notarize: true
+  extendInfo:
+    LSUIElement: true
+    NSMicrophoneUsageDescription: Qwen Audio Agent 需要使用麦克风进行实时语音对话。
+  target:
+    - dmg
+    - zip
+  artifactName: qwen-audio-agent-${version}-mac-${arch}.${ext}
+
+linux:
+  # 官方 Release 发布 macOS 和 Windows 产物；Linux 用户可用 npm run desktop:build:linux
+  # 自行打包。AppImage/deb 无需代码签名证书即可本地安装运行。
+  icon: desktop/build/icon.png
+  category: Utility
+  syncDesktopName: true
+  target:
+    - AppImage
+    - deb
+  artifactName: qwen-audio-agent-${version}-linux-${arch}.${ext}
+
+win:
+  icon: desktop/build/icon.png
+  target:
+    - nsis
+  artifactName: qwen-audio-agent-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+dmg:
+  title: Qwen Audio Agent
+  backgroundColor: "#f5f6f7"
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 150
+      y: 190
+    - x: 390
+      y: 190
+      type: link
+      path: /Applications

@@ -1,0 +1,461 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { helpText, parseArguments } from '../src/arguments.mjs'
+
+test('allows the Gateway to run without a backend Agent', () => {
+  const frontendOnly = parseArguments([], {})
+  assert.equal(frontendOnly.command, 'gateway')
+  assert.equal(frontendOnly.gatewayAction, 'run')
+  assert.equal(frontendOnly.backend, '')
+  assert.equal(frontendOnly.backendUrl, '')
+  assert.equal(parseArguments([], {
+    QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE: 'unused-invalid-value',
+  }).backend, '')
+  assert.equal(parseArguments(['gateway', '--backend', 'none'], {}).backend, '')
+  assert.equal(parseArguments([], { AGENT_PROTOCOL: 'NONE' }).backend, '')
+
+  const options = parseArguments([], { AGENT_PROTOCOL: 'openclaw' })
+  assert.equal(options.command, 'gateway')
+  assert.equal(options.gatewayAction, 'run')
+  assert.equal(options.url, 'http://127.0.0.1:3101')
+  assert.equal(options.backend, 'openclaw')
+  assert.equal(options.backendPermissionMode, 'native')
+  assert.equal(options.backendUrl, 'http://127.0.0.1:18789')
+  assert.equal(options.backendUrlSpecified, false)
+})
+
+test('parses independent TUI and WebUI client commands', () => {
+  const tui = parseArguments([
+    'tui',
+    '--url', 'https://voice.example.com/path',
+    '--session', 'project-one',
+    '--audio-mode', 'full',
+  ], {})
+  assert.equal(tui.command, 'tui')
+  assert.equal(tui.url, 'https://voice.example.com')
+  assert.equal(tui.sessionId, 'project-one')
+  assert.equal(tui.audioMode, 'full')
+  assert.equal(parseArguments(['tui'], {
+    QWEN_AUDIO_GATEWAY_CLIENT_TOKEN: 'remote-token',
+  }).accessToken, 'remote-token')
+  assert.equal(parseArguments(['tui'], {
+    QWEN_AUDIO_AGENT_ACCESS_TOKEN: 'legacy-token',
+  }).accessToken, 'legacy-token')
+  assert.equal(
+    parseArguments(['tui'], {
+      QWEN_AUDIO_AGENT_TUI_AUDIO_MODE: 'FULL',
+    }).audioMode,
+    'full',
+  )
+
+  const web = parseArguments(['webui', '--no-open'], {})
+  assert.equal(web.command, 'webui')
+  assert.equal(web.openBrowser, false)
+})
+
+test('shows help for subcommands that otherwise require arguments', () => {
+  for (const argv of [
+    ['install', '--help'],
+    ['skill', '-h'],
+    ['config', 'set', '--help'],
+    ['gateway', 'revoke', '--help'],
+  ]) {
+    const options = parseArguments(argv, {})
+    assert.equal(options.help, true, argv.join(' '))
+    assert.equal(options.command, argv[0])
+  }
+  // 未请求帮助时仍然报告缺少的参数；未知命令即使带 --help 也不隐藏。
+  assert.throws(() => parseArguments(['install'], {}), /install 缺少后台名称/)
+  assert.throws(() => parseArguments(['unknown', '--help'], {}), /未知命令/)
+})
+
+test('parses remote Gateway connection profile commands', () => {
+  const pairingCode = 'qwaudio://connect?payload=abc'
+  const connected = parseArguments(['connect', pairingCode], {})
+  assert.equal(connected.command, 'connect')
+  assert.equal(connected.pairingCode, pairingCode)
+  assert.equal(connected.urlSpecified, false)
+  assert.equal(parseArguments(['disconnect'], {}).command, 'disconnect')
+  assert.equal(
+    parseArguments(['tui', '--url', 'https://gateway.example.test', '--takeover'], {}).urlSpecified,
+    true,
+  )
+  assert.equal(parseArguments(['tui', '--takeover'], {}).takeover, true)
+  assert.throws(() => parseArguments(['webui', '--takeover'], {}), /只适用于 tui/)
+})
+
+test('parses read-only backend setup options', () => {
+  const all = parseArguments(['setup'], {})
+  assert.equal(all.command, 'setup')
+  assert.equal(all.backendSpecified, false)
+  assert.equal(all.json, false)
+
+  const selected = parseArguments([
+    'setup',
+    '--backend', 'codex',
+    '--json',
+  ], {})
+  assert.equal(selected.backend, 'codex')
+  assert.equal(selected.backendSpecified, true)
+  assert.equal(selected.json, true)
+  assert.throws(
+    () => parseArguments(['status', '--json'], {}),
+    /只适用于 setup/,
+  )
+})
+
+test('parses read-only diagnostics and limits turn tracing to doctor', () => {
+  const options = parseArguments(['doctor', '--json', '--turn', 'voice-1'], {})
+  assert.equal(options.command, 'doctor')
+  assert.equal(options.json, true)
+  assert.equal(options.turnId, 'voice-1')
+  assert.throws(() => parseArguments(['gateway', '--turn', 'voice-1'], {}), /doctor/)
+  assert.match(helpText(), /qwenaudio doctor/)
+})
+
+test('parses Gateway backend settings', () => {
+  const options = parseArguments([
+    'gateway',
+    '--backend', 'openclaw',
+    '--backend-agent', 'build',
+    '--backend-url', 'http://localhost:18888/path',
+  ], {})
+  assert.equal(options.backend, 'openclaw')
+  assert.equal(options.backendAgent, 'build')
+  assert.equal(options.backendUrl, 'http://localhost:18888')
+  assert.equal(options.backendUrlSpecified, true)
+})
+
+test('rejects explicit backend flags outside their owning command', () => {
+  const flags = [
+    ['--backend', 'qoder'], ['--backend-agent', 'build'],
+    ['--backend-permission-mode', 'native'], ['--backend-url', 'http://localhost:4096'],
+  ]
+  for (const command of [['tui'], ['webui'], ['config'], ['doctor'], ['status'], ['gateway', 'status'], ['gateway', 'pair']]) {
+    for (const flag of flags) {
+      assert.throws(() => parseArguments([...command, ...flag], {}), /只适用于 gateway run/,
+        `${command.join(' ')} ${flag[0]}`)
+    }
+  }
+  for (const flag of flags.slice(1)) {
+    assert.throws(() => parseArguments(['setup', ...flag], {}), /只适用于 gateway run/)
+  }
+  // Configured values do not pretend that the client can modify the Gateway.
+  assert.equal(parseArguments(['tui'], { AGENT_PROTOCOL: 'qoder' }).command, 'tui')
+})
+
+test('resolves one Gateway address for all launch entrypoints, keeping wildcard binds separate', () => {
+  for (const argv of [[], ['gateway'], ['gateway', 'run']]) {
+    const options = parseArguments(argv, { HOST: '0.0.0.0', PORT: '3301' })
+    assert.equal(options.url, 'http://127.0.0.1:3301')
+    assert.equal(options.listenHost, '0.0.0.0')
+  }
+  assert.equal(parseArguments(['tui'], { PORT: '3301' }).url, 'http://127.0.0.1:3301')
+  assert.equal(parseArguments([], { HOST: '::1', PORT: '3301' }).url, 'http://[::1]:3301')
+  assert.equal(parseArguments([], { HOST: '::', PORT: '3301' }).url, 'http://127.0.0.1:3301')
+  const explicit = parseArguments(['gateway', '--url', 'http://localhost:4101'], { HOST: '0.0.0.0', PORT: '3301' })
+  assert.equal(explicit.url, 'http://localhost:4101')
+  assert.equal(explicit.listenHost, undefined)
+  const configured = parseArguments([], { QWEN_AUDIO_AGENT_URL: 'http://localhost:4201', HOST: '0.0.0.0', PORT: '3301' })
+  assert.equal(configured.url, 'http://localhost:4201')
+  assert.equal(configured.listenHost, undefined)
+})
+
+test('accepts Qoder as a Gateway-owned backend without a URL', () => {
+  const options = parseArguments([
+    'gateway',
+    '--backend', 'qoder',
+  ], {})
+  assert.equal(options.backend, 'qoder')
+  assert.equal(options.backendUrl, '')
+})
+
+test('accepts a generic ACP backend without an HTTP URL', () => {
+  const options = parseArguments(['gateway', '--backend', 'acp'], {})
+  assert.equal(options.backend, 'acp')
+  assert.equal(options.backendUrl, '')
+})
+
+test('accepts named local ACP backends without an HTTP URL', () => {
+  for (const backend of ['kimi', 'hermes', 'codebuddy', 'codex', 'claude', 'minimax', 'pi']) {
+    const options = parseArguments(['gateway', '--backend', backend], {})
+    assert.equal(options.backend, backend)
+    assert.equal(options.backendUrl, '')
+  }
+})
+
+test('parses the install command with an optional confirmation skip', () => {
+  const install = parseArguments(['install', 'codex'], {})
+  assert.equal(install.command, 'install')
+  assert.equal(install.installTarget, 'codex')
+  assert.equal(install.yes, false)
+
+  const skip = parseArguments(['install', 'kimi', '--yes'], {})
+  assert.equal(skip.installTarget, 'kimi')
+  assert.equal(skip.yes, true)
+  assert.equal(parseArguments(['install', 'kimi', '-y'], {}).yes, true)
+  assert.equal(
+    parseArguments(['install', 'OPENCODE'], {}).installTarget,
+    'opencode',
+  )
+})
+
+test('rejects invalid install targets and misplaced flags', () => {
+  assert.throws(() => parseArguments(['install'], {}), /缺少后台名称/)
+  assert.throws(() => parseArguments(['install', '--yes'], {}), /缺少后台名称/)
+  assert.throws(() => parseArguments(['install', 'none'], {}), /缺少后台名称/)
+  assert.throws(() => parseArguments(['install', 'unknown'], {}), /不支持的后台/)
+  assert.throws(() => parseArguments(['install', 'acp'], {}), /ACP_COMMAND/)
+  assert.throws(
+    () => parseArguments(['setup', '--yes'], {}),
+    /--yes 只适用于 install/,
+  )
+})
+
+test('parses skill passthrough commands', () => {
+  const install = parseArguments(
+    ['skill', 'install', 'owner/repo', '--skill', 'pdf-tools', '--skill', 'review'],
+    {},
+  )
+  assert.equal(install.command, 'skill')
+  assert.equal(install.skillAction, 'install')
+  assert.equal(install.skillTarget, 'owner/repo')
+  assert.deepEqual(install.skillNames, ['pdf-tools', 'review'])
+  assert.equal(install.skillList, false)
+
+  const list = parseArguments(
+    ['skill', 'install', 'https://github.com/vercel-labs/skills', '--list'],
+    {},
+  )
+  assert.equal(list.skillTarget, 'https://github.com/vercel-labs/skills')
+  assert.equal(list.skillList, true)
+
+  const installed = parseArguments(['skill', 'list'], {})
+  assert.equal(installed.skillAction, 'list')
+  assert.equal(installed.skillTarget, '')
+
+  const remove = parseArguments(['skill', 'remove', 'pdf-tools'], {})
+  assert.equal(remove.skillAction, 'remove')
+  assert.equal(remove.skillTarget, 'pdf-tools')
+
+  const update = parseArguments(['skill', 'update'], {})
+  assert.equal(update.skillAction, 'update')
+})
+
+test('rejects incomplete or misplaced skill arguments', () => {
+  assert.throws(() => parseArguments(['skill'], {}), /skill 需要子命令/)
+  assert.throws(() => parseArguments(['skill', 'publish'], {}), /skill 需要子命令/)
+  assert.throws(
+    () => parseArguments(['skill', 'install'], {}),
+    /需要技能来源/,
+  )
+  assert.throws(
+    () => parseArguments(['skill', 'remove'], {}),
+    /需要技能名称/,
+  )
+  assert.throws(
+    () => parseArguments(['skill', 'install', 'owner/repo', '--skill'], {}),
+    /--skill 缺少参数/,
+  )
+  assert.throws(
+    () => parseArguments(['skill', 'list', '--skill', 'x'], {}),
+    /--skill 只适用于 skill install/,
+  )
+  assert.throws(
+    () => parseArguments(['skill', 'remove', 'x', '--list'], {}),
+    /--list 只适用于 skill install/,
+  )
+  assert.throws(
+    () => parseArguments(
+      ['skill', 'install', 'owner/repo', '--list', '--skill', 'x'],
+      {},
+    ),
+    /--list 与 --skill 不能同时使用/,
+  )
+  assert.throws(
+    () => parseArguments(['install', 'codex', '--skill', 'x'], {}),
+    /--skill 只适用于 skill install/,
+  )
+})
+
+test('rejects the removed backend mode option', () => {
+  assert.throws(() => parseArguments([
+    'gateway',
+    '--backend', 'openclaw',
+    '--backend-mode', 'compatible',
+  ], {}), /未知参数：--backend-mode/)
+})
+
+test('parses supported backend permission modes', () => {
+  const options = parseArguments([
+    'gateway',
+    '--backend', 'qoder',
+    '--backend-permission-mode', 'full',
+  ], {})
+  assert.equal(options.backendPermissionMode, 'full')
+  assert.throws(() => parseArguments([
+    'gateway',
+    '--backend', 'openclaw',
+    '--backend-permission-mode', 'full',
+  ], {}), /OpenClaw/)
+})
+
+test('parses foreground and service Gateway commands', () => {
+  const env = { AGENT_PROTOCOL: 'openclaw' }
+  assert.equal(parseArguments(['gateway'], env).gatewayAction, 'run')
+  assert.equal(parseArguments(['gateway', 'run'], env).gatewayAction, 'run')
+  assert.equal(
+    parseArguments(['gateway', 'install'], {}).gatewayAction,
+    'install',
+  )
+  assert.equal(parseArguments(['gateway', 'start'], {}).gatewayAction, 'start')
+  assert.equal(parseArguments(['gateway', 'stop'], {}).gatewayAction, 'stop')
+  assert.equal(parseArguments(['gateway', 'pair'], {}).gatewayAction, 'pair')
+  assert.equal(
+    parseArguments(['gateway', 'pair', '--name', 'AI Passport'], {}).deviceLabel,
+    'AI Passport',
+  )
+  assert.equal(parseArguments(['gateway', 'pair', '--legacy'], {}).legacyPairing, true)
+  assert.equal(parseArguments([
+    'gateway', 'pair', '--json',
+  ], {}).json, true)
+  assert.equal(parseArguments(['gateway', 'devices'], {}).gatewayAction, 'devices')
+  assert.equal(
+    parseArguments(['gateway', 'revoke', 'phone-one'], {}).deviceId,
+    'phone-one',
+  )
+  assert.throws(
+    () => parseArguments(['gateway', 'revoke'], {}),
+    /设备 ID/,
+  )
+  assert.equal(
+    parseArguments(['gateway', 'restart'], {}).gatewayAction,
+    'restart',
+  )
+  assert.equal(
+    parseArguments(['gateway', 'uninstall'], {}).gatewayAction,
+    'uninstall',
+  )
+  assert.equal(parseArguments(['status'], {}).gatewayAction, 'status')
+})
+
+test('rejects client-only flags on unrelated commands', () => {
+  assert.throws(
+    () => parseArguments(['tui', '--audio-mode', 'invalid'], {}),
+    /不支持的音频模式/,
+  )
+  assert.throws(
+    () => parseArguments(['webui', '--audio-mode', 'full'], {}),
+    /只适用于 tui/,
+  )
+  assert.throws(
+    () => parseArguments(['tui', '--no-open'], {}),
+    /只适用于 webui/,
+  )
+  assert.throws(
+    () => parseArguments(['webui', '--takeover'], {}),
+    /只适用于 tui/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway', 'install', '--backend', 'openclaw'], {}),
+    /config\.env/,
+  )
+})
+
+test('documents the service and client commands', () => {
+  const text = helpText()
+  assert.match(text, /^qwenaudio$/m)
+  assert.match(text, /qwenaudio \[gateway\]/)
+  assert.match(text, /gateway install/)
+  assert.match(text, /gateway uninstall/)
+  assert.match(text, /gateway pair/)
+  assert.match(text, /gateway devices/)
+  assert.match(text, /gateway revoke ID/)
+  assert.match(text, /--tailnet/)
+  assert.match(text, /--lan/)
+  assert.match(text, /gateway pair --endpoint URL/)
+  assert.doesNotMatch(text, /--public-url/)
+  assert.doesNotMatch(text, /gateway remote/)
+  assert.match(text, /qwenaudio tui/)
+  assert.match(text, /qwenaudio webui/)
+  assert.match(text, /qwenaudio status/)
+  assert.match(text, /qwenaudio config/)
+  assert.match(text, /qwenaudio setup/)
+  assert.match(text, /--json/)
+  assert.match(text, /qwenaudio install NAME/)
+  assert.match(text, /--yes, -y/)
+  assert.doesNotMatch(text, /--attach-openclaw/)
+  assert.doesNotMatch(text, /--backend-mode/)
+  assert.match(text, /--backend-permission-mode MODE/)
+  assert.doesNotMatch(text, /--mode private/)
+  assert.match(text, /--audio-mode MODE/)
+  assert.match(text, /x\s+半双工模式下手动打断当前回复/)
+})
+
+test('selects one of three Gateway run modes and keeps endpoint overrides on pair', () => {
+  assert.throws(
+    () => parseArguments(['gateway', 'remote'], {}),
+    /未知 Gateway 命令：remote/,
+  )
+  assert.equal(parseArguments(['gateway', '--tailnet'], {}).tailnet, true)
+  const lan = parseArguments(['gateway', '--lan'], {})
+  assert.equal(lan.lan, true)
+  assert.equal(lan.tailnet, false)
+  assert.equal(
+    parseArguments([
+      'gateway', 'pair', '--endpoint', 'https://voice.example.com',
+    ], {}).endpoint,
+    'https://voice.example.com',
+  )
+  assert.throws(
+    () => parseArguments(['gateway', '--public-url', 'https://voice.example.com'], {}),
+    /未知参数/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway', '--endpoint', 'https://voice.example.com'], {}),
+    /只适用于 gateway pair/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway', 'pair', '--endpoint', 'http://voice.example.com'], {}),
+    /必须使用 HTTPS/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway', 'start', '--tailnet'], {}),
+    /只适用于 gateway run 或 gateway install/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway', 'start', '--lan'], {}),
+    /只适用于 gateway run 或 gateway install/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway'], {
+      QWEN_AUDIO_GATEWAY_LAN: '1',
+      QWEN_AUDIO_GATEWAY_TAILNET: '1',
+    }),
+    /不能同时使用/,
+  )
+  assert.throws(
+    () => parseArguments(['gateway', '--lan', '--tailnet'], {}),
+    /不能同时使用/,
+  )
+  assert.equal(
+    parseArguments(['gateway', 'install', '--tailnet'], {}).tailnet,
+    true,
+  )
+})
+
+test('parses config show and exact realtime model set commands', () => {
+  assert.equal(parseArguments(['config', 'show'], {}).configAction, 'show')
+  assert.equal(parseArguments([
+    'config', 'set', '--realtime-model',
+    'qwen3.5-omni-plus-realtime',
+  ], {}).configAction, 'set')
+  assert.equal(parseArguments([
+    'config', 'set', '--realtime-model',
+    'qwen3.5-omni-plus-realtime',
+  ], {}).realtimeModel, 'qwen3.5-omni-plus-realtime')
+  assert.throws(
+    () => parseArguments(['gateway', '--realtime-model', 'model'], {}),
+    /只适用于 config set/,
+  )
+})

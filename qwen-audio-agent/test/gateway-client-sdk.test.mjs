@@ -1,0 +1,754 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { GatewayClient } from '../shared/gateway/client-sdk.mjs'
+import { GatewayServerEvent } from '../shared/protocol/realtime-events.mjs'
+import {
+  GATEWAY_CLIENT_OCCUPIED_CLOSE_CODE,
+  GATEWAY_CLIENT_PROTOCOL_VERSION,
+  GATEWAY_CLIENT_REPLACED_CLOSE_CODE,
+  GATEWAY_CLIENT_REVOKED_CLOSE_CODE,
+  GatewayClientCapability,
+  GatewayClientProtocolEvent,
+} from '../shared/protocol/gateway-client-protocol.mjs'
+
+class FakeSocket {
+  constructor() {
+    this.readyState = 0
+    this.listeners = new Map()
+    this.sent = []
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) || []
+    listeners.push(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  emit(type, value = {}) {
+    for (const listener of this.listeners.get(type) || []) listener(value)
+  }
+
+  open() {
+    this.readyState = 1
+    this.emit('open')
+  }
+
+  receive(value) {
+    this.emit('message', { data: JSON.stringify(value) })
+  }
+
+  send(value) { this.sent.push(JSON.parse(value)) }
+  close() { this.readyState = 3 }
+}
+
+function createTimedClient(t, options = {}) {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const sockets = []
+  const statuses = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    clientInstanceId: 'sdk-timeout-test',
+    connectTimeoutMs: 100,
+    handshakeTimeoutMs: 100,
+    reconnectMinMs: 50,
+    reconnectMaxMs: 200,
+    onStatus: status => statuses.push(status),
+    ...options,
+  })
+  t.after(() => client.stop())
+  client.start()
+  return { client, sockets, statuses }
+}
+
+function completeHandshake(socket) {
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_timeout_test_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: GATEWAY_CLIENT_PROTOCOL_VERSION,
+    session_id: 'main',
+    capabilities: [],
+  })
+}
+
+test('reference Client forwards payload-free memory changes without tool events or a new capability', t => {
+  const received = []
+  const { client, sockets } = createTimedClient(t, {
+    capabilities: [],
+    onEvent: event => received.push(event),
+  })
+  const socket = sockets[0]
+  socket.open()
+  completeHandshake(socket)
+  const notification = {
+    type: GatewayServerEvent.MEMORY_CHANGED,
+    event_id: 'evt_gateway_memory_changed',
+  }
+  socket.receive(notification)
+  assert.deepEqual(received, [notification])
+  assert.deepEqual(client.negotiatedCapabilities, [])
+  assert.equal(client.ready, true)
+  assert.equal(sockets.length, 1)
+  assert.deepEqual(socket.sent.map(event => event.type), ['session.hello'])
+})
+
+test('passes remote credentials below GCP and requests takeover explicitly', () => {
+  const socket = new FakeSocket()
+  let socketOptions
+  const client = new GatewayClient({
+    url: 'wss://gateway.test/api/realtime',
+    createSocket: (_url, options) => {
+      socketOptions = options
+      return socket
+    },
+    accessToken: 'device-token',
+    takeover: true,
+    clientInstanceId: 'phone-one',
+    capabilities: [GatewayClientCapability.INPUT_TEXT],
+    reconnect: false,
+  }).start()
+  socket.open()
+  assert.deepEqual(socketOptions, {
+    headers: { Authorization: 'Bearer device-token' },
+  })
+  assert.equal(socket.sent[0].connection.takeover, true)
+  assert.equal(
+    socket.sent[0].capabilities.includes(GatewayClientCapability.SESSION_TAKEOVER),
+    true,
+  )
+  assert.equal(JSON.stringify(socket.sent[0]).includes('device-token'), false)
+  client.stop()
+})
+
+test('exposes the underlying transport buffered amount for flow control', () => {
+  const socket = new FakeSocket()
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    reconnect: false,
+  }).start()
+
+  socket.open()
+  socket.bufferedAmount = 4096
+  assert.equal(client.bufferedAmount, 4096)
+  client.stop()
+  assert.equal(client.bufferedAmount, 0)
+})
+
+test('reference Client negotiates once and correlates runtime commands', async () => {
+  const socket = new FakeSocket()
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-test',
+    capabilities: [GatewayClientCapability.TASK_COMMANDS],
+    reconnect: false,
+  }).start()
+  socket.open()
+  assert.equal(socket.sent[0].type, GatewayClientProtocolEvent.SESSION_HELLO)
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: '7.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.TASK_COMMANDS],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const recoveryRequest = socket.sent.find(event => event.type === 'task.list')
+  socket.receive({
+    type: GatewayClientProtocolEvent.TASK_LIST_RESULT,
+    event_id: 'evt_gateway_tasks',
+    request_event_id: recoveryRequest.event_id,
+    tasks: [],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  const pending = client.request(GatewayClientProtocolEvent.TASK_GET, {
+    task_id: 'task-1',
+  })
+  const request = socket.sent.at(-1)
+  socket.receive({
+    type: GatewayClientProtocolEvent.TASK_GET_RESULT,
+    event_id: 'evt_gateway_task',
+    request_event_id: request.event_id,
+    task: {
+      id: 'task-1', workState: 'working', status: 'running', kind: 'work',
+      objective: 'test', createdAt: 1, elapsedMs: 1,
+    },
+  })
+  assert.equal((await pending).task.id, 'task-1')
+  client.stop()
+})
+
+test('reference Client times out a socket that never opens and retries', t => {
+  const { client, sockets, statuses } = createTimedClient(t)
+
+  t.mock.timers.tick(99)
+  assert.equal(sockets.length, 1)
+  assert.equal(sockets[0].readyState, 0)
+  assert.deepEqual(statuses.map(status => status.state), ['connecting'])
+  t.mock.timers.tick(1)
+  assert.equal(sockets[0].readyState, 3)
+  assert.equal(statuses.at(-1).error.code, 'connection_timeout')
+  assert.equal(statuses.at(-1).phase, 'connection')
+  assert.equal(client.ready, false)
+  t.mock.timers.tick(49)
+  assert.equal(sockets.length, 1)
+  t.mock.timers.tick(1)
+  assert.equal(sockets.length, 2)
+
+  // Late events from the expired socket must not affect its replacement.
+  const statusCount = statuses.length
+  sockets[0].open()
+  sockets[0].receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_expired_socket_ready',
+    protocol_version: GATEWAY_CLIENT_PROTOCOL_VERSION,
+    session_id: 'main',
+    capabilities: [],
+  })
+  sockets[0].emit('close', { code: 1006 })
+  assert.equal(sockets[0].sent.length, 0)
+  assert.equal(statuses.length, statusCount)
+  assert.equal(client.ready, false)
+  assert.equal(client.socket, sockets[1])
+  sockets[1].open()
+  completeHandshake(sockets[1])
+  t.mock.timers.tick(1_000)
+  assert.equal(client.ready, true)
+  assert.equal(sockets.length, 2)
+})
+
+test('reference Client starts the handshake timeout when the socket opens', t => {
+  const { client, sockets, statuses } = createTimedClient(t, { reconnect: false })
+  const socket = sockets[0]
+
+  t.mock.timers.tick(90)
+  socket.open()
+  t.mock.timers.tick(99)
+  assert.equal(socket.readyState, 1)
+  assert.equal(statuses.at(-1).state, 'connected')
+  assert.equal(socket.sent[0].type, GatewayClientProtocolEvent.SESSION_HELLO)
+  t.mock.timers.tick(1)
+  assert.equal(statuses.at(-1).error.code, 'handshake_timeout')
+  assert.equal(statuses.at(-1).phase, 'handshake')
+  assert.equal(socket.readyState, 3)
+  assert.equal(client.ready, false)
+  t.mock.timers.tick(1_000)
+  assert.equal(sockets.length, 1)
+})
+
+test('reference Client clears connection deadlines after a successful handshake', t => {
+  const { client, sockets, statuses } = createTimedClient(t)
+  const socket = sockets[0]
+
+  t.mock.timers.tick(90)
+  socket.open()
+  t.mock.timers.tick(90)
+  completeHandshake(socket)
+  t.mock.timers.tick(1_000)
+
+  assert.equal(client.ready, true)
+  assert.equal(socket.readyState, 1)
+  assert.equal(sockets.length, 1)
+  assert.equal(client.connectTimer, null)
+  assert.equal(client.handshakeTimer, null)
+  assert.deepEqual(statuses.map(status => status.state), ['connecting', 'connected', 'ready'])
+})
+
+test('reference Client resets reconnect backoff only after session readiness', t => {
+  const { client, sockets } = createTimedClient(t)
+  sockets[0].open()
+  t.mock.timers.tick(100)
+  t.mock.timers.tick(49)
+  assert.equal(sockets.length, 1)
+  t.mock.timers.tick(1)
+  assert.equal(sockets.length, 2)
+
+  sockets[1].open()
+  t.mock.timers.tick(100)
+  t.mock.timers.tick(99)
+  assert.equal(sockets.length, 2)
+  t.mock.timers.tick(1)
+  assert.equal(sockets.length, 3)
+
+  sockets[2].open()
+  completeHandshake(sockets[2])
+  assert.equal(client.ready, true)
+  sockets[2].close()
+  sockets[2].emit('close', { code: 1006 })
+  t.mock.timers.tick(49)
+  assert.equal(sockets.length, 3)
+  t.mock.timers.tick(1)
+  assert.equal(sockets.length, 4)
+})
+
+for (const phase of ['connection', 'handshake', 'reconnect']) {
+  test(`reference Client stop cancels pending ${phase} timers`, t => {
+    const { client, sockets, statuses } = createTimedClient(t)
+    const socket = sockets[0]
+    if (phase === 'handshake') socket.open()
+    if (phase === 'reconnect') t.mock.timers.tick(100)
+    const statusCount = statuses.length
+    const sentCount = socket.sent.length
+
+    client.stop()
+    assert.equal(socket.readyState, 3)
+    assert.equal(client.connectTimer, null)
+    assert.equal(client.handshakeTimer, null)
+    assert.equal(client.reconnectTimer, null)
+    socket.open()
+    if (phase === 'handshake') completeHandshake(socket)
+    socket.emit('close', { code: 1006 })
+    t.mock.timers.tick(1_000)
+
+    assert.equal(client.ready, false)
+    assert.equal(client.socket, null)
+    assert.equal(sockets.length, 1)
+    assert.equal(socket.sent.length, sentCount)
+    assert.equal(statuses.length, statusCount)
+  })
+}
+
+test('reference Client correlates task input response results', async () => {
+  const socket = new FakeSocket()
+  const received = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-input-response-test',
+    capabilities: [GatewayClientCapability.INPUT_RESPOND],
+    reconnect: false,
+    onEvent: event => received.push(event),
+  }).start()
+  socket.open()
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_input_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: '6.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.INPUT_RESPOND],
+  })
+
+  const pending = client.request(GatewayClientProtocolEvent.INPUT_RESPOND, {
+    task_id: 'task-1',
+    input_request_id: 'input-1',
+    action: 'accept',
+    text: '继续执行',
+  })
+  const request = socket.sent.at(-1)
+  socket.receive({
+    type: GatewayClientProtocolEvent.INPUT_RESPOND_RESULT,
+    event_id: 'evt_input_response_result',
+    request_event_id: request.event_id,
+    input: { accepted: true },
+  })
+
+  assert.deepEqual((await pending).input, { accepted: true })
+  assert.deepEqual(received, [])
+  client.stop()
+})
+
+test('reference Client rejects task input response errors', async () => {
+  const socket = new FakeSocket()
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-input-response-error-test',
+    capabilities: [GatewayClientCapability.INPUT_RESPOND],
+    reconnect: false,
+  }).start()
+  socket.open()
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_input_error_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: '6.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.INPUT_RESPOND],
+  })
+
+  const pending = client.request(GatewayClientProtocolEvent.INPUT_RESPOND, {
+    task_id: 'task-1',
+    input_request_id: 'input-1',
+    action: 'decline',
+  })
+  const request = socket.sent.at(-1)
+  socket.receive({
+    type: 'error',
+    event_id: 'evt_input_response_error',
+    request_event_id: request.event_id,
+    error: { code: 'input_rejected', message: 'Input request was rejected' },
+  })
+
+  await assert.rejects(pending, error => error.code === 'input_rejected')
+  client.stop()
+})
+
+test('reference Client answers negotiated application heartbeats without dispatching them', () => {
+  const socket = new FakeSocket()
+  const received = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-heartbeat-test',
+    capabilities: [GatewayClientCapability.SESSION_HEARTBEAT],
+    reconnect: false,
+    onEvent: event => received.push(event),
+  }).start()
+  socket.open()
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: '7.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.SESSION_HEARTBEAT],
+  })
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_PING,
+    event_id: 'evt_gateway_ping',
+  })
+
+  assert.equal(socket.sent.at(-1).type, GatewayClientProtocolEvent.SESSION_PONG)
+  assert.equal(socket.sent.at(-1).request_event_id, 'evt_gateway_ping')
+  assert.deepEqual(received, [])
+  client.stop()
+})
+
+test('reference Client envelopes direct runtime events with event_id', () => {
+  const socket = new FakeSocket()
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-direct-event-test',
+    reconnect: false,
+  }).start()
+  socket.open()
+
+  client.send({ type: 'input.unmute' })
+  assert.equal(socket.sent.at(-1).type, 'input.unmute')
+  assert.match(socket.sent.at(-1).event_id, /^evt_client_/)
+
+  client.send({
+    type: 'playback.started',
+    event_id: 'evt_client_supplied',
+    responseId: 'response-1',
+  })
+  assert.equal(socket.sent.at(-1).event_id, 'evt_client_supplied')
+  client.stop()
+})
+
+test('reference Client initializes and updates the output voice through GCP', async () => {
+  const socket = new FakeSocket()
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-output-voice-test',
+    capabilities: [GatewayClientCapability.SESSION_OUTPUT_VOICE],
+    configure: { outputVoice: 'longanlufeng' },
+    reconnect: false,
+  }).start()
+
+  socket.open()
+
+  assert.equal(socket.sent[0].connection.output_voice, 'longanlufeng')
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_voice_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: '7.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.SESSION_OUTPUT_VOICE],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  const pending = client.updateOutputVoice('longanqian')
+  const request = socket.sent.at(-1)
+  assert.equal(request.type, GatewayClientProtocolEvent.SESSION_OUTPUT_VOICE_UPDATE)
+  assert.equal(request.voice, 'longanqian')
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_OUTPUT_VOICE_UPDATED,
+    event_id: 'evt_gateway_voice_updated',
+    request_event_id: request.event_id,
+    voice: 'longanqian',
+    changed: true,
+    reconnecting: true,
+  })
+  assert.deepEqual(await pending, {
+    type: GatewayClientProtocolEvent.SESSION_OUTPUT_VOICE_UPDATED,
+    event_id: 'evt_gateway_voice_updated',
+    request_event_id: request.event_id,
+    voice: 'longanqian',
+    changed: true,
+    reconnecting: true,
+  })
+  client.stop()
+})
+
+test('reference Client rejects output voice updates without negotiated support', async () => {
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => new FakeSocket(),
+    reconnect: false,
+  })
+
+  await assert.rejects(
+    client.updateOutputVoice('longanqian'),
+    error => error.code === 'capability_not_negotiated',
+  )
+})
+
+test('reference Client executes negotiated Actions and deduplicates replayed events', async () => {
+  const socket = new FakeSocket()
+  const received = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => socket,
+    clientInstanceId: 'sdk-action-test',
+    capabilities: [GatewayClientCapability.CLIENT_ACTION_ENTER_SLEEP],
+    reconnect: false,
+    onEvent: event => received.push(event),
+    onAction: async () => ({ status: 'completed' }),
+  }).start()
+  socket.open()
+  socket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_ready',
+    request_event_id: socket.sent[0].event_id,
+    protocol_version: '7.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.CLIENT_ACTION_ENTER_SLEEP],
+  })
+  socket.receive({
+    type: GatewayClientProtocolEvent.CLIENT_ACTION_REQUEST,
+    event_id: 'evt_gateway_action',
+    name: 'desktop.presence.enter_sleep',
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const result = socket.sent.at(-1)
+  assert.equal(result.type, GatewayClientProtocolEvent.CLIENT_ACTION_RESULT)
+  assert.equal(result.request_event_id, 'evt_gateway_action')
+
+  socket.receive({ type: 'task.running', event_id: 'evt_task_1', sequence: 1 })
+  socket.receive({ type: 'task.running', event_id: 'evt_task_1', sequence: 1 })
+  assert.equal(received.length, 1)
+  client.stop()
+})
+
+test('reference Client discards an Action result after the connection is replaced', async () => {
+  const sockets = []
+  let resolveAction
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    clientInstanceId: 'sdk-stale-action-test',
+    capabilities: [GatewayClientCapability.CLIENT_ACTION_ENTER_SLEEP],
+    reconnect: false,
+    onAction: () => new Promise(resolve => { resolveAction = resolve }),
+  }).start()
+
+  const firstSocket = sockets[0]
+  firstSocket.open()
+  firstSocket.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_gateway_ready_stale_action',
+    request_event_id: firstSocket.sent[0].event_id,
+    protocol_version: '6.0.0',
+    session_id: 'main',
+    capabilities: [GatewayClientCapability.CLIENT_ACTION_ENTER_SLEEP],
+  })
+  firstSocket.receive({
+    type: GatewayClientProtocolEvent.CLIENT_ACTION_REQUEST,
+    event_id: 'evt_gateway_stale_action',
+    name: 'desktop.presence.enter_sleep',
+  })
+
+  client.stop()
+  client.start()
+  const secondSocket = sockets[1]
+  secondSocket.open()
+  resolveAction({ status: 'completed' })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.equal(
+    secondSocket.sent.some(event => event.type === GatewayClientProtocolEvent.CLIENT_ACTION_RESULT),
+    false,
+  )
+  client.stop()
+})
+
+test('reference Client reconnects, replays from its cursor, then reconciles snapshots', async () => {
+  const sockets = []
+  const received = []
+  let recovered
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    clientInstanceId: 'sdk-reconnect-test',
+    capabilities: [
+      GatewayClientCapability.SESSION_REPLAY,
+      GatewayClientCapability.TASK_COMMANDS,
+      GatewayClientCapability.CONVERSATION_HISTORY,
+    ],
+    reconnectMinMs: 50,
+    reconnectMaxMs: 50,
+    onEvent: event => received.push(event),
+    onRecovery: value => { recovered = value },
+  }).start()
+  const first = sockets[0]
+  first.open()
+  first.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_ready_1',
+    request_event_id: first.sent[0].event_id,
+    protocol_version: '7.0.0',
+    session_id: 'main',
+    capabilities: [],
+  })
+  first.receive({ type: 'task.running', event_id: 'evt_task_1', sequence: 1 })
+  first.readyState = 3
+  first.emit('close')
+  await new Promise(resolve => setTimeout(resolve, 60))
+
+  const second = sockets[1]
+  second.open()
+  second.receive({
+    type: GatewayClientProtocolEvent.SESSION_READY,
+    event_id: 'evt_ready_2',
+    request_event_id: second.sent[0].event_id,
+    protocol_version: '7.0.0',
+    session_id: 'main',
+    capabilities: [
+      GatewayClientCapability.SESSION_REPLAY,
+      GatewayClientCapability.TASK_COMMANDS,
+      GatewayClientCapability.CONVERSATION_HISTORY,
+    ],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const replay = second.sent.find(event => event.type === GatewayClientProtocolEvent.SESSION_REPLAY)
+  assert.equal(replay.after_sequence, 1)
+  second.receive({
+    type: GatewayClientProtocolEvent.SESSION_REPLAY_RESULT,
+    event_id: 'evt_replay_result',
+    request_event_id: replay.event_id,
+    events: [{ type: 'task.completed', event_id: 'evt_task_2', sequence: 2 }],
+    earliest_sequence: 1,
+    latest_sequence: 2,
+    next_sequence: 2,
+    has_more: false,
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const tasks = second.sent.find(event => event.type === GatewayClientProtocolEvent.TASK_LIST)
+  second.receive({
+    type: GatewayClientProtocolEvent.TASK_LIST_RESULT,
+    event_id: 'evt_tasks_result',
+    request_event_id: tasks.event_id,
+    tasks: [],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  const history = second.sent.find(event => event.type === GatewayClientProtocolEvent.CONVERSATION_HISTORY)
+  second.receive({
+    type: GatewayClientProtocolEvent.CONVERSATION_HISTORY_RESULT,
+    event_id: 'evt_history_result',
+    request_event_id: history.event_id,
+    messages: [],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(received.map(event => event.sequence), [1, 2])
+  assert.deepEqual(recovered.events.map(event => event.sequence), [2])
+  client.stop()
+})
+
+test('reference Client does not reconnect after a newer instance replaces it', async () => {
+  const sockets = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    clientInstanceId: 'sdk-replaced-test',
+    reconnectMinMs: 50,
+    reconnectMaxMs: 50,
+  }).start()
+  const socket = sockets[0]
+  socket.open()
+  socket.readyState = 3
+  socket.emit('close', { code: GATEWAY_CLIENT_REPLACED_CLOSE_CODE })
+
+  await new Promise(resolve => setTimeout(resolve, 70))
+
+  assert.equal(sockets.length, 1)
+  assert.equal(client.readyState, 3)
+})
+
+test('reference Client reports an occupied lease without retrying', async () => {
+  const sockets = []
+  const statuses = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    clientInstanceId: 'sdk-occupied-test',
+    reconnectMinMs: 50,
+    reconnectMaxMs: 50,
+    onStatus: status => statuses.push(status.state),
+  }).start()
+  const socket = sockets[0]
+  socket.open()
+  socket.readyState = 3
+  socket.emit('close', { code: GATEWAY_CLIENT_OCCUPIED_CLOSE_CODE })
+
+  await new Promise(resolve => setTimeout(resolve, 70))
+
+  assert.equal(sockets.length, 1)
+  assert.equal(client.readyState, 3)
+  assert.equal(statuses.at(-1), 'occupied')
+})
+
+test('reference Client reports credential revocation without retrying', async () => {
+  const sockets = []
+  const statuses = []
+  const client = new GatewayClient({
+    url: 'ws://gateway.test/api/realtime',
+    createSocket: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    clientInstanceId: 'sdk-revoked-test',
+    reconnectMinMs: 50,
+    reconnectMaxMs: 50,
+    onStatus: status => statuses.push(status.state),
+  }).start()
+  const socket = sockets[0]
+  socket.open()
+  socket.readyState = 3
+  socket.emit('close', { code: GATEWAY_CLIENT_REVOKED_CLOSE_CODE })
+
+  await new Promise(resolve => setTimeout(resolve, 70))
+
+  assert.equal(sockets.length, 1)
+  assert.equal(client.readyState, 3)
+  assert.equal(statuses.at(-1), 'revoked')
+})

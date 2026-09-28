@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>设置</title>
+    <link rel="stylesheet" href="./settings.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="page-title">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="./assets/icons/设置.svg" alt="" />
+          </span>
+          <div>
+            <h1>设置</h1>
+            <p>管理语音、后台 Agent 与桌面应用</p>
+          </div>
+        </div>
+        <div class="app-meta">
+          <span id="updater-status"></span>
+          <button id="check-updates" class="text-button" type="button">检查更新</button>
+        </div>
+      </header>
+
+      <section class="runtime-status" aria-labelledby="runtime-status-title">
+        <h2 id="runtime-status-title">运行状态</h2>
+        <dl>
+          <div>
+            <dt>Gateway</dt>
+            <dd id="current-gateway" class="connection-status checking">正在检查…</dd>
+          </div>
+          <div>
+            <dt>语音前台</dt>
+            <dd id="current-realtime">正在检查…</dd>
+          </div>
+          <div>
+            <dt>后台 Agent</dt>
+            <dd id="current-backend" class="connection-status checking">正在检查…</dd>
+          </div>
+        </dl>
+      </section>
+
+      <form id="settings-form">
+        <nav class="settings-tabs" role="tablist" aria-label="设置分类">
+          <button
+            id="voice-tab"
+            class="settings-tab active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="voice-settings"
+            data-settings-tab="voice"
+          >语音前台</button>
+          <button
+            id="backend-tab"
+            class="settings-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="backend-settings"
+            data-settings-tab="backend"
+          >后台 Agent</button>
+          <button
+            id="app-tab"
+            class="settings-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="app-settings"
+            data-settings-tab="app"
+          >应用程序</button>
+        </nav>
+        <div class="settings-groups">
+          <section
+            id="voice-settings"
+            class="settings-group"
+            role="tabpanel"
+            aria-labelledby="voice-tab"
+            data-settings-panel="voice"
+          >
+            <p class="setting-hint" data-remote-gateway-note hidden>语音和后台 Agent 由远端 Gateway 配置。</p>
+            <div class="settings-card realtime-settings-card" data-local-gateway-settings>
+              <div class="setting-row">
+                <label for="realtime-provider-trigger">供应商</label>
+                <div id="realtime-provider" class="settings-picker"></div>
+              </div>
+              <div id="realtime-settings-panel">
+                <!-- Four standard fields, bound by the shared provider definitions. -->
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="backend-settings"
+            class="settings-group"
+            role="tabpanel"
+            aria-labelledby="backend-tab"
+            data-settings-panel="backend"
+            hidden
+          >
+            <p class="setting-hint" data-remote-gateway-note hidden>语音和后台 Agent 由远端 Gateway 配置。</p>
+            <div class="settings-card backend-settings-card" data-local-gateway-settings>
+              <div class="setting-row backend-list-row">
+                <span class="setting-label" id="backend-list-label">后台 Agent</span>
+                <div class="field-with-action backend-list-action">
+                  <div class="backend-picker">
+                    <button
+                      id="backend-picker-trigger"
+                      class="backend-picker-trigger"
+                      type="button"
+                      aria-haspopup="listbox"
+                      aria-expanded="false"
+                      aria-controls="backend-picker-popover"
+                    >
+                      <span class="backend-picker-selection">
+                        <span id="backend-picker-name">无后台 Agent</span>
+                        <span id="backend-picker-status"></span>
+                      </span>
+                      <span class="backend-picker-chevron" aria-hidden="true"></span>
+                    </button>
+                    <div
+                      id="backend-picker-popover"
+                      class="backend-picker-popover"
+                      hidden
+                    >
+                      <div class="backend-search-wrap">
+                        <input
+                          id="backend-search"
+                          type="search"
+                          autocomplete="off"
+                          spellcheck="false"
+                          placeholder="搜索 Agent"
+                          aria-label="搜索后台 Agent"
+                        />
+                      </div>
+                      <!-- 选项由 settings.js 按本机检测结果动态渲染 -->
+                      <div
+                        id="backend-list"
+                        role="listbox"
+                        aria-labelledby="backend-list-label"
+                      ></div>
+                      <p id="backend-picker-empty" hidden>没有匹配的 Agent</p>
+                    </div>
+                  </div>
+                  <button
+                    id="refresh-backends"
+                    class="link-button"
+                    type="button"
+                    title="重新检测本机已安装的后台 Agent"
+                  ><img src="./assets/icons/重试.svg" alt="" />刷新</button>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <label for="backend-model">后台模型</label>
+                <input
+                  id="backend-model"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="留空沿用 Agent 配置"
+                />
+              </div>
+
+              <div class="setting-row backend-connection-row" hidden>
+                <label for="backend-ownership">连接方式</label>
+                <select id="backend-ownership">
+                  <option value="owned">由应用管理</option>
+                  <option value="external">连接现有服务</option>
+                </select>
+              </div>
+
+              <div class="setting-row backend-url-row" hidden>
+                <label for="backend-url">服务地址</label>
+                <input
+                  id="backend-url"
+                  type="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="http://127.0.0.1:18789"
+                />
+              </div>
+
+              <div class="setting-row backend-credential-row" hidden>
+                <label for="backend-credential">访问令牌</label>
+                <input
+                  id="backend-credential"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="留空表示不使用令牌"
+                />
+              </div>
+
+              <div class="setting-row node-path-row" hidden>
+                <label for="node-path">Node.js 路径</label>
+                <div class="field-with-action">
+                  <input
+                    id="node-path"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="例如 C:\tools\nodejs"
+                  />
+                  <button
+                    id="apply-node-path"
+                    class="link-button"
+                    type="button"
+                  >确认</button>
+                </div>
+                <p class="setting-hint">
+                  如果自动检测不到 npm，请在这里填写 Node.js 安装目录（包含 node.exe 的文件夹路径）。
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="app-settings"
+            class="settings-group"
+            role="tabpanel"
+            aria-labelledby="app-tab"
+            data-settings-panel="app"
+            hidden
+          >
+            <div class="settings-card">
+              <div class="setting-row">
+                <label for="gateway-url">Gateway</label>
+                <input id="gateway-url" type="url" autocomplete="off" spellcheck="false" placeholder="输入 Gateway 地址或连接链接" required />
+              </div>
+
+              <div class="setting-row">
+                <label for="orb-style">外观</label>
+                <div class="setting-inline">
+                  <select id="orb-style"></select>
+                  <div class="manage-buttons" role="group" aria-label="管理皮肤">
+                    <button type="button" id="import-skin" title="导入皮肤…" aria-label="导入皮肤"><img src="./assets/icons/添加.svg" alt="" /></button>
+                    <button type="button" id="remove-skin" title="删除所选皮肤" aria-label="删除所选皮肤" disabled><img src="./assets/icons/删除.svg" alt="" /></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <label for="auto-hide-seconds">自动休眠</label>
+                <select id="auto-hide-seconds">
+                  <option value="0">永不</option>
+                  <option value="60">1 分钟</option>
+                  <option value="300">5 分钟</option>
+                  <option value="600">10 分钟</option>
+                </select>
+              </div>
+
+              <div class="setting-row">
+                <label for="wake-word-enabled">语音唤醒</label>
+                <div class="toggle-field">
+                  <label class="toggle-switch">
+                    <input id="wake-word-enabled" type="checkbox" />
+                    <span class="toggle-track"></span>
+                  </label>
+                  <span class="toggle-hint">休眠后说出"你好千问"即可唤醒</span>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <label for="wake-shortcut">显示快捷键</label>
+                <div class="shortcut-field">
+                  <input
+                    id="wake-shortcut"
+                    type="hidden"
+                    value="CommandOrControl+Shift+Space"
+                  />
+                  <button
+                    id="record-wake-shortcut"
+                    class="shortcut-recorder"
+                    type="button"
+                    title="点击后按下新的快捷键"
+                  >Command + Shift + Space</button>
+                  <button
+                    id="reset-wake-shortcut"
+                    class="shortcut-reset"
+                    type="button"
+                    aria-label="恢复默认快捷键"
+                    title="恢复默认快捷键"
+                  ><img src="./assets/icons/重试.svg" alt="" /></button>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <label for="desktop-language">语言</label>
+                <select id="desktop-language">
+                  <option value="auto">跟随系统</option>
+                  <option value="zh-CN">中文</option>
+                  <option value="en">英文</option>
+                </select>
+              </div>
+
+              <div class="setting-row">
+                <span class="setting-label">日志</span>
+                <button id="open-logs" class="row-link" type="button">
+                  <img src="./assets/icons/本地文件.svg" alt="" />
+                  在 Finder 中显示
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <footer>
+          <p id="message" role="status"></p>
+          <button class="apply-button" type="submit" aria-label="应用设置" disabled>应用</button>
+        </footer>
+      </form>
+    </main>
+    <script src="./settings.js" type="module"></script>
+  </body>
+</html>

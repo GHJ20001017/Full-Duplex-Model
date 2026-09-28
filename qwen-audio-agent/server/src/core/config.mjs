@@ -1,0 +1,670 @@
+import { dirname, resolve } from 'path'
+import { fileURLToPath } from 'url'
+import {
+  loadRuntimeEnvironment,
+} from '../../../shared/runtime-environment.mjs'
+import { defaultBackendWorkspace } from '../../../shared/runtime-paths.mjs'
+import {
+  backendDefinition,
+  backendNames,
+  effectiveBackendPermissionMode,
+  normalizeBackendProtocol,
+  resolveBackendOwnership,
+} from '../../../shared/backend/catalog.mjs'
+import {
+  resolveRealtimeFrontendConfiguration,
+} from '../../../shared/realtime-provider-catalog.mjs'
+import {
+  REALTIME_PROVIDERS,
+  realtimeSettingsFromEnvironment,
+  realtimeSettingsConnection,
+} from '../../../shared/realtime-provider-definitions.mjs'
+import {
+  normalizeMemoryProviderSelection,
+} from '../../../shared/memory-provider-catalog.mjs'
+import {
+  loadFrontendProfile,
+  resolveFrontendProfileConfiguration,
+} from './frontend-profile.mjs'
+import { resolveWebSearchConfiguration } from '../../../shared/web-search-configuration.mjs'
+export { resolveWebSearchConfiguration } from '../../../shared/web-search-configuration.mjs'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const sourceRoot = resolve(here, '../../..')
+const root = process.env.QWEN_AUDIO_AGENT_RUNTIME_ROOT || sourceRoot
+const runtimeEnvironment = loadRuntimeEnvironment({ root })
+
+export function numberSetting(value, fallback, {
+  min = Number.NEGATIVE_INFINITY,
+  max = Number.POSITIVE_INFINITY,
+} = {}) {
+  if (value === null || value === undefined) return fallback
+  const source = typeof value === 'string' ? value.trim() : value
+  if (source === '') return fallback
+  const parsed = Number(source)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+function featureEnabled(value) {
+  return !['0', 'false', 'no', 'off'].includes(
+    String(value || '').trim().toLowerCase(),
+  )
+}
+
+export function resolveDisabledFrontendTools(env = process.env) {
+  return [
+    ...(!featureEnabled(env.QWEN_AUDIO_SCHEDULE_TOOL_ENABLED)
+      ? ['schedule_reminder'] : []),
+    ...(!featureEnabled(env.QWEN_AUDIO_WEB_TOOLS_ENABLED)
+      ? ['web_search', 'fetch_url'] : []),
+    ...(!featureEnabled(env.QWEN_AUDIO_KNOWLEDGE_TOOL_ENABLED)
+      ? ['knowledge'] : []),
+    ...(!featureEnabled(env.QWEN_AUDIO_NOTES_TOOL_ENABLED)
+      ? ['notes'] : []),
+    ...(!featureEnabled(env.QWEN_AUDIO_RECALL_TOOL_ENABLED)
+      ? ['recall'] : []),
+  ]
+}
+
+export function resolveBackendWorkspace(
+  protocol,
+  env = process.env,
+  dataDirectory = runtimeEnvironment.dataDirectory,
+) {
+  const definition = backendDefinition(protocol)
+  if (!definition?.workspaceEnvironment) {
+    throw new Error(`后台 ${protocol} 没有 workspace 配置`)
+  }
+  const configured = env[definition.workspaceEnvironment]
+  return configured
+    ? resolve(root, configured)
+    : defaultBackendWorkspace(dataDirectory, env, root)
+}
+
+export function resolveAcpArgs(value) {
+  return resolveCommandArgs(value, 'ACP_ARGS')
+}
+
+export function resolveCommandArgs(value, label = 'ARGS') {
+  const source = String(value || '').trim()
+  if (!source) return []
+  if (source.startsWith('[')) {
+    let parsed
+    try {
+      parsed = JSON.parse(source)
+    } catch {
+      throw new Error(`${label} 不是有效的 JSON 数组`)
+    }
+    if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+      throw new Error(`${label} 必须是字符串组成的 JSON 数组`)
+    }
+    return parsed
+  }
+  return source.split(/\s+/)
+}
+
+function backendModelName(value) {
+  const model = String(value || '').trim()
+  const separator = model.indexOf('/')
+  return separator >= 0 ? model.slice(separator + 1) : model
+}
+
+export function resolveBackendModels(env = process.env) {
+  const configured = String(
+    env.QWEN_AUDIO_AGENT_BACKEND_MODEL || '',
+  ).trim()
+  const common = configured.toLowerCase() === 'auto' ? '' : configured
+  const name = backendModelName(common)
+  return {
+    common,
+    openCode: common ? `alibaba-cn/${name}` : '',
+    openClaw: common ? `bailian/${name}` : '',
+    qoder: common,
+    qwen: common,
+    minimax: common,
+    kimi: common,
+    hermes: common,
+    codeBuddy: common,
+    codex: common,
+    claude: common,
+    deepSeekHarness: String(
+      env.DEEPSEEK_HARNESS_MODEL || '',
+    ).trim(),
+    pi: common,
+    muse: common,
+    acp: common,
+  }
+}
+
+const configuredAgentProtocol = normalizeBackendProtocol(
+  process.env.AGENT_PROTOCOL,
+)
+const configuredBackendDefinition = backendDefinition(configuredAgentProtocol)
+if (configuredAgentProtocol && !configuredBackendDefinition) {
+  throw new Error(
+    `不支持的后台 Agent：${configuredAgentProtocol}`
+    + `（可选 ${backendNames().join('、')}）`,
+  )
+}
+const backendOwnership = configuredAgentProtocol
+  ? resolveBackendOwnership(configuredAgentProtocol, {
+      baseUrlConfigured: Boolean(
+        configuredBackendDefinition.baseUrlEnvironment
+        && String(
+          process.env[configuredBackendDefinition.baseUrlEnvironment] || '',
+        ).trim()
+      ),
+      requestedOwnership: process.env.QWEN_AUDIO_AGENT_BACKEND_OWNERSHIP,
+    })
+  : 'owned'
+const backendModels = resolveBackendModels()
+const museArgs = resolveCommandArgs(process.env.MUSE_CODE_ARGS, 'MUSE_CODE_ARGS')
+const museConfiguredWorkspace = String(
+  process.env.MUSE_CODE_WORKSPACE || '',
+).trim()
+const museHostWorkspace = resolveBackendWorkspace('muse')
+const museWorkspaceRoot = museConfiguredWorkspace
+  ? process.platform === 'win32'
+    ? museConfiguredWorkspace
+    : resolve(root, museConfiguredWorkspace)
+  : museHostWorkspace
+const managedOpenClawBailian = (
+  configuredAgentProtocol === 'openclaw'
+  && Boolean(backendModels.common)
+  && Boolean(process.env.DASHSCOPE_API_KEY)
+  && !process.env.OPENCLAW_CONFIG_PATH
+)
+const requestedBackendPermissionMode = String(
+  process.env.QWEN_AUDIO_AGENT_BACKEND_PERMISSION_MODE || 'native',
+).toLowerCase()
+if (
+  configuredAgentProtocol
+  && !['native', 'full'].includes(requestedBackendPermissionMode)
+) {
+  throw new Error(
+    `不支持的后台权限模式：${requestedBackendPermissionMode}（可选 native、full）`,
+  )
+}
+// 无权限审批机制的后台（alwaysFullPermission，如 Pi）无论配置什么都以
+// full 运行，这里直接归一化为真实生效的模式，健康状态据此上报。
+const backendPermissionMode = effectiveBackendPermissionMode(
+  configuredAgentProtocol,
+  requestedBackendPermissionMode,
+)
+const requestedAgentProtocol = configuredAgentProtocol
+const sharedBackendAgent = String(
+  process.env.QWEN_AUDIO_AGENT_BACKEND_AGENT || '',
+).trim()
+function legacyBackendAgent(value, legacyDefault) {
+  const selected = String(value || '').trim()
+  return selected === legacyDefault ? 'qwen-audio-agent-backend' : selected
+}
+
+export function resolveOpenCodeCoordinatorAgent(env = process.env) {
+  const selected = String(
+    env.QWEN_AUDIO_AGENT_BACKEND_AGENT
+    || env.OPENCODE_COORDINATOR_AGENT
+    || '',
+  ).trim()
+  return [
+    'qwen-audio-agent-backend',
+    'qwen-audio-agent-coordinator',
+  ].includes(selected) ? '' : selected
+}
+
+const realtimeFrontend = resolveRealtimeFrontendConfiguration(process.env)
+const webSearch = resolveWebSearchConfiguration(process.env)
+const loadedFrontendProfile = loadFrontendProfile({
+  filePath: process.env.QWEN_AUDIO_FRONTEND_PROFILE,
+})
+const frontendProfileConfiguration = resolveFrontendProfileConfiguration({
+  profile: loadedFrontendProfile,
+  env: process.env,
+  defaultAssistantProfilePath: runtimeEnvironment.assistantProfilePath,
+  baseDirectory: root,
+})
+
+const realtimeSettings = realtimeSettingsFromEnvironment(process.env)
+const realtimeConnections = Object.fromEntries(REALTIME_PROVIDERS.map(provider => [
+  provider.key,
+  realtimeSettingsConnection({ ...realtimeSettings, realtimeProvider: provider.key }),
+]))
+
+export const config = {
+  root,
+  configDirectory: runtimeEnvironment.configDirectory,
+  dataDirectory: runtimeEnvironment.dataDirectory,
+  stateDirectory: runtimeEnvironment.stateDirectory,
+  cacheDirectory: runtimeEnvironment.cacheDirectory,
+  // Optional read-only hosting of assets owned by an embedding client.
+  webSkinsDirectory: process.env.QWEN_AUDIO_WEB_SKINS_DIR
+    ? resolve(process.env.QWEN_AUDIO_WEB_SKINS_DIR)
+    : '',
+  host: process.env.HOST || '127.0.0.1',
+  // PORT=0 lets an embedded host (e.g. the desktop app) fall back to a
+  // random loopback port and learn it from the child process report.
+  port: String(process.env.PORT || '').trim() === '0'
+    ? 0
+    : numberSetting(process.env.PORT, 3101, { min: 1, max: 65535 }),
+  audioProvider: realtimeFrontend.active.provider,
+  realtimeConfigSignature: realtimeFrontend.active.signature,
+  realtimeCredential: realtimeFrontend.credential,
+  realtimeEndpoint: realtimeFrontend.active.endpoint,
+  realtimeModel: realtimeFrontend.active.model,
+  realtimeVoice: realtimeFrontend.active.voice,
+  // User-managed huggingface/speech-to-speech OpenAI Realtime endpoint. The
+  // pipeline owns its STT, LLM, TTS and voice configuration; Gateway only
+  // connects to the endpoint and supplies the shared frontend instructions and
+  // tools for each realtime Session.
+  speechToSpeechRealtimeUrl: realtimeConnections['speech-to-speech'].endpoint,
+  // Do not advertise a local service merely because a default endpoint
+  // exists. It becomes selectable when the user explicitly configures it or
+  // chooses it as the active frontend.
+  speechToSpeechConfigured: Boolean(realtimeSettings.speechToSpeechRealtimeUrl) || realtimeFrontend.active.provider === 'speech-to-speech',
+  // The upstream WebSocket does not require authentication. This optional
+  // credential is useful only when users put it behind an authenticated proxy.
+  speechToSpeechAuthToken: realtimeConnections['speech-to-speech'].credential,
+  // User-managed MiniCPM-o 4.5 audio full-duplex Realtime endpoint.
+  miniCpmORealtimeUrl: realtimeConnections['minicpm-o'].endpoint,
+  miniCpmOAuthToken: realtimeConnections['minicpm-o'].credential,
+  miniCpmOConfigured: Boolean(realtimeSettings.miniCpmORealtimeUrl) || realtimeFrontend.active.provider === 'minicpm-o',
+  audioModel: realtimeConnections['dashscope'].model,
+  audioVoice: realtimeConnections['dashscope'].voice,
+  dashscopeApiKey: realtimeConnections['dashscope'].credential,
+  audioRealtimeBaseUrl: realtimeConnections['dashscope'].endpoint,
+  stepfunApiKey: realtimeConnections['stepfun'].credential,
+  stepfunRealtimeUrl: realtimeConnections['stepfun'].endpoint,
+  stepfunModel: realtimeConnections['stepfun'].model,
+  stepfunVoice: realtimeConnections['stepfun'].voice,
+  openaiApiKey: realtimeConnections['gpt-live'].credential,
+  gptLiveRealtimeUrl: realtimeConnections['gpt-live'].endpoint,
+  gptLiveModel: realtimeConnections['gpt-live'].model,
+  gptLiveVoice: realtimeConnections['gpt-live'].voice,
+  googleApiKey: realtimeConnections['google-live'].credential,
+  googleLiveRealtimeUrl: realtimeConnections['google-live'].endpoint,
+  googleLiveModel: realtimeConnections['google-live'].model,
+  googleLiveVoice: realtimeConnections['google-live'].voice,
+  doubaoApiKey: realtimeConnections['doubao-seeduplex'].credential,
+  doubaoSeeduplexRealtimeUrl: realtimeConnections['doubao-seeduplex'].endpoint,
+  doubaoSeeduplexModel: realtimeConnections['doubao-seeduplex'].model,
+  doubaoSeeduplexVoice: realtimeConnections['doubao-seeduplex'].voice,
+  webSearchProvider: webSearch.provider,
+  webSearchMcpUrl: webSearch.mcpUrl,
+  webSearchMcpToken: webSearch.mcpToken,
+  webSearchMcpTool: webSearch.mcpTool,
+  frontendDisabledTools: resolveDisabledFrontendTools(process.env),
+  frontendProfile: frontendProfileConfiguration.frontendProfile,
+  frontendMcpConfigPath: frontendProfileConfiguration.frontendMcpConfigPath,
+  frontendOpenApiConfigPath: frontendProfileConfiguration.frontendOpenApiConfigPath,
+  allowedOrigins: String(process.env.QWEN_AUDIO_AGENT_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean),
+  tailnet: ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.QWEN_AUDIO_GATEWAY_TAILNET || '').trim().toLowerCase(),
+  ),
+  lan: ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.QWEN_AUDIO_GATEWAY_LAN || '').trim().toLowerCase(),
+  ),
+  gatewayLanHost: String(
+    process.env.QWEN_AUDIO_GATEWAY_LAN_HOST || '',
+  ).trim(),
+  authSecret: process.env.QWEN_AUDIO_AGENT_AUTH_SECRET || '',
+  identityMode: (
+    process.env.QWEN_AUDIO_AGENT_IDENTITY_MODE || 'personal'
+  ).toLowerCase() === 'browser' ? 'browser' : 'personal',
+  personalOwnerId: process.env.QWEN_AUDIO_AGENT_PERSONAL_OWNER_ID || 'user_personal',
+  memoryProvider: normalizeMemoryProviderSelection(
+    process.env.QWEN_AUDIO_MEMORY_PROVIDER,
+  ),
+  voiceMemStateDirectory: process.env.VOICEMEM_STATE_DIR
+    ? resolve(root, process.env.VOICEMEM_STATE_DIR)
+    : resolve(runtimeEnvironment.dataDirectory, 'memory/voicemem'),
+  voiceMemPython: String(process.env.VOICEMEM_PYTHON || '').trim(),
+  voiceMemSidecarPath: process.env.VOICEMEM_SIDECAR
+    ? resolve(root, process.env.VOICEMEM_SIDECAR)
+    : '',
+  gatewayAccessToken: String(
+    process.env.QWEN_AUDIO_GATEWAY_ACCESS_TOKEN
+    || process.env.QWEN_AUDIO_AGENT_ACCESS_TOKEN
+    || '',
+  ).trim(),
+  gatewayAccessKeys: String(
+    process.env.QWEN_AUDIO_AGENT_ACCESS_KEYS || '',
+  ).trim(),
+  gatewayDeviceStatePath: resolve(
+    runtimeEnvironment.stateDirectory,
+    'gateway-devices.json',
+  ),
+  agentProtocol: requestedAgentProtocol,
+  backendOwnership,
+  backendPermissionMode,
+  agentTimeoutMs: numberSetting(process.env.AGENT_TIMEOUT_MS, 300000, { min: 10000 }),
+  // Per-backend option namespaces keyed by driver id. AgentClient merges the
+  // selected namespace with optional overrides, so adding a backend only
+  // requires appending one entry here.
+  backends: {
+    opencode: {
+      baseUrl: (
+        process.env.OPENCODE_BASE_URL
+        || 'http://127.0.0.1:4096'
+      ).replace(/\/+$/, ''),
+      model: backendModels.openCode,
+      directory: resolveBackendWorkspace('opencode'),
+      coordinatorAgent: resolveOpenCodeCoordinatorAgent(),
+    },
+    openclaw: {
+      baseUrl: (
+        process.env.OPENCLAW_BASE_URL
+        || 'http://127.0.0.1:18789'
+      ).replace(/\/+$/, ''),
+      token: (
+        process.env.OPENCLAW_GATEWAY_TOKEN
+        || process.env.AGENT_API_KEY
+        || ''
+      ),
+      tokenFile: (
+        process.env.OPENCLAW_GATEWAY_TOKEN_FILE
+        || resolve(runtimeEnvironment.openClawStateDirectory, 'gateway-token')
+      ),
+      model: backendOwnership === 'owned'
+        ? backendModels.openClaw
+        : backendModels.common,
+      directory: resolveBackendWorkspace('openclaw'),
+      cliPath: String(process.env.OPENCLAW_ACP_BIN || '').trim(),
+      coordinatorAgent: (
+        sharedBackendAgent
+        || legacyBackendAgent(
+          process.env.OPENCLAW_COORDINATOR_AGENT,
+          'voice-coordinator',
+        )
+        || (managedOpenClawBailian ? 'qwen-audio-agent-backend' : '')
+      ),
+    },
+    qoder: {
+      model: String(backendModels.qoder).trim(),
+      directory: resolveBackendWorkspace('qoder'),
+      cliPath: String(
+        process.env.QODERCLI_PATH || process.env.QODER_CLI_PATH || '',
+      ).trim(),
+      configDirectory: process.env.QODER_CONFIG_DIR
+        ? resolve(process.env.QODER_CONFIG_DIR)
+        : '',
+    },
+    qwen: {
+      model: String(backendModels.qwen).trim(),
+      directory: resolveBackendWorkspace('qwen'),
+      cliPath: String(process.env.QWEN_CODE_BIN || '').trim(),
+    },
+    minimax: {
+      model: String(backendModels.minimax).trim(),
+      directory: resolveBackendWorkspace('minimax'),
+      cliPath: String(process.env.MINIMAX_CODE_BIN || '').trim(),
+    },
+    kimi: {
+      model: String(backendModels.kimi).trim(),
+      directory: resolveBackendWorkspace('kimi'),
+      cliPath: String(process.env.KIMI_CODE_BIN || '').trim(),
+    },
+    hermes: {
+      model: String(backendModels.hermes).trim(),
+      directory: resolveBackendWorkspace('hermes'),
+      cliPath: String(process.env.HERMES_BIN || '').trim(),
+    },
+    codebuddy: {
+      model: String(backendModels.codeBuddy).trim(),
+      modelUrl: (
+        process.env.CODEBUDDY_MODEL_URL || ''
+      ),
+      directory: resolveBackendWorkspace('codebuddy'),
+      cliPath: String(process.env.CODEBUDDY_BIN || '').trim(),
+    },
+    codex: {
+      model: String(backendModels.codex).trim(),
+      modelUrl: (
+        process.env.CODEX_BASE_URL || ''
+      ).replace(/\/+$/, ''),
+      directory: resolveBackendWorkspace('codex'),
+      cliPath: String(process.env.CODEX_ACP_BIN || '').trim(),
+    },
+    claude: {
+      model: String(backendModels.claude).trim(),
+      directory: resolveBackendWorkspace('claude'),
+      cliPath: String(process.env.CLAUDE_CODE_ACP_BIN || '').trim(),
+      claudeExecutable: String(
+        process.env.CLAUDE_CODE_EXECUTABLE || '',
+      ).trim(),
+      configDirectory: process.env.CLAUDE_CONFIG_DIR
+        ? resolve(process.env.CLAUDE_CONFIG_DIR)
+        : '',
+    },
+    deepseek: {
+      model: backendModels.deepSeekHarness,
+      directory: resolveBackendWorkspace('deepseek'),
+      cliPath: String(process.env.DEEPSEEK_HARNESS_ACP_BIN || '').trim(),
+      sessionRoot: resolve(
+        runtimeEnvironment.stateDirectory,
+        'backends/deepseek-harness/sessions',
+      ),
+    },
+    pi: {
+      model: String(backendModels.pi).trim(),
+      directory: resolveBackendWorkspace('pi'),
+      cliPath: String(process.env.PI_ACP_BIN || '').trim(),
+    },
+    muse: {
+      model: String(backendModels.muse).trim(),
+      directory: museHostWorkspace,
+      workspaceRoot: museWorkspaceRoot,
+      museBin: String(process.env.MUSE_CODE_BIN || 'muse').trim() || 'muse',
+      ...(museArgs.length ? { args: museArgs } : {}),
+    },
+    acp: {
+      model: String(backendModels.acp).trim(),
+      directory: resolveBackendWorkspace('acp'),
+      cliPath: String(process.env.ACP_COMMAND || '').trim(),
+      args: resolveAcpArgs(process.env.ACP_ARGS),
+      label: String(process.env.ACP_LABEL || 'ACP Agent').trim() || 'ACP Agent',
+      coordinatorAgent: String(process.env.ACP_COORDINATOR_AGENT || '').trim(),
+    },
+  },
+  announceIntoContext: (
+    String(process.env.QWEN_AUDIO_AGENT_ANNOUNCE_INTO_CONTEXT || 'true').toLowerCase()
+    === 'true'
+  ),
+  resultContextMaxChars: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_RESULT_CONTEXT_MAX_CHARS,
+    6000,
+    { min: 256 },
+  ),
+  announcementBatchMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_ANNOUNCEMENT_BATCH_MS,
+    120,
+    { min: 0, max: 1000 },
+  ),
+  announcementMaxBatchItems: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_ANNOUNCEMENT_MAX_BATCH_ITEMS,
+    8,
+    { min: 1, max: 32 },
+  ),
+  announcementQuietMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_ANNOUNCEMENT_QUIET_MS,
+    350,
+    { min: 0, max: 2000 },
+  ),
+  announcementAcknowledgementTimeoutMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_ANNOUNCEMENT_ACK_TIMEOUT_MS,
+    120_000,
+    { min: 10_000 },
+  ),
+  announcementMaxRetryAttempts: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_ANNOUNCEMENT_MAX_RETRIES,
+    8,
+    { min: 1, max: 32 },
+  ),
+  frontendPromptDir: process.env.QWEN_AUDIO_AGENT_FRONTEND_PROMPT_DIR
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_FRONTEND_PROMPT_DIR)
+    : resolve(root, 'config/frontend-agent'),
+  assistantProfilePath: frontendProfileConfiguration.assistantProfilePath,
+  frontendMemoryPath: process.env.QWEN_AUDIO_AGENT_MEMORY_PATH
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_MEMORY_PATH)
+    : process.env.QWEN_AUDIO_AGENT_FRONTEND_MEMORY_PATH
+      ? resolve(root, process.env.QWEN_AUDIO_AGENT_FRONTEND_MEMORY_PATH)
+    : runtimeEnvironment.frontendMemoryPath,
+  frontendNotesPath: process.env.QWEN_AUDIO_AGENT_FRONTEND_NOTES_PATH
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_FRONTEND_NOTES_PATH)
+    : runtimeEnvironment.frontendNotesPath,
+  userModelPath: process.env.QWEN_AUDIO_AGENT_USER_MODEL_PATH
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_USER_MODEL_PATH)
+    : process.env.QWEN_AUDIO_AGENT_USER_PROFILE_PATH
+      ? resolve(root, process.env.QWEN_AUDIO_AGENT_USER_PROFILE_PATH)
+    : runtimeEnvironment.userModelPath,
+  taskStatePath: process.env.QWEN_AUDIO_AGENT_TASK_STATE_PATH
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_TASK_STATE_PATH)
+    : runtimeEnvironment.taskStatePath,
+  backendSessionStatePath: process.env.QWEN_AUDIO_AGENT_BACKEND_SESSION_STATE_PATH
+    ? resolve(root, process.env.QWEN_AUDIO_AGENT_BACKEND_SESSION_STATE_PATH)
+    : resolve(runtimeEnvironment.stateDirectory, 'acp-sessions.json'),
+  taskTerminalTtlMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_TASK_TERMINAL_TTL_MS,
+    86_400_000,
+    { min: 60_000 },
+  ),
+  taskPendingNotificationTtlMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_TASK_NOTIFICATION_TTL_MS,
+    604_800_000,
+    { min: 60_000 },
+  ),
+  taskNotificationClaimTtlMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_TASK_NOTIFICATION_CLAIM_TTL_MS,
+    60_000,
+    { min: 5_000 },
+  ),
+  maxTerminalTasksPerOwner: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_MAX_TERMINAL_TASKS_PER_OWNER,
+    100,
+    { min: 10 },
+  ),
+  taskMaxConcurrent: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_TASK_MAX_CONCURRENT,
+    4,
+    { min: 1, max: 64 },
+  ),
+  taskMaxConcurrentPerOwner: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_TASK_MAX_CONCURRENT_PER_OWNER,
+    2,
+    { min: 1, max: 16 },
+  ),
+  conversationSessionTtlMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_SESSION_TTL_MS,
+    21_600_000,
+    { min: 60_000 },
+  ),
+  maxConversationSessions: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_MAX_SESSIONS,
+    500,
+    { min: 10 },
+  ),
+  // Zero keeps explicit personal memories until the user removes them.
+  frontendMemoryOwnerTtlMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_MEMORY_OWNER_TTL_MS,
+    0,
+    { min: 0 },
+  ),
+  maxFrontendMemoryOwners: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_MAX_MEMORY_OWNERS,
+    1000,
+    { min: 10 },
+  ),
+  // Session-end automatic memory extraction (invisible memory, issue #92).
+  // Runs one stateless request against a lightweight OpenAI-compatible text
+  // model after a voice session closes; silently disabled without an API key
+  // so local speech-to-speech setups degrade without a sound.
+  memoryAutoEnabled: String(
+    process.env.QWEN_AUDIO_MEMORY_AUTO || 'on',
+  ).toLowerCase() !== 'off',
+  memoryModel: String(process.env.QWEN_AUDIO_MEMORY_MODEL || '').trim()
+    || 'qwen-flash',
+  memoryBaseUrl: (
+    process.env.QWEN_AUDIO_MEMORY_BASE_URL
+    || 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+  ).replace(/\/+$/, ''),
+  memoryApiKey: process.env.QWEN_AUDIO_MEMORY_API_KEY
+    || process.env.DASHSCOPE_API_KEY
+    || '',
+  memoryAuditPath: resolve(
+    runtimeEnvironment.stateDirectory,
+    'memory-audit.jsonl',
+  ),
+  // 偏好自更新：从对话里观察反复出现的表达偏好，攒够跨会话确认后写入 USER.md
+  // 的观察推断段。默认关闭 —— 它会自动改写用户档案，先让愿意尝试的用户显式开启。
+  // 复用 memoryModel / memoryBaseUrl / memoryApiKey，不额外要一套凭据。
+  preferenceLearningEnabled: String(
+    process.env.QWEN_AUDIO_PREFERENCE_LEARNING || 'off',
+  ).toLowerCase() === 'on',
+  preferenceCandidatePath: resolve(
+    runtimeEnvironment.stateDirectory,
+    'preference-candidates.json',
+  ),
+  // 会话摘要：每场会话结束时记一条「聊了哪些话题 + 一句要点」，供用户日后问
+  // 「前几天我们聊的那个」时用 recall 工具查。默认关闭 —— 它留存的是
+  // 对话内容的概括，属于需要用户显式同意的一档。只存话题与一句要点，不存转写。
+  sessionDigestEnabled: String(
+    process.env.QWEN_AUDIO_SESSION_DIGEST || 'off',
+  ).toLowerCase() === 'on',
+  sessionDigestPath: resolve(
+    runtimeEnvironment.stateDirectory,
+    'session-digests.json',
+  ),
+  // 用户导入的资料属于共享数据，不属于项目工作区或某个 Gateway 的状态。
+  // 由本机 Knowledge Provider 管理和检索。
+  // 默认关闭：它会把用户的文件复制到另一个位置，需要用户显式同意。
+  domainLibraryEnabled: String(
+    process.env.QWEN_AUDIO_DOMAIN_LIBRARY || 'off',
+  ).toLowerCase() === 'on',
+  domainDocumentDirectory: resolve(
+    runtimeEnvironment.dataDirectory,
+    'knowledge/documents',
+  ),
+  domainIndexPath: resolve(
+    runtimeEnvironment.dataDirectory,
+    'knowledge/index.json',
+  ),
+  reminderSchedulerEnabled: String(
+    process.env.QWEN_AUDIO_AGENT_REMINDER_SCHEDULER || 'true'
+  ).toLowerCase() === 'true',
+  reminderMaxPerOwner: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_REMINDER_MAX_PER_OWNER,
+    50,
+    { min: 1, max: 500 },
+  ),
+  scheduledTaskTimeoutMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_SCHEDULED_TASK_TIMEOUT_MS,
+    1_800_000,
+    { min: 60_000 },
+  ),
+  offlineNotificationDelayMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_OFFLINE_NOTIFICATION_DELAY_MS,
+    5_000,
+    { min: 1_000, max: 120_000 },
+  ),
+  reminderStaggerMs: numberSetting(
+    process.env.QWEN_AUDIO_AGENT_REMINDER_STAGGER_MS,
+    30_000,
+    { min: 0, max: 300_000 },
+  ),
+  // The sleep timeout mirrors the desktop auto-hide timeout: the orb hides
+  // and the gateway enters sleep mode at the same threshold. The legacy
+  // QWEN_AUDIO_SLEEP_TIMEOUT_SECONDS is ignored to avoid divergence.
+  sleepTimeoutMs: numberSetting(
+    process.env.QWEN_AUDIO_DESKTOP_AUTO_HIDE_SECONDS,
+    0,
+    { min: 0, max: 86_400 },
+  ) * 1000,
+}
+
+export function realtimeUrl(baseUrl, model) {
+  const separator = baseUrl.includes('?') ? '&' : '?'
+  return `${baseUrl}${separator}model=${encodeURIComponent(model)}`
+}
