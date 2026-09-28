@@ -80,7 +80,7 @@ export LLM_BASE_URL="https://你的服务域名/v1"
 export LLM_MODEL="替换为该服务实际提供的模型名称"
 
 # 语义路由：填写独立运行的意图识别服务的完整推理接口 URL
-export S2S_SEMANTIC_TURN_URL="https://你的意图服务域名/完整推理路径"
+export S2S_SEMANTIC_TURN_URL="https://0.0.0.0:8792/v1/systemone"
 export S2S_SEMANTIC_TURN_TIMEOUT_S="1" # 可按服务延迟调整，默认 1 秒
 
 speech-to-speech serve \
@@ -104,7 +104,7 @@ speech-to-speech serve \
   --tts qwen3 \
   --qwen3_tts_model_name Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
   --qwen3_tts_device cuda \
-  --qwen3_tts_mlx_quantization 6bit \
+  --qwen3_tts_backend torch \
   --qwen3_tts_language Chinese \
   --qwen3_tts_speaker Aiden \
   --qwen3_tts_streaming_chunk_size 4 \
