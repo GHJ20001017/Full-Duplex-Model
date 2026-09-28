@@ -16,6 +16,7 @@
 * [核心增强 Enhancements](#enhancements)
 * [How it works 工作原理](#how-it-works-工作原理)
 * [安装 Installation](#安装-installation)
+* [Linux 与 Windows 部署](#linux-与-windows-部署)
 * [快速开始 Quickstart](#快速开始-quickstart)
 * [支持的组件 Supported Components](#支持的组件-supported-components)
 * [命令 Commands](#命令-commands)
@@ -187,6 +188,148 @@ uv sync
 ```
 
 （macOS 上构建 AEC3 原生库：`./native/aec3/build_macos.sh`。）
+
+## Linux 与 Windows 部署
+
+本节从本仓库源码安装 Paraformer + Qwen3-TTS，并连接 OpenAI 兼容的 Chat Completions API。需要 Python 3.10+（示例使用 3.11）及可用的 LLM API 地址、模型名称和密钥。已有仓库时跳过克隆，直接进入 `cascaded-full-duplex` 目录。macOS 快速上手见[项目首页](../README.md#安装与启动)。
+
+以下步骤依据仓库依赖和后端实现整理，尚未在 Linux／Windows 完成安装及语音联调；请同时阅读对应平台限制。
+
+### Linux + NVIDIA GPU（Ubuntu 24.04 示例）
+
+先安装 NVIDIA 驱动，确认 `nvidia-smi` 能显示显卡。以下使用 Bash；其他发行版需要替换系统包安装命令。
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl ca-certificates build-essential python3-dev \
+  portaudio19-dev ffmpeg meson ninja-build pkg-config
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source "$HOME/.local/bin/env"
+
+git clone https://github.com/GHJ20001017/Full-Duplex-Model.git
+cd Full-Duplex-Model/cascaded-full-duplex
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[paraformer,wake-word]"
+
+# CUDA 12.8 wheel 示例：驱动必须支持相应 CUDA 运行时
+uv pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -c 'import torch; print(torch.__version__, torch.version.cuda); assert torch.cuda.is_available(), "CUDA 不可用，请检查驱动与 PyTorch wheel"; print(torch.cuda.get_device_name(0))'
+```
+
+PyTorch wheel 自带所需的 CUDA 运行时，但不包含显卡驱动；不必为了常规 wheel 推理单独安装完整 CUDA Toolkit。若驱动不适配上述版本，请按 [PyTorch 官方安装选择器](https://pytorch.org/get-started/locally/) 选择匹配的 Linux／CUDA 命令，并将 `pip` 替换为当前环境的 `uv pip`，同时安装匹配的 `torch` 和 `torchaudio`。后续重新安装项目依赖后应再次检查 CUDA 是否可用。
+
+**Linux 依赖限制：** 项目在 Linux 上默认安装 `faster-qwen3-tts[ggml]`。当前锁文件中的 `qwentts-cpp-python` wheel 标记为 `manylinux_2_39`／CUDA 12.8，因此这里采用 glibc 2.39 的 Ubuntu 24.04 作为示例；旧发行版可能在安装阶段就因缺少兼容 wheel 失败。仅在启动时选择 Torch 后端不会消除安装阶段的 GGML 依赖。遇到此类错误请先核对 [TTS 依赖说明](src/speech_to_speech/TTS/README.md)，不要忽略安装失败继续启动。
+
+**仅使用 S2S 修改版客户端时：构建 Linux AEC3。** 仓库目前只提供 macOS 自动构建脚本，下面是依据同一原生适配器整理的 Linux 手工构建步骤（尚未实机验证），不要运行 `build_macos.sh`：
+
+```bash
+mkdir -p .native-build/aec3 native/aec3/build
+# 已有该源码目录时跳过 clone
+git clone --depth 1 https://github.com/okarlsen/webrtc-audio-processing.git \
+  .native-build/aec3/webrtc-audio-processing
+meson setup .native-build/aec3/meson-build \
+  .native-build/aec3/webrtc-audio-processing \
+  --prefix "$PWD/.native-build/aec3/install" --libdir lib --buildtype release
+ninja -C .native-build/aec3/meson-build
+ninja -C .native-build/aec3/meson-build install
+export PKG_CONFIG_PATH="$PWD/.native-build/aec3/install/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+c++ -std=c++17 -O3 -fPIC -shared native/aec3/aec3_wrapper.cc \
+  $(pkg-config --cflags --libs webrtc-audio-processing-2) \
+  -Wl,-rpath,"$PWD/.native-build/aec3/install/lib" \
+  -o native/aec3/build/libs2s_aec3.so
+export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.so"
+python -c 'from openwakeword.utils import download_models; download_models(model_names=["hey_jarvis"])'
+```
+
+重复配置已有 Meson 构建目录时，在 `meson setup` 后加 `--reconfigure`。上述动态库记录了依赖的绝对路径，移动仓库后需重新构建。无桌面／无音频设备的 GPU 服务器仅运行服务端，将客户端放在有麦克风和扬声器的电脑上；仅运行服务端或 Qwen Audio Agent 不需要构建此 AEC3 库。
+
+### Windows + NVIDIA GPU（PowerShell）
+
+先安装 NVIDIA 驱动并检查 `nvidia-smi`。以下使用原生 PowerShell，不是 Bash；安装工具后需重新打开终端，使 PATH 生效。
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+winget install --id Gyan.FFmpeg -e
+```
+
+在新终端执行：
+
+```powershell
+git clone https://github.com/GHJ20001017/Full-Duplex-Model.git
+cd Full-Duplex-Model/cascaded-full-duplex
+uv venv --python 3.11
+.\.venv\Scripts\Activate.ps1
+uv pip install -e ".[paraformer,wake-word]"
+uv pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+python -c 'import torch; print(torch.__version__, torch.version.cuda); assert torch.cuda.is_available(), "CUDA unavailable"; print(torch.cuda.get_device_name(0))'
+```
+
+如激活脚本被执行策略阻止，可不改系统策略，直接用 `.\.venv\Scripts\python.exe` 和 `.\.venv\Scripts\speech-to-speech.exe` 替代后文的 `python` 和 `speech-to-speech`。`uv pip` 会识别当前目录的 `.venv`。CUDA wheel 的驱动要求与 Linux 相同，请按官方选择器选择适配版本。
+
+**Windows 边界：** 项目为 Windows 声明了不带 GGML 的 `faster-qwen3-tts` 依赖，而运行时默认仍为 GGML，因此下文显式指定 `--qwen3_tts_backend torch`。这是一条待实机验证的服务端安装路线，不代表全部依赖和音频功能已验证兼容。原生 S2S 客户端还需要符合本仓库 C ABI 的 `s2s_aec3.dll`，仓库没有 Windows 构建脚本或预编译 DLL，不能把 `.dylib`／`.so` 改名使用，也没有可跳过 AEC3 的现成启动选项。**Windows 优先使用[首页第 3.2 节 Qwen Audio Agent 的 WebUI](../README.md#32-qwen-audio-agent-客户端) 连接服务端**；不需要为它构建本地 S2S AEC3 或下载唤醒词模型。
+
+也可以在 **WSL2 + Ubuntu 24.04** 中按 Linux 路线部署服务端；需先确认 WSL 内 `nvidia-smi` 和 PyTorch CUDA 检查成功。麦克风／扬声器客户端放在 Windows 侧，不将 WSL 音频透传作为默认前提。Windows 到 WSL 的本机连接先尝试 `ws://localhost:7869/v1/realtime`；网络模式需要非回环监听时，按下文服务端启动说明的受控网络要求配置，而不是直接对公网开放。
+
+### 启动 NVIDIA 服务端
+
+在 `cascaded-full-duplex` 目录中新开终端，替换下列占位值。`LLM_BASE_URL` 是 API 基地址，不是完整的 `/chat/completions` 路径；密钥只放本地环境变量，不要写入仓库。
+
+**Linux + NVIDIA（Bash）：** 使用 CUDA 运行 ASR 和 TTS，显式选择 Torch TTS 后端。
+
+```bash
+source .venv/bin/activate
+export OPENAI_API_KEY="替换为你的 API 密钥"
+export LLM_BASE_URL="https://你的服务域名/v1"
+export LLM_MODEL="替换为该服务实际提供的模型名称"
+
+speech-to-speech serve \
+  --host 127.0.0.1 --port 7869 \
+  --stt paraformer --paraformer_stt_model_name paraformer-zh-streaming \
+  --paraformer_stt_device cuda --enable_live_transcription true \
+  --llm_backend chat-completions --responses_api_base_url "$LLM_BASE_URL" \
+  --model_name "$LLM_MODEL" \
+  --tts qwen3 --qwen3_tts_backend torch --qwen3_tts_device cuda \
+  --qwen3_tts_language Chinese \
+  --init_chat_prompt "你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。"
+```
+
+**Windows + NVIDIA（PowerShell）：** 用 `$env:` 设置环境变量，用反引号换行（反引号后不能有空格），不能直接复制 Bash 的 `export` 和反斜杠续行。
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+$env:OPENAI_API_KEY = "替换为你的 API 密钥"
+$env:LLM_BASE_URL = "https://你的服务域名/v1"
+$env:LLM_MODEL = "替换为该服务实际提供的模型名称"
+
+speech-to-speech serve `
+  --host 127.0.0.1 --port 7869 `
+  --stt paraformer --paraformer_stt_model_name paraformer-zh-streaming `
+  --paraformer_stt_device cuda --enable_live_transcription true `
+  --llm_backend chat-completions --responses_api_base_url "$env:LLM_BASE_URL" `
+  --model_name "$env:LLM_MODEL" `
+  --tts qwen3 --qwen3_tts_backend torch --qwen3_tts_device cuda `
+  --qwen3_tts_language Chinese `
+  --init_chat_prompt "你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。"
+```
+
+首次启动需要下载并加载模型，请等待监听完成后连接。默认仅监听本机 `ws://127.0.0.1:7869/v1/realtime`；跨机器访问需显式设置 `--host 0.0.0.0`，并将客户端 URL 改为服务端实际地址。接口自身无访问鉴权，只能通过受控网络或带鉴权的 TLS 网关访问，不要直接暴露到公网。
+
+### 连接客户端
+
+保留服务端运行。Linux 使用原生 S2S 客户端时，先完成上述 AEC3 构建和唤醒词模型准备，再在有音频设备的电脑上打开另一终端：
+
+```bash
+source .venv/bin/activate
+export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.so"
+speech-to-speech talk \
+  --url ws://127.0.0.1:7869/v1/realtime \
+  --interruption-route keyword \
+  --wake-word hey_jarvis --wake-word-timeout 300 --wake-ack "嗯哼，您说"
+```
+
+Windows 未准备兼容 AEC3 DLL 时，使用 [Qwen Audio Agent WebUI](../README.md#32-qwen-audio-agent-客户端)。两种客户端连接同一个服务端，切换时断开旧语音会话；默认只提供一个流水线实例。
 
 ## 快速开始 Quickstart
 

@@ -12,9 +12,15 @@
 
 · **语音驱动的 Agent 执行**：[Qwen Audio Agent](qwen-audio-agent/README.md) 连接实时对话与后台任务执行，可通过 **MCP** 接入 Computer Use 等工具，也可通过 **ACP 适配器**连接 Codex、Claude Code（CC）等 **Agent Harness**。用户可以用语音发起任务，在后台 Agent 执行期间继续交流、补充需求或查询进度，任务结果再返回当前对话，让语音助手从“回答问题”走向“执行任务”。
 
+## Demo 展示
+
+https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
+
 ## 安装与启动
 
-下面以 **Apple Silicon macOS** 为例，先启动当前的级联式语音服务端，再选择 **S2S 修改版客户端**或 **Qwen Audio Agent 客户端**连接。中文识别使用 **Paraformer**，回复通过 **OpenAI 兼容的 Chat Completions API** 生成，语音合成使用 **Qwen3-TTS**。服务端需要 Python 3.10+（以下使用 3.11）、Homebrew，以及可用的 LLM API 地址、模型名称和密钥；Qwen Audio Agent 的 Node.js 环境在第 3.2 节单独配置。
+下面以 **Apple Silicon macOS** 为例，使用 **Paraformer + OpenAI 兼容 Chat Completions API + Qwen3-TTS** 启动语音服务端，再选择一种客户端连接。需要 Python 3.10+（以下使用 3.11）、Homebrew，以及可用的 LLM API 地址、模型名称和密钥。
+
+**Linux + NVIDIA、Windows 和 WSL2** 的安装、CUDA、AEC3 及启动说明见[级联项目部署文档](cascaded-full-duplex/README.md#linux-与-windows-部署)。
 
 ### 1. 安装源码与依赖
 
@@ -28,13 +34,7 @@ brew install uv portaudio ffmpeg meson ninja pkg-config
 uv venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[paraformer,wake-word]"
-```
 
-已有仓库时无需再次克隆，直接进入其中的 `cascaded-full-duplex` 目录执行安装步骤。这里安装的是本仓库源码，而不是 PyPI 上的上游版本。
-
-**仅 S2S 修改版客户端需要此步骤。** 它默认启用 AEC3 回声消除，首次使用前需在同一目录构建原生库并准备唤醒词模型；仅使用 Qwen Audio Agent 时可跳过：
-
-```bash
 # 首次使用 macOS 开发工具时执行；已安装则跳过
 xcode-select --install
 
@@ -46,9 +46,7 @@ export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.dylib"
 python -c 'from openwakeword.utils import download_models; download_models(model_names=["hey_jarvis"])'
 ```
 
-构建需要访问 GitHub；语音模型首次加载也会下载权重，请预留网络、磁盘和内存。其他平台的 AEC3 构建与库路径配置见 [原生 AEC3 说明](cascaded-full-duplex/native/aec3/README.md)，不要在 Linux／Windows 上直接运行上述 macOS 构建脚本。
-
-### 2. 启动服务端（终端一）
+### 2. 启动服务端
 
 进入 `cascaded-full-duplex` 目录并激活环境。先将下面的占位值替换为自己的 OpenAI 兼容服务配置；`LLM_BASE_URL` 是 API 基地址，不要填写完整的 `/chat/completions` 路径。密钥仅保存在本地环境变量中，不要写入仓库。
 
@@ -60,25 +58,32 @@ export LLM_BASE_URL="https://你的服务域名/v1"
 export LLM_MODEL="替换为该服务实际提供的模型名称"
 
 speech-to-speech serve \
-  --host 127.0.0.1 \
+  --host 0.0.0.0 \
   --port 7869 \
+  --num_pipelines 1 \
+  --interruption-route semantic \
   --stt paraformer \
   --paraformer_stt_model_name paraformer-zh-streaming \
   --paraformer_stt_device cpu \
   --enable_live_transcription true \
+  --live_transcription_update_interval 0.5 \
   --llm_backend chat-completions \
   --responses_api_base_url "$LLM_BASE_URL" \
   --model_name "$LLM_MODEL" \
+  --max_output_tokens 1024 \
+  --chat_size 30 \
+  --stream_batch_sentences 1 \
+  --init_chat_role system \
+  --init_chat_prompt "你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。" \
   --tts qwen3 \
-  --qwen3_tts_device mps \
+  --qwen3_tts_model_name Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
+  --qwen3_tts_device cuda \
+  --qwen3_tts_mlx_quantization 6bit \
   --qwen3_tts_language Chinese \
-  --init_chat_prompt "你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。"
+  --qwen3_tts_speaker Aiden \
+  --qwen3_tts_streaming_chunk_size 4 \
+  --qwen3_tts_max_new_tokens 1536
 ```
-
-- `OPENAI_API_KEY` 由 LLM 后端读取；`responses_api_base_url` 同样适用于 `chat-completions` 后端。
-- 此配置在 macOS 上用 CPU 运行 Paraformer，Qwen3-TTS 自动使用 MLX。Linux NVIDIA GPU 服务端可将 `--paraformer_stt_device cpu` 改为 `cuda`，将 `--qwen3_tts_device mps` 改为 `cuda`，并准备匹配的 CUDA／PyTorch 环境。
-- 服务端首次启动会加载 VAD、ASR、TTS 和默认启用的 Smart Turn 模型，等待模型加载和监听完成后再启动客户端。
-- 本机 WebSocket 地址为 `ws://127.0.0.1:7869/v1/realtime`。默认只监听本机；跨机器访问需要显式设置 `--host 0.0.0.0`，客户端使用服务端实际地址。接口自身不提供访问鉴权，不要直接暴露到公网，应通过受控网络或带鉴权的 TLS 网关访问。
 
 ### 3. 选择并启动客户端
 
@@ -89,13 +94,7 @@ speech-to-speech serve \
 | **S2S 修改版客户端** | 在 speech-to-speech 自带客户端基础上修改，适合直接语音对话与双工调试 | 本地麦克风／扬声器、AEC3 回声消除、`hey jarvis` 唤醒、对话窗口，以及关键词／模型语义路由切换 |
 | **Qwen Audio Agent 客户端** | 带 Gateway 的语音 Agent 客户端与运行时，适合边对话边执行任务 | WebUI、TUI、桌面悬浮球，后台任务编排，以及 MCP 工具和 ACP Agent 接入 |
 
-服务端默认只有一个流水线实例（`--num_pipelines 1`），先选一种客户端连接；切换时断开前一个客户端的语音会话。下面的 AEC3 构建、`hey jarvis` 和 `talk` 参数属于 **S2S 修改版**，不直接套用于 Qwen Audio Agent。
-
 #### 3.1 S2S 修改版客户端
-
-##### Demo 展示
-
-https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
 
 ##### 启动客户端
 
@@ -115,20 +114,9 @@ speech-to-speech talk \
 
 允许终端访问麦克风，先说 **“hey jarvis”**，听到“嗯哼，您说”后开始对话。客户端默认打开本地对话窗口；加 `--no-open-browser` 可只输出窗口地址而不自动打开浏览器，加 `--no-ui` 可只使用终端。服务端和客户端分别按 `Ctrl+C` 停止。
 
-如果默认麦克风或扬声器不正确，先列出设备，再用实际设备编号替换示例中的 `1` 和 `2`：
+##### 模型语义路由配置
 
-```bash
-python -m sounddevice
-
-speech-to-speech talk \
-  --url ws://127.0.0.1:7869/v1/realtime \
-  --input-device 1 \
-  --output-device 2
-```
-
-##### 可选：启用模型语义路由
-
-上面的基础命令显式选择 `keyword` 路线，不依赖外部意图识别服务。使用 `wait`／`continue`／`yield` 模型决策时，需要先准备兼容的意图识别 HTTP 服务；这里配置的是其**完整推理接口 URL**，不是 LLM 的 API 基地址。当前仓库提供调用客户端，不会通过 `serve` 自动启动该意图模型。
+第 2 步的服务端命令已显式选择 `semantic` 路线；程序默认值仍为 `keyword`。使用 `wait`／`continue`／`yield` 模型决策时，需要先准备兼容的意图识别 HTTP 服务；这里配置的是其**完整推理接口 URL**，不是 LLM 的 API 基地址。当前仓库提供调用客户端，不会通过 `serve` 自动启动该意图模型。
 
 在**终端一**设置以下变量，然后重新运行第 2 步的完整服务端命令：
 
