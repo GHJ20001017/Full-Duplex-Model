@@ -419,6 +419,147 @@ def test_facebook_mms_session_reset_restores_custom_model_for_same_language(monk
     assert load_calls == [("en", "acme/custom-mms")]
 
 
+def test_fun_asr_nano_cli_config_defaults_and_custom_values():
+    defaults = parse_arguments(["--stt", "fun-asr-nano"]).stt_backend
+    assert defaults.config == {
+        "model_name": "FunAudioLLM/Fun-ASR-Nano-2512",
+        "device": "cuda",
+        "hotwords_file": None,
+        "hub": "hf",
+        "language": "中文",
+        "itn": True,
+        "gen_kwargs": {},
+    }
+
+    args = parse_arguments(
+        [
+            "--stt",
+            "fun-asr-nano",
+            "--fun_asr_nano_stt_model_name",
+            "local/nano",
+            "--fun_asr_nano_stt_device",
+            "cpu",
+            "--fun_asr_nano_stt_hotwords_file",
+            "hotwords.txt",
+            "--fun_asr_nano_stt_hub",
+            "ms",
+            "--fun_asr_nano_stt_language",
+            "英文",
+            "--fun_asr_nano_stt_itn",
+            "false",
+        ]
+    )
+    assert args.stt_backend.config == {
+        "model_name": "local/nano",
+        "device": "cpu",
+        "hotwords_file": "hotwords.txt",
+        "hub": "ms",
+        "language": "英文",
+        "itn": False,
+        "gen_kwargs": {},
+    }
+
+
+def test_fun_asr_nano_constructs_with_funasr_and_speculative_tracker(monkeypatch, tmp_path):
+    import types
+
+    from speech_to_speech.STT.fun_asr_nano_handler import FunASRNanoSTTHandler
+
+    model = object()
+    constructors = []
+
+    def auto_model(**kwargs):
+        constructors.append(kwargs)
+        return model
+
+    monkeypatch.setitem(sys.modules, "funasr", types.SimpleNamespace(AutoModel=auto_model))
+    hotwords = tmp_path / "hotwords.txt"
+    hotwords.write_text("hello world\n", encoding="utf-8")
+    args = parse_arguments(
+        [
+            "--stt",
+            "fun-asr-nano",
+            "--fun_asr_nano_stt_model_name",
+            "local/nano",
+            "--fun_asr_nano_stt_device",
+            "cpu",
+            "--fun_asr_nano_stt_hotwords_file",
+            str(hotwords),
+            "--fun_asr_nano_stt_hub",
+            "ms",
+            "--fun_asr_nano_stt_language",
+            "日文",
+            "--fun_asr_nano_stt_itn",
+            "false",
+        ]
+    )
+
+    context = _context()
+    handler = create_backend_handler(args.stt_backend, context)
+
+    assert isinstance(handler, FunASRNanoSTTHandler)
+    assert handler.model is model
+    assert handler.speculative_turns is context.speculative_turns
+    assert constructors == [
+        {
+            "model": "local/nano",
+            "device": "cpu",
+            "hub": "ms",
+            "trust_remote_code": True,
+        }
+    ]
+    assert handler.hotwords == ["hello world"]
+    assert handler.language == "日文"
+    assert handler.itn is False
+
+
+def test_build_handlers_sets_streaming_audio_chunks_only_for_streaming_paraformer(monkeypatch):
+    class DummyHandler:
+        def __init__(self, *_args, **kwargs):
+            self.setup_kwargs = kwargs.get("setup_kwargs", {})
+
+    monkeypatch.setattr(s2s_pipeline, "VADHandler", DummyHandler)
+    monkeypatch.setattr(s2s_pipeline, "TranscriptionNotifier", DummyHandler)
+    monkeypatch.setattr(
+        "speech_to_speech.LLM.lm_output_processor.LMOutputProcessor", DummyHandler
+    )
+    monkeypatch.setattr(s2s_pipeline, "create_backend_handler", lambda *_args: object())
+
+    llm = parse_arguments(["--llm_backend", "transformers"]).llm_backend
+    tts = parse_arguments(["--tts", "pocket"]).tts_backend
+    cases = [
+        ("fun-asr-nano", False),
+        ("paraformer", True),
+        ("paraformer", False),
+    ]
+    for index, (stt_name, expected) in enumerate(cases):
+        argv = ["--stt", stt_name]
+        if stt_name == "paraformer" and not expected:
+            argv += ["--paraformer_stt_model_name", "paraformer-zh"]
+        stt = parse_arguments(argv).stt_backend
+        handlers = s2s_pipeline._build_handlers(
+            stop_event=Event(),
+            should_listen=Event(),
+            recv_audio_chunks_queue=Queue(),
+            spoken_prompt_queue=Queue(),
+            stt_output_queue=Queue(),
+            text_prompt_queue=Queue(),
+            lm_response_queue=Queue(),
+            lm_processed_queue=Queue(),
+            send_audio_chunks_queue=Queue(),
+            text_output_queue=Queue(),
+            module_kwargs=ModuleArguments(),
+            vad_handler_kwargs=VADHandlerArguments(),
+            stt_backend=stt,
+            llm_backend=llm,
+            tts_backend=tts,
+            speculative_turns=SpeculativeTurnTracker(),
+            cancel_scope=CancelScope(),
+            pipeline_index=index,
+        )
+        assert handlers[0].setup_kwargs["streaming_audio_chunks"] is expected
+
+
 def test_parser_warning_ignores_known_options_for_inactive_backends(caplog):
     args = parse_arguments(
         [

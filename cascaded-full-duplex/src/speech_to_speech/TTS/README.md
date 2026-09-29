@@ -17,6 +17,22 @@ Deprecated TTS implementations, including MeloTTS, live in [`../../../archive/TT
 
 ## Usage
 
+Use the Python 3.12 Conda environment `speech_to_speech_system` from the
+[root setup](../../../../README.md#安装与启动). All Python dependencies and
+optional backend selections are centralized in [requirements.txt](../../../../requirements.txt);
+from `cascaded-full-duplex`, run `(cd .. && python -m pip install -r requirements.txt)`.
+The subshell must run pip at the repository root because the manifest contains
+`-e ./cascaded-full-duplex`. If your shell is in this `TTS` directory instead,
+use `(cd ../../../.. && python -m pip install -r requirements.txt)`.
+Optional entries are comments, not installed packages: uncomment only the
+required `ChatTTS`, `pocket-tts`, non-macOS `kokoro`, `omnivoice`, or `supertonic`
+line before reinstalling the manifest. For Pocket TTS, first remove the Linux
+`numpy==1.26.4` pin as directed in the manifest (Pocket requires NumPy >=2),
+and keep DeepFilterNet in a separate NumPy <2 environment.
+On non-macOS, explicitly pass `--qwen3_tts_backend torch` when using Qwen3
+with the main environment; the CLI's GGML default does not install its optional
+wheel. Apple Silicon selects MLX automatically.
+
 ### 1) ChatTTS (`--tts chatTTS`)
 
 Primary args prefix: `--chat_tts_*`
@@ -83,7 +99,7 @@ speech-to-speech serve \
   --tts qwen3 \
   --qwen3_tts_model_name Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
   --qwen3_tts_device cuda \
-  --qwen3_tts_backend ggml \
+  --qwen3_tts_backend torch \
   --qwen3_tts_speaker Aiden \
   --qwen3_tts_language auto \
   --qwen3_tts_non_streaming_mode True
@@ -100,14 +116,18 @@ Behavior:
 - Keeps the existing voice-clone/custom-voice/voice-design handler flow intact.
 - Defaults to the CustomVoice model with speaker `Aiden`, so no reference audio is required. Voice-clone/base models can still use `--qwen3_tts_ref_audio`.
 
-Install notes for Linux GGML:
-- The default PyPI `qwentts-cpp-python` wheel targets CUDA 12.8 and `manylinux_2_39` (for example, Ubuntu 24.04).
-- If that wheel does not match your CUDA runtime or glibc, install one of the Hugging Face wheelhouse builds before installing `speech-to-speech`.
+Install notes for optional Linux GGML (not needed by the Torch example above):
+- The main dependencies use plain `faster-qwen3-tts`, not its `[ggml]` extra; reinstalling the unchanged root requirements does not install GGML support.
+- The upstream PyPI `qwentts-cpp-python` wheel targets CUDA 12.8 and `manylinux_2_39` (for example, Ubuntu 24.04).
+- Select a wheel matching both CUDA and glibc before using any of the GGML commands below.
+
+For the CUDA 13.0 example, uncomment `qwentts-cpp-python==0.3.1+cu130`
+in the root requirements platform-specific wheel section, then run from
+`cascaded-full-duplex` with the upstream wheel index:
 
 ```bash
-pip install "qwentts-cpp-python==0.3.1+cu130" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
-pip install speech-to-speech
+(cd .. && python -m pip install -r requirements.txt \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130)
 ```
 
 Available wheelhouse directories include `cu124`, `cu128`, `cu130`, and `cpu`.
@@ -183,7 +203,7 @@ speech-to-speech serve \
 To benchmark the Apple Silicon MLX variants side by side:
 
 ```bash
-.venv/bin/python benchmark_tts.py \
+python benchmark_tts.py \
   --handlers qwen3 \
   --iterations 3 \
   --qwen3_mlx_quantizations bf16 4bit 6bit 8bit
@@ -208,7 +228,8 @@ Primary args prefix: `--omnivoice_*`
 Install the optional dependency and select a device supported by your PyTorch installation. This example uses CUDA on Linux or Windows; use `mps` on Apple Silicon or `xpu` with an Intel XPU-enabled PyTorch installation:
 
 ```bash
-pip install "speech-to-speech[omnivoice]"
+# Enable the OmniVoice entry in root requirements, then:
+(cd .. && python -m pip install -r requirements.txt)
 speech-to-speech serve \
   --tts omnivoice \
   --omnivoice_model_name k2-fsa/OmniVoice \
@@ -237,7 +258,7 @@ For auto voice, omit `--omnivoice_ref_audio`, `--omnivoice_voice_clone_prompt`, 
 
 Supported upstream device values include CUDA (`cuda` or `cuda:0`), Apple Silicon (`mps`), and Intel GPU (`xpu`). Choose `float16`, `bfloat16`, or `float32` with `--omnivoice_dtype` according to device support.
 
-The `speech-to-speech[omnivoice]` dependency set is supported on Linux, Windows, and macOS. On non-macOS platforms, `faster-qwen3-tts>=0.4.0` and OmniVoice share Transformers 5, so the extra can be installed alongside the built-in Qwen3 backend. Linux uses Qwen3's GGML extra by default; install a matching `qwentts-cpp-python` wheel as described above when the default CUDA 12.8 / `manylinux_2_39` wheel does not match the host. Intel XPU requires the matching Intel PyTorch build.
+The `speech-to-speech[omnivoice]` dependency set is supported on Linux, Windows, and macOS. On non-macOS platforms, `faster-qwen3-tts>=0.4.0` and OmniVoice share Transformers 5, so the extra can be installed alongside the built-in Qwen3 backend. Linux no longer installs Qwen3's GGML extra by default; the optional wheel is needed only when selecting `--qwen3_tts_backend ggml`. Intel XPU requires the matching Intel PyTorch build: use a separate platform environment and explicitly override both root `torch==2.11.0` / `torchaudio==2.11.0` pins together, rather than silently upgrading one package. Reinstalling the unchanged manifest restores the main pair.
 
 OmniVoice returns complete 24 kHz float arrays. This handler downsamples them to 16 kHz, clips to `int16`, and then emits fixed-size blocks. It is playback chunking rather than model streaming: upstream `generate()` is blocking, so time to first audio includes synthesis of the entire utterance, and an interruption during generation discards the result after the blocking call returns. Upstream reports real-time factors as low as 0.025 in its accelerated benchmarks, but actual latency depends on the device, dtype, diffusion-step count, and text length.
 
@@ -262,11 +283,8 @@ Behavior:
 - Uses per-utterance language codes when supported and falls back to `--supertonic_tts_lang` otherwise
 - Outputs natively at 44.1kHz but gets downsampled in the pipeline to 16kHz for uniform playback
 
-Install the optional dependency with:
-
-```bash
-pip install "speech-to-speech[supertonic]"
-```
+Enable the Supertonic entry in the root requirements, then reinstall it from
+`cascaded-full-duplex` with `(cd .. && python -m pip install -r requirements.txt)`.
 
 ## Setup
 
@@ -282,6 +300,7 @@ speech-to-speech serve \
 
 ```bash
 speech-to-speech local \
+  --wake-word "" \
   --mac-optimal-settings
 ```
 
