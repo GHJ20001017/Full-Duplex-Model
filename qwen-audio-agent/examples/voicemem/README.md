@@ -45,21 +45,23 @@ Python code and dependencies remain outside the core npm package.
 
 ## Quick start
 
-Requirements: Node.js as specified by the repository and Python 3.10 or later.
-From the repository root:
+Requirements: the repository Node.js version, Conda, and Python 3.12.
+From the `qwen-audio-agent` directory:
 
 ```bash
 npm ci
 ```
 
-Install VoiceMem first by following its
-[official instructions](https://github.com/xzf-thu/VoiceMem).
-For an isolated setup, use:
+The VoiceMem catalog in the main [requirements.txt](../../../requirements.txt)
+points to this example's maintained sidecar manifest. Use a separate Conda
+environment, never `speech_to_speech_system`; do not install the main requirements
+into this environment. The following installs VoiceMem and its sidecar; see the
+[official instructions](https://github.com/xzf-thu/VoiceMem) for additional configuration:
 
 ```bash
-python3 --version # must be 3.10 or later
-python3.12 -m venv examples/voicemem/.venv
-examples/voicemem/.venv/bin/pip install \
+conda create -n qwen_voicemem python=3.12 pip -y
+conda activate qwen_voicemem
+python -m pip install \
   --index-url https://mirrors.aliyun.com/pypi/simple/ \
   -r examples/voicemem/sidecar/requirements.txt
 cp examples/voicemem/.env.example \
@@ -71,15 +73,17 @@ example. Its default configuration uses frontend-only mode and isolated local
 runtime data, so it does not change the user's regular Gateway configuration:
 
 ```bash
+conda activate qwen_voicemem
+export VOICEMEM_PYTHON="$(python -c 'import sys; print(sys.executable)')"
 cd examples/voicemem
 node --env-file=.env.local gateway.mjs
 ```
 
 Open `http://127.0.0.1:3101`. If another Gateway already uses that port, start
 this example with `PORT=3102` and open `http://127.0.0.1:3102` instead.
-The example launcher prefers its `.venv`, otherwise it uses `python3` from
-`PATH`; it also discovers the example sidecar automatically. Set
-`VOICEMEM_PYTHON` or `VOICEMEM_SIDECAR` only when using other locations.
+In each new terminal, activate `qwen_voicemem` and set `VOICEMEM_PYTHON` as above
+to prevent a legacy `.venv` from taking precedence. The sidecar is discovered
+automatically; set `VOICEMEM_SIDECAR` only for another location.
 
 ## Recommended configuration
 

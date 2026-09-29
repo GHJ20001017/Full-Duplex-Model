@@ -71,14 +71,18 @@ node --test server/test/tool-call-handler.test.mjs server/test/a2a-backend-adapt
 
 ## Optional official tau2 integration (no model key)
 
-Use Python 3.12/3.13 and a trusted checkout. Install dependencies into a separate
-virtual environment, not into the source checkout:
+Use Python 3.12 and a trusted checkout. This external benchmark is cataloged
+only in the main [requirements.txt](../../../../requirements.txt). Install it
+in a separate Conda environment, never in `speech_to_speech_system`; do not
+install the main requirements in the benchmark environment. Run from
+`qwen-audio-agent`:
 
 ```sh
 export CS_TAU2_ROOT=/path/to/tau2-bench
-uv venv --python 3.12 /private/tmp/qwen-tau-runtime
-uv pip install --python /private/tmp/qwen-tau-runtime/bin/python -r "$CS_TAU2_ROOT/pyproject.toml"
-export CS_TAU2_PYTHON=/private/tmp/qwen-tau-runtime/bin/python
+conda create -n qwen_tau_runtime python=3.12 pip -y
+conda activate qwen_tau_runtime
+python -m pip install "$CS_TAU2_ROOT"
+export CS_TAU2_PYTHON="$(python -c 'import sys; print(sys.executable)')"
 npm run test:customer-service:tau
 ```
 

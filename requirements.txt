@@ -1,0 +1,76 @@
+# Main speech stack: Python 3.12 in a NEW Conda environment.
+# Run from the Full-Duplex_Model repository root:
+#   python -m pip install -r requirements.txt
+# Relative editable paths are resolved against the working directory, not this file.
+# Reference: 95 /gpu3/guhj/envs/speech_to_speech_system, Python 3.12.12.
+# That environment inherits /gpu/anaconda3 packages and fails pip check.
+# This is a project installation manifest, NOT an exact export or a full lockfile.
+# Core dependencies/platform markers remain authoritative in pyproject.toml.
+-e ./cascaded-full-duplex[paraformer,fun-asr-nano,webrtc]
+# openWakeWord's Linux tflite-runtime dependency has no CPython 3.12 wheel.
+# Use a separate Python 3.11 environment for wake-word mode; not installed here.
+# openwakeword>=0.6.0; python_version < '3.12'
+
+# Compatible project-relevant versions observed on 95 (Linux only).
+funasr==1.4.11; platform_system == 'Linux'
+modelscope==1.37.1; platform_system == 'Linux'
+tiktoken==0.13.0; platform_system == 'Linux'
+transformers==5.16.1; platform_system == 'Linux'
+faster-qwen3-tts==0.4.0; platform_system == 'Linux'
+numpy==1.26.4; platform_system == 'Linux'
+onnxruntime==1.29.0; platform_system == 'Linux'
+soundfile==0.14.0; platform_system == 'Linux'
+
+# Explicit corrections to the inherited 95 environment, matching pyproject.toml.
+librosa==0.11.0
+nltk==3.10.0
+openai==2.28.0
+httpx>=0.28.0
+# Do not copy mismatched torch==2.12.0 / torchaudio==2.11.0 from 95.
+# Keep the pair aligned; metadata alone does not enforce their binary ABI.
+torch==2.11.0
+torchaudio==2.11.0
+# CUDA drivers/system libraries are NOT pip requirements.
+
+# Web demo: use the main stack's compatible versions, not its legacy pins.
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+huggingface-hub[oauth]>=0.34.0
+
+# OPTIONAL BACKENDS: uncomment only the required backend, then reinstall this file.
+# These are not all required for Paraformer/Nano + Qwen3-TTS.
+# ChatTTS>=0.1.1
+# faster-whisper>=1.0.3
+# kokoro>=0.9.2; platform_system != 'Darwin'
+# omnivoice>=0.2.1
+# pocket-tts>=2.0.0
+# supertonic>=1.3.1
+# mlx-vlm==0.4.1; platform_system == 'Darwin'
+# lightning-whisper-mlx>=0.0.10; platform_system == 'Darwin'
+# Pocket TTS requires numpy>=2: remove the Linux numpy==1.26.4 pin above first.
+# DeepFilterNet requires numpy<2; use a separate environment from Pocket TTS.
+# DeepFilterNet
+
+# OPTIONAL DEVELOPMENT TOOLS (pyproject.toml dependency-groups.dev):
+# ruff
+# mypy
+# pytest
+# pytest-asyncio
+
+# OPTIONAL CUDA GGML WHEEL (TTS README; Linux/CUDA 13 only):
+# qwentts-cpp-python==0.3.1+cu130
+# This wheel requires its documented upstream wheel index and compatible driver.
+# Do not enable it on macOS/Windows or blindly substitute it for the torch backend.
+
+# INDEPENDENT EXAMPLES: catalog only; use separate Conda environments.
+# end-to-end-full-duplex: modelscope, torch, transformers (already in main stack).
+# qwen-audio-agent/examples/voicemem:
+#   -r qwen-audio-agent/examples/voicemem/sidecar/requirements.txt
+#   (VoiceMem git revision is maintained in that file.)
+# qwen-audio-agent/examples/lightrag:
+#   lightrag-hku[api]
+# qwen-audio-agent/examples/customer-service/benchmark:
+#   Install the external tau2 checkout specified by CS_TAU2_ROOT/pyproject.toml;
+#   it is not part of this repository and is not a main-stack dependency.
+# Node.js/npm packages remain in their package.json/package-lock.json files.
+# FFmpeg, PortAudio, libsndfile, build tools and NVIDIA drivers use OS installers.

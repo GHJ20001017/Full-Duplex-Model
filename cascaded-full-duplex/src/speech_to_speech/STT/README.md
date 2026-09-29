@@ -10,6 +10,7 @@ This document summarizes the Speech-to-Text (STT) implementations in the `STT/` 
 - `faster-whisper` → `STT/faster_whisper_handler.py`
 - `parakeet-tdt` → `STT/parakeet_tdt_handler.py`
 - `paraformer` → `STT/paraformer_handler.py`
+- `fun-asr-nano` → `STT/fun_asr_nano_handler.py`
 - `openai` → `STT/openai_compatible_handler.py`
 
 ## Language Support by Handler
@@ -86,6 +87,30 @@ This document summarizes the Speech-to-Text (STT) implementations in the `STT/` 
   final requests are submitted independently; stale-turn filtering still applies
 - See [`docs/openai-compatible-stt.md`](../../../docs/openai-compatible-stt.md)
 
+### 8) Fun-ASR-Nano (`--stt fun-asr-nano`)
+
+- Handler: `FunASRNanoSTTHandler`; FunASR `AutoModel` + PyTorch, no vLLM.
+- Included in the [root requirements](../../../../requirements.txt). After activating
+  `speech_to_speech_system`, install from `cascaded-full-duplex` with
+  `(cd .. && python -m pip install -r requirements.txt)`.
+- Default model: `FunAudioLLM/Fun-ASR-Nano-2512`; full local paths are also accepted.
+- Required: `--fun_asr_nano_stt_hotwords_file /absolute/path/hotwords.txt`.
+  UTF-8 (BOM allowed), one phrase per line; blank lines and `#` comment lines
+  are ignored, duplicates removed, internal spaces preserved. Missing/unreadable/
+  empty word lists fail before model loading. The list is read once at startup
+  and passed as `hotwords` on every inference; restart to reload it.
+- Language: `--fun_asr_nano_stt_language 中文|英文|日文` (default `中文`),
+  reported as `zh|en|ja`. ITN defaults to true; disable with
+  `--fun_asr_nano_stt_itn false`.
+- Hub: `--fun_asr_nano_stt_hub hf|ms`; default `hf`. Official model loading
+  uses `trust_remote_code=True`; choose trusted model sources only.
+- With `--enable_live_transcription`, re-decodes cumulative VAD snapshots
+  independently and emits full, revisable partial text; final input is the
+  complete utterance. No cross-revision cache/prefix or delta-text concatenation.
+  This is progressive re-inference, not native cached streaming. Latency and
+  concurrent TTS resource use require real-device measurements.
+- Without live transcription, only the final utterance is decoded.
+
 ## Language Abbreviations (ISO-style codes seen in STT handlers)
 
 | Code | Language |
@@ -122,6 +147,15 @@ This document summarizes the Speech-to-Text (STT) implementations in the `STT/` 
 | `auto` | Per-utterance automatic language detection |
 
 ## Usage Examples
+
+Use the main Conda environment. For `whisper-mlx`, first uncomment
+`lightning-whisper-mlx` in the root requirements; for `faster-whisper`, uncomment
+`faster-whisper`. Reinstall from `cascaded-full-duplex` with
+`(cd .. && python -m pip install -r requirements.txt)`; if starting in this
+`STT` directory, use `(cd ../../../.. && python -m pip install -r requirements.txt)`.
+Reading the unchanged manifest does not install these commented optional backends.
+For these examples on non-macOS, append `--qwen3_tts_backend torch` to use
+Qwen3 without installing the optional GGML wheel.
 
 ### Whisper (Transformers)
 

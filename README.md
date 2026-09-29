@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
 
 ## 安装与启动
 
-下面以 **Apple Silicon macOS** 为例，使用 **Paraformer + OpenAI 兼容 Chat Completions API + Qwen3-TTS** 启动语音服务端，再选择一种客户端连接。需要 Python 3.10+（以下使用 3.11）、Homebrew，以及可用的 LLM API 地址、模型名称和密钥。
+下面以 **Apple Silicon macOS 14+** 为例，使用 **Paraformer + OpenAI 兼容 Chat Completions API + Qwen3-TTS** 启动语音服务端，再选择一种客户端连接。需要 Conda（Miniconda 或 Miniforge）、Python 3.12、Homebrew，以及可用的 LLM API 地址、模型名称和密钥。
 
 **Linux + NVIDIA、Windows 和 WSL2** 的安装、CUDA、AEC3 及启动说明见[级联项目部署文档](cascaded-full-duplex/README.md#linux-与-windows-部署)。
 
@@ -28,12 +28,16 @@ https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
 
 ```bash
 git clone https://github.com/GHJ20001017/Full-Duplex-Model.git
-cd Full-Duplex-Model/cascaded-full-duplex
+cd Full-Duplex-Model
 
-brew install uv portaudio ffmpeg meson ninja pkg-config
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -e ".[paraformer,wake-word]"
+# 系统库与构建工具单独安装，不属于 Python requirements
+brew install portaudio ffmpeg meson ninja pkg-config
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+python -m pip install -r requirements.txt
+python -m pip check
+
+cd cascaded-full-duplex
 
 # 首次使用 macOS 开发工具时执行；已安装则跳过
 xcode-select --install
@@ -42,9 +46,9 @@ xcode-select --install
 ./native/aec3/build_macos.sh
 export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.dylib"
 
-# 预下载默认 hey jarvis 唤醒词模型
-python -c 'from openwakeword.utils import download_models; download_models(model_names=["hey_jarvis"])'
 ```
+
+主环境不安装 openWakeWord：Linux 的 `tflite-runtime` 没有 CPython 3.12 wheel。下文原生客户端显式关闭唤醒门控；需要唤醒词时，按[独立 Python 3.11 客户端环境说明](cascaded-full-duplex/README.md#2-本地服务端唤醒词wake-word)安装 extra 和模型，不要在主环境直接运行唤醒词示例。该门控与服务端语义路由相互独立，主启动流程的 semantic 模式不变。
 
 ### 2. 启动语义路由服务
 
@@ -53,8 +57,7 @@ python -c 'from openwakeword.utils import download_models; download_models(model
 新开一个终端，进入**本仓库根目录**并激活第 1 步创建的环境，然后下载模型到 `semantic-route-jev/checkpoint`：
 
 ```bash
-source cascaded-full-duplex/.venv/bin/activate
-uv pip install modelscope
+conda activate speech_to_speech_system
 
 python -c 'from modelscope import snapshot_download; snapshot_download("ghjghj1017/qwen3-jev", local_dir="semantic-route-jev/checkpoint")'
 ```
@@ -70,45 +73,23 @@ CKPT="$PWD/semantic-route-jev/checkpoint" \
 
 ### 3. 启动服务端
 
-进入 `cascaded-full-duplex` 目录并激活环境。先将下面的占位值替换为自己的 OpenAI 兼容服务配置；`LLM_BASE_URL` 是 API 基地址，不要填写完整的 `/chat/completions` 路径。密钥仅保存在本地环境变量中，不要写入仓库。
+进入 `cascaded-full-duplex` 目录，先编辑 `scripts/start_voice_server.sh` 顶部的「本地配置」区：填写 API 密钥、LLM 基地址与模型名称，并确认语义路由 URL 和超时。`LLM_BASE_URL` 不要填写完整的 `/chat/completions` 路径。语义服务同机且未配置 TLS 时，URL 应改为 `http://127.0.0.1:8792/v1/systemone`。脚本会自动导出这些变量，无需每次手动 `export`；外部环境变量优先。**本地填入真实密钥后不要提交该文件**；共享或提交代码时，建议通过外部环境变量提供密钥，保留脚本中的占位值。
+
+启动命令已集中到 [`scripts/start_voice_server.sh`](cascaded-full-duplex/scripts/start_voice_server.sh)，使用 Bash 执行。默认保留 **Paraformer（CPU）+ Chat Completions + Qwen3-TTS（CUDA/torch）**；TTS 默认需要 NVIDIA GPU，不适用于直接在 macOS 上执行。脚本不会安装依赖、下载模型或启动语义路由服务。
 
 ```bash
-source .venv/bin/activate
+conda activate speech_to_speech_system
 
-export OPENAI_API_KEY="替换为你的 API 密钥"
-export LLM_BASE_URL="https://你的服务域名/v1"
-export LLM_MODEL="替换为该服务实际提供的模型名称"
+# 默认使用 Paraformer
+bash scripts/start_voice_server.sh
+```
 
-# 语义路由：填写独立运行的意图识别服务的完整推理接口 URL
-export S2S_SEMANTIC_TURN_URL="https://0.0.0.0:8792/v1/systemone"
-export S2S_SEMANTIC_TURN_TIMEOUT_S="1" # 可按服务延迟调整，默认 1 秒
+**切换 Fun-ASR-Nano。** 根 requirements 已包含该后端依赖，脚本默认读取 `cascaded-full-duplex/hotwords.txt`，无需单独指定热词文件。通过以下参数指定已下载的本地模型目录（按实际位置替换）：
 
-speech-to-speech serve \
-  --host 0.0.0.0 \
-  --port 7869 \
-  --num_pipelines 1 \
-  --interruption-route semantic \
-  --stt paraformer \
-  --paraformer_stt_model_name paraformer-zh-streaming \
-  --paraformer_stt_device cpu \
-  --enable_live_transcription true \
-  --live_transcription_update_interval 0.5 \
-  --llm_backend chat-completions \
-  --responses_api_base_url "$LLM_BASE_URL" \
-  --model_name "$LLM_MODEL" \
-  --max_output_tokens 1024 \
-  --chat_size 30 \
-  --stream_batch_sentences 1 \
-  --init_chat_role system \
-  --init_chat_prompt "你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。" \
-  --tts qwen3 \
-  --qwen3_tts_model_name Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice \
-  --qwen3_tts_device cuda \
-  --qwen3_tts_backend torch \
-  --qwen3_tts_language Chinese \
-  --qwen3_tts_speaker Aiden \
-  --qwen3_tts_streaming_chunk_size 4 \
-  --qwen3_tts_max_new_tokens 1536
+```bash
+bash scripts/start_voice_server.sh \
+  --stt fun-asr-nano \
+  --fun_asr_nano_stt_model_name /gpu3/guhj/models/Fun-ASR-Nano-2512
 ```
 
 ### 4. 选择并启动客户端
@@ -127,17 +108,15 @@ speech-to-speech serve \
 新开终端二，进入**同一个** `cascaded-full-duplex` 目录，再执行：
 
 ```bash
-source .venv/bin/activate
+conda activate speech_to_speech_system
 export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.dylib"
 
 speech-to-speech talk \
   --url ws://127.0.0.1:7869/v1/realtime \
-  --wake-word hey_jarvis \
-  --wake-word-timeout 300 \
-  --wake-ack "嗯哼，您说"
+  --wake-word ""
 ```
 
-允许终端访问麦克风，先说 **“hey jarvis”**，听到“嗯哼，您说”后开始对话。客户端默认打开本地对话窗口；加 `--no-open-browser` 可只输出窗口地址而不自动打开浏览器，加 `--no-ui` 可只使用终端。服务端和客户端分别按 `Ctrl+C` 停止。
+允许终端访问麦克风后直接开始对话（主环境不启用唤醒词）。客户端默认打开本地对话窗口；加 `--no-open-browser` 可只输出窗口地址而不自动打开浏览器，加 `--no-ui` 可只使用终端。服务端和客户端分别按 `Ctrl+C` 停止。
 
 #### 3.2 Qwen Audio Agent 客户端
 

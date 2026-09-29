@@ -50,7 +50,7 @@ dependencies = [
     "uvicorn>=0.30.0",
     "websockets>=12.0",
     "nano-parakeet>=0.2.0; platform_system != 'Darwin'",
-    "faster-qwen3-tts[ggml]>=0.4.0; platform_system != 'Darwin' and platform_system != 'Windows'",
+    "faster-qwen3-tts>=0.4.0; platform_system != 'Darwin' and platform_system != 'Windows'",
     "faster-qwen3-tts>=0.4.0; platform_system == 'Windows'",
     "librosa==0.11.0",
     "lingua-language-detector>=2.0.2",
@@ -84,6 +84,12 @@ mlx-lm = [
 ]
 omnivoice = [
     "omnivoice>=0.2.1",
+]
+fun-asr-nano = [
+    "funasr>=1.4.11",
+    "modelscope>=1.17.1",
+    "tiktoken",
+    "onnxruntime<1.24; python_version < '3.11'",
 ]
 paraformer = [
     "funasr>=1.1.6",

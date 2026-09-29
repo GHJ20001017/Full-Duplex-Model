@@ -81,14 +81,22 @@ def callback_send(indata, ...):
 - 唤醒窗口默认 300 秒（`--wake-word-timeout`），期间用户说话才持续上传；窗口内无语音或超时则自动回到未唤醒状态。
 - 唤醒成功后，客户端向服务端发送一条私有的 `wake_word.detected` 事件（不属于公开 OpenAI Realtime schema），服务端直接把一段固定的应答文本（默认中文“嗯哼，您说”，可用 `--wake-ack` 修改）送入 TTS 队列，实现“听到唤醒 → 音箱应答 → 用户开口”的本地服务端唤醒闭环。
 
-```bash
-# 安装唤醒词依赖
-pip install "speech-to-speech[wake-word]"
+**这是可选客户端功能，不随 Python 3.12 主 requirements 安装。** Linux 的 `tflite-runtime` 没有 CPython 3.12 wheel，即使使用 ONNX 推理，安装 openWakeWord 时也会遇到其依赖解析限制。主环境运行 `talk` / `local` 时显式传 `--wake-word ""`，这不改变服务端 semantic 话轮模式。
 
-# talk 命令默认即启用 hey jarvis 唤醒
-speech-to-speech talk --wake-word "hey_computer" --wake-word-timeout 120 \
+需要唤醒词时，在独立 Python 3.11 环境安装项目的 `wake-word` extra，而不是在主清单中取消该条目注释。以下 Bash 命令从 `cascaded-full-duplex` 执行；服务端继续使用主环境，客户端仍需按平台构建并配置 AEC3：
+
+```bash
+conda create -n speech_to_speech_wake python=3.11 pip -y
+conda activate speech_to_speech_wake
+(cd .. && python -m pip install -e './cascaded-full-duplex[wake-word]')
+python -m pip check
+python -c 'from openwakeword.utils import download_models; download_models(model_names=["hey_jarvis"])'
+
+python -m speech_to_speech.cli talk --wake-word hey_jarvis --wake-word-timeout 120 \
     --url ws://127.0.0.1:7869/v1/realtime
 ```
+
+这是独立客户端环境，不读取 Python 3.12 主清单；仍须按实际平台验证依赖解析与音频设备。换用 `hey_computer` 等模型时需相应下载模型并更改 `--wake-word`。
 
 相关参数汇总见 [Cli 参考](#cli-参考-cli-reference)，实现见 `src/speech_to_speech/api/openai_realtime/wake_word.py`。
 
@@ -118,7 +126,7 @@ speech-to-speech serve --stt paraformer \
     --paraformer_stt_model_name paraformer-zh-streaming
 ```
 
-> 启用 Paraformer 需要安装可选依赖 `pip install "speech-to-speech[paraformer]"`，详见 [支持的组件](#支持的组件-supported-components)。
+> 根目录 requirements 已包含 Paraformer 依赖，详见 [支持的组件](#支持的组件-supported-components)。
 
 ### 4. 语义化 Barge-in（打断控制）
 
@@ -146,34 +154,20 @@ speech-to-speech serve --stt paraformer \
 
 ## 安装 Installation
 
-需要 Python 3.10+。
+使用 Conda（Miniconda 或 Miniforge）创建 Python 3.12 环境。以下在 `cascaded-full-duplex` 目录执行，安装子 shell 先切换到仓库根目录；若已在根目录，直接运行 `python -m pip install -r requirements.txt`。清单中的 editable 项目路径相对当前工作目录解析，不能仅修改 `-r` 文件路径。
 
 ```bash
-pip install speech-to-speech
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+(cd .. && python -m pip install -r requirements.txt)
+python -m pip check
 ```
 
-默认安装覆盖标准的 Realtime 路径：
-
-- Parakeet TDT 用于 STT
-- OpenAI 兼容 API 用于语言模型
-- Qwen3-TTS 用于语音输出（非 macOS 默认 GGML 后端，Apple Silicon 用 `mlx-audio`）
-- 本地音频与 Realtime 服务器模式
+根目录 [`requirements.txt`](../requirements.txt) 是统一的 Python 安装入口，以 editable 方式安装本项目及 `paraformer,fun-asr-nano,webrtc`，并包含 `uvicorn[standard]`、`huggingface-hub[oauth]`、ModelScope。基础后端仍由项目元数据按平台选择：Parakeet STT、OpenAI 兼容 API、Qwen3-TTS、本地音频及 Realtime 服务器。
 
 ### 可选组件
 
-```bash
-pip install "speech-to-speech[wake-word]"       # openWakeWord 唤醒词
-pip install "speech-to-speech[kokoro]"          # Kokoro-82M TTS（非 macOS）
-pip install "speech-to-speech[pocket]"          # Pocket TTS
-pip install "speech-to-speech[chattts]"         # ChatTTS
-pip install "speech-to-speech[omnivoice]"       # OmniVoice TTS
-pip install "speech-to-speech[faster-whisper]"  # Faster Whisper STT
-pip install "speech-to-speech[whisper-mlx]"     # Lightning Whisper MLX STT（macOS）
-pip install "speech-to-speech[paraformer]"      # Paraformer 流式 STT（通过 FunASR）
-pip install "speech-to-speech[mlx-lm]"          # mlx-vlm 视觉模型（macOS）
-pip install "speech-to-speech[supertonic]"      # Supertonic TTS
-pip install "speech-to-speech[webrtc]"          # WebRTC 支持
-```
+Kokoro（非 macOS）、Pocket、ChatTTS、OmniVoice、Faster Whisper、Lightning Whisper MLX、MLX 视觉模型及 Supertonic 等依赖集中在根 requirements 的注释分组。先取消所需包条目的注释，再在 `cascaded-full-duplex` 执行 `(cd .. && python -m pip install -r requirements.txt)`；仅重复安装未修改的清单不会安装注释项，不要把所有可选后端一起安装。CLI 名称 `pocket`、`chattts`、`whisper-mlx` 分别对应清单中的 `pocket-tts`、`ChatTTS`、`lightning-whisper-mlx`。Pocket 要求 NumPy >=2，需先按清单说明移除 Linux `numpy==1.26.4` pin，且不与 DeepFilterNet 共用环境。VoiceMem、LightRAG 和 benchmark 目录仅为独立环境的依赖索引，不属于主环境。唤醒词使用上文独立 Python 3.11 extra 安装步骤，不在 Python 3.12 主环境启用。
 
 已废弃的实现（含 MeloTTS 等）存放在 [`archive/`](./archive)，不再接入 CLI。
 
@@ -183,15 +177,17 @@ pip install "speech-to-speech[webrtc]"          # WebRTC 支持
 
 ```bash
 git clone https://github.com/GHJ20001017/Full-Duplex-Model.git
-cd "cascaded-full-duplex"
-uv sync
+cd Full-Duplex-Model/cascaded-full-duplex
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+(cd .. && python -m pip install -r requirements.txt)
 ```
 
 （macOS 上构建 AEC3 原生库：`./native/aec3/build_macos.sh`。）
 
 ## Linux 与 Windows 部署
 
-本节从本仓库源码安装 Paraformer + Qwen3-TTS，并连接 OpenAI 兼容的 Chat Completions API。需要 Python 3.10+（示例使用 3.11）及可用的 LLM API 地址、模型名称和密钥。已有仓库时跳过克隆，直接进入 `cascaded-full-duplex` 目录。macOS 快速上手见[项目首页](../README.md#安装与启动)。
+本节从本仓库源码安装 Paraformer + Qwen3-TTS，并连接 OpenAI 兼容的 Chat Completions API。需要 Conda 和 Python 3.12及可用的 LLM API 地址、模型名称和密钥。已有仓库时跳过克隆，直接进入 `cascaded-full-duplex` 目录。macOS 快速上手见[项目首页](../README.md#安装与启动)。
 
 以下步骤依据仓库依赖和后端实现整理，尚未在 Linux／Windows 完成安装及语音联调；请同时阅读对应平台限制。
 
@@ -203,23 +199,20 @@ uv sync
 sudo apt-get update
 sudo apt-get install -y git curl ca-certificates build-essential python3-dev \
   portaudio19-dev ffmpeg meson ninja-build pkg-config
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source "$HOME/.local/bin/env"
 
 git clone https://github.com/GHJ20001017/Full-Duplex-Model.git
 cd Full-Duplex-Model/cascaded-full-duplex
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -e ".[paraformer,wake-word]"
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+(cd .. && python -m pip install -r requirements.txt)
 
-# CUDA 12.8 wheel 示例：驱动必须支持相应 CUDA 运行时
-uv pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+# 按根 requirements 中的平台说明选择匹配 wheel 后检查 CUDA
 python -c 'import torch; print(torch.__version__, torch.version.cuda); assert torch.cuda.is_available(), "CUDA 不可用，请检查驱动与 PyTorch wheel"; print(torch.cuda.get_device_name(0))'
 ```
 
-PyTorch wheel 自带所需的 CUDA 运行时，但不包含显卡驱动；不必为了常规 wheel 推理单独安装完整 CUDA Toolkit。若驱动不适配上述版本，请按 [PyTorch 官方安装选择器](https://pytorch.org/get-started/locally/) 选择匹配的 Linux／CUDA 命令，并将 `pip` 替换为当前环境的 `uv pip`，同时安装匹配的 `torch` 和 `torchaudio`。后续重新安装项目依赖后应再次检查 CUDA 是否可用。
+PyTorch wheel 自带所需的 CUDA 运行时，但不包含显卡驱动；常规 wheel 推理通常无需另装完整 CUDA Toolkit。主清单将 `torch` 与 `torchaudio` 同时固定为 `2.11.0`。若需不同 CUDA／XPU 构建，请先按 [PyTorch 官方安装选择器](https://pytorch.org/get-started/locally/) 核对驱动、索引及配对版本，在独立平台环境中明确覆盖主清单的两项 pin 后安装，不要单独升级其中一个包。平台覆盖不是默认安装步骤；再次安装未修改的主清单会恢复其配对版本。安装后运行 `python -m pip check` 并重新检查 CUDA。
 
-**Linux 依赖限制：** 项目在 Linux 上默认安装 `faster-qwen3-tts[ggml]`。当前锁文件中的 `qwentts-cpp-python` wheel 标记为 `manylinux_2_39`／CUDA 12.8，因此这里采用 glibc 2.39 的 Ubuntu 24.04 作为示例；旧发行版可能在安装阶段就因缺少兼容 wheel 失败。仅在启动时选择 Torch 后端不会消除安装阶段的 GGML 依赖。遇到此类错误请先核对 [TTS 依赖说明](src/speech_to_speech/TTS/README.md)，不要忽略安装失败继续启动。
+**Linux GGML 是可选项：** 主依赖安装 `faster-qwen3-tts`，不再强制安装 `[ggml]` 或 `qwentts-cpp-python`。本文 NVIDIA 启动命令显式使用 `--qwen3_tts_backend torch`，无需 GGML wheel；底层 CLI 默认仍为 GGML，直接启动时也应显式选 Torch。只有另选 GGML 后端时，才需要按 [TTS 依赖说明](src/speech_to_speech/TTS/README.md)安装与 CUDA／glibc 匹配的可选 wheel；上游 CUDA 12.8 wheel 的 `manylinux_2_39` 限制不再是主环境的强制前提。
 
 **仅使用 S2S 修改版客户端时：构建 Linux AEC3。** 仓库目前只提供 macOS 自动构建脚本，下面是依据同一原生适配器整理的 Linux 手工构建步骤（尚未实机验证），不要运行 `build_macos.sh`：
 
@@ -239,7 +232,6 @@ c++ -std=c++17 -O3 -fPIC -shared native/aec3/aec3_wrapper.cc \
   -Wl,-rpath,"$PWD/.native-build/aec3/install/lib" \
   -o native/aec3/build/libs2s_aec3.so
 export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.so"
-python -c 'from openwakeword.utils import download_models; download_models(model_names=["hey_jarvis"])'
 ```
 
 重复配置已有 Meson 构建目录时，在 `meson setup` 后加 `--reconfigure`。上述动态库记录了依赖的绝对路径，移动仓库后需重新构建。无桌面／无音频设备的 GPU 服务器仅运行服务端，将客户端放在有麦克风和扬声器的电脑上；仅运行服务端或 Qwen Audio Agent 不需要构建此 AEC3 库。
@@ -250,23 +242,25 @@ python -c 'from openwakeword.utils import download_models; download_models(model
 
 ```powershell
 winget install --id Git.Git -e
-winget install --id astral-sh.uv -e
 winget install --id Gyan.FFmpeg -e
 ```
 
-在新终端执行：
+另行安装 Miniconda 或 Miniforge，并在已初始化 Conda 的 PowerShell 新终端执行：
 
 ```powershell
 git clone https://github.com/GHJ20001017/Full-Duplex-Model.git
 cd Full-Duplex-Model/cascaded-full-duplex
-uv venv --python 3.11
-.\.venv\Scripts\Activate.ps1
-uv pip install -e ".[paraformer,wake-word]"
-uv pip install --upgrade torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+Push-Location ..
+try {
+  python -m pip install -r requirements.txt
+  if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
+} finally { Pop-Location }
 python -c 'import torch; print(torch.__version__, torch.version.cuda); assert torch.cuda.is_available(), "CUDA unavailable"; print(torch.cuda.get_device_name(0))'
 ```
 
-如激活脚本被执行策略阻止，可不改系统策略，直接用 `.\.venv\Scripts\python.exe` 和 `.\.venv\Scripts\speech-to-speech.exe` 替代后文的 `python` 和 `speech-to-speech`。`uv pip` 会识别当前目录的 `.venv`。CUDA wheel 的驱动要求与 Linux 相同，请按官方选择器选择适配版本。
+若 `conda activate` 尚不可用，先按 Conda 安装说明初始化 PowerShell 并重开终端。CUDA wheel 的驱动要求与 Linux 相同；按根 requirements 的平台说明及 PyTorch 官方选择器选择适配版本，安装后运行 `python -m pip check`。
 
 **Windows 边界：** 项目为 Windows 声明了不带 GGML 的 `faster-qwen3-tts` 依赖，而运行时默认仍为 GGML，因此下文显式指定 `--qwen3_tts_backend torch`。这是一条待实机验证的服务端安装路线，不代表全部依赖和音频功能已验证兼容。原生 S2S 客户端还需要符合本仓库 C ABI 的 `s2s_aec3.dll`，仓库没有 Windows 构建脚本或预编译 DLL，不能把 `.dylib`／`.so` 改名使用，也没有可跳过 AEC3 的现成启动选项。**Windows 优先使用[首页第 3.2 节 Qwen Audio Agent 的 WebUI](../README.md#32-qwen-audio-agent-客户端) 连接服务端**；不需要为它构建本地 S2S AEC3 或下载唤醒词模型。
 
@@ -279,7 +273,7 @@ python -c 'import torch; print(torch.__version__, torch.version.cuda); assert to
 **Linux + NVIDIA（Bash）：** 使用 CUDA 运行 ASR 和 TTS，显式选择 Torch TTS 后端。
 
 ```bash
-source .venv/bin/activate
+conda activate speech_to_speech_system
 export OPENAI_API_KEY="替换为你的 API 密钥"
 export LLM_BASE_URL="https://你的服务域名/v1"
 export LLM_MODEL="替换为该服务实际提供的模型名称"
@@ -298,7 +292,7 @@ speech-to-speech serve \
 **Windows + NVIDIA（PowerShell）：** 用 `$env:` 设置环境变量，用反引号换行（反引号后不能有空格），不能直接复制 Bash 的 `export` 和反斜杠续行。
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+conda activate speech_to_speech_system
 $env:OPENAI_API_KEY = "替换为你的 API 密钥"
 $env:LLM_BASE_URL = "https://你的服务域名/v1"
 $env:LLM_MODEL = "替换为该服务实际提供的模型名称"
@@ -318,14 +312,14 @@ speech-to-speech serve `
 
 ### 连接客户端
 
-保留服务端运行。Linux 使用原生 S2S 客户端时，先完成上述 AEC3 构建和唤醒词模型准备，再在有音频设备的电脑上打开另一终端：
+保留服务端运行。Linux 使用原生 S2S 客户端时，先完成上述 AEC3 构建，再在有音频设备的电脑上打开另一终端。主 Python 3.12 环境关闭唤醒门控；需要唤醒词时另按[独立环境说明](#2-本地服务端唤醒词wake-word)安装：
 
 ```bash
-source .venv/bin/activate
+conda activate speech_to_speech_system
 export S2S_AEC3_LIBRARY="$PWD/native/aec3/build/libs2s_aec3.so"
 speech-to-speech talk \
   --url ws://127.0.0.1:7869/v1/realtime \
-  --wake-word hey_jarvis --wake-word-timeout 300 --wake-ack "嗯哼，您说"
+  --wake-word ""
 ```
 
 Windows 未准备兼容 AEC3 DLL 时，使用 [Qwen Audio Agent WebUI](../README.md#32-qwen-audio-agent-客户端)。两种客户端连接同一个服务端，切换时断开旧语音会话；默认只提供一个流水线实例。
@@ -335,20 +329,20 @@ Windows 未准备兼容 AEC3 DLL 时，使用 [Qwen Audio Agent WebUI](../README
 ### 服务端 + 独立客户端
 
 ```bash
-# 终端 1：启动服务器
+# 终端 1：启动服务器（主环境不安装 GGML wheel）
 export OPENAI_API_KEY=...
-speech-to-speech serve
+speech-to-speech serve --qwen3_tts_backend torch
 
-# 终端 2：本地麦克风/扬声器客户端（默认启用 hey jarvis 唤醒词 + AEC3）
-speech-to-speech talk --url ws://127.0.0.1:7869/v1/realtime
+# 终端 2：本地麦克风/扬声器客户端（需已构建 AEC3，关闭可选唤醒词）
+speech-to-speech talk --wake-word "" --url ws://127.0.0.1:7869/v1/realtime
 ```
 
-服务器监听 `ws://localhost:7869/v1/realtime`。先对麦克风说唤醒词（默认 `hey jarvis`），再开始对话；助手播放回答时会经过 AEC3 回声消除。
+服务器监听 `ws://localhost:7869/v1/realtime`。直接对麦克风开始对话；助手播放回答时会经过 AEC3 回声消除。这些底层 CLI 示例不替代首页的 semantic 服务启动流程。
 
 ### 一条命令本地运行
 
 ```bash
-speech-to-speech local
+speech-to-speech local --wake-word "" --qwen3_tts_backend torch
 ```
 
 ### 完全本地 LLM
@@ -376,6 +370,7 @@ speech-to-speech serve \
 | STT | [Lightning Whisper MLX](https://github.com/mustafaaljadery/lightning-whisper-mlx) | Apple Silicon | `whisper-mlx` |
 | STT | [MLX Audio Whisper](https://github.com/huggingface/mlx-audio) | Apple Silicon | macOS 内置 |
 | STT | [Paraformer](https://github.com/modelscope/FunASR)（默认**流式中文**） | CUDA / CPU | `paraformer` |
+| STT | [Fun-ASR-Nano 800M](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512)（累计音频渐进转写 + 热词） | PyTorch（默认 CUDA，可配置 CPU） | `fun-asr-nano` |
 | STT | OpenAI 兼容 `/v1/audio/transcriptions` | 本地或远程 HTTP | 内置 |
 | LLM | OpenAI 兼容 API（`responses-api` / `chat-completions`） | 托管或自托管 | 内置 |
 | LLM | [Transformers](https://huggingface.co/models?pipeline_tag=text-generation&sort=trending) | CUDA / CPU | 内置 |
@@ -387,11 +382,49 @@ speech-to-speech serve \
 | TTS | [OmniVoice](https://huggingface.co/k2-fsa/OmniVoice) | CUDA / Intel XPU / Apple Silicon | `omnivoice` |
 | TTS | [MMS TTS](https://huggingface.co/docs/transformers/model_doc/mms) | CUDA / CPU | 内置 |
 | TTS | OpenAI 兼容 `/v1/audio/speech` | 本地或远程 HTTP | 内置 |
-| 唤醒词 | [openWakeWord](https://github.com/dscripka/openWakeWord)（本地 ONNX） | 全部 | `wake-word` |
+| 唤醒词 | [openWakeWord](https://github.com/dscripka/openWakeWord)（本地 ONNX） | 依赖与音频设备需按平台验证 | 独立 Python 3.11 环境安装 `wake-word` extra；主清单不包含 |
 
-用 `--stt`、`--llm_backend`、`--tts` 选择具体实现。CLI 只构造所选后端的配置；未激活后端的已知选项仍被接受但会忽略并告警。
+用 `--stt`、`--llm_backend`、`--tts` 选择具体实现。CLI 只构造所选后端的配置；未激活后端的已知选项仍被接受但会忽略并告警。下列省略 TTS 选项的示例在非 macOS 主环境运行时，应追加 `--qwen3_tts_backend torch`；CLI 的 GGML 默认值不代表主清单安装了其可选 wheel。
 
 > 流式 ASR 说明：`parakeet-tdt` 默认启用智能渐进式转写；`paraformer` 默认用流式中文模型且流水线只发送新增音频块。二者都要求启用实时转写开关（`--enable_live_transcription`，见 [Realtime API](#realtime-api)）。
+
+### Fun-ASR-Nano 与热词文件
+
+Paraformer 保持原有配置；通过 `--stt fun-asr-nano` 切换到独立的 Nano 后端。两者都使用 FunASR 的 `AutoModel` 加载和 `generate` 推理，Nano 不依赖 vLLM。
+
+根 requirements 已包含 Nano 依赖。尚未安装时，在本仓库 `cascaded-full-duplex` 目录执行：
+
+```bash
+(cd .. && python -m pip install -r requirements.txt)
+```
+
+准备自己的 UTF-8 热词文件，例如 `/absolute/path/hotwords.txt`：
+
+```text
+# 每行一个词或短语，不使用 :权重 格式
+全双工
+语义打断
+DeepSeek
+Fun ASR Nano
+```
+
+在原有启动命令中替换 STT 参数，保留原有 LLM、TTS 和服务器配置：
+
+```bash
+speech-to-speech serve \
+  --stt fun-asr-nano \
+  --fun_asr_nano_stt_model_name FunAudioLLM/Fun-ASR-Nano-2512 \
+  --fun_asr_nano_stt_device cuda \
+  --fun_asr_nano_stt_hotwords_file /absolute/path/hotwords.txt \
+  --enable_live_transcription
+```
+
+- 仅 Nano 读取该文件，启动时加载一次：忽略空行和以 `#` 开头的注释行，去掉首尾空白并去重，保留短语内部空格。支持 UTF-8 BOM。未提供文件、文件不可读或没有有效词条时启动失败，不静默忽略；修改词表后需重启服务。
+- 每次推理都通过复数参数 `hotwords` 传入词表。这是模型上下文引导，不是带权重的解码热词偏置，也不是识别后替换。
+- 默认 hub 为 `hf`，可用 `--fun_asr_nano_stt_hub ms` 选择 ModelScope；模型参数也接受完整本地目录。加载遵循官方用法设置 `trust_remote_code=True`，只使用可信模型来源。
+- `--fun_asr_nano_stt_language` 支持 `中文`（默认）、`英文`、`日文`；`--fun_asr_nano_stt_itn false` 可关闭文本规整。
+- 开启实时转写时，Nano 对 VAD 提供的累计音频快照独立重识别，输出可修订的完整 partial；句末对完整音频生成 final。不复用旧文字前缀，不把完整结果追加成重复文本，也不启用 Paraformer 的增量块缓存模式。未开启实时转写时只做句末识别。
+- 这是渐进式转写而非缓存式原生流式编码。长句会重复计算；首字延迟、热词准确率和与 TTS 并跑的资源占用需在部署机器上实测。
 
 ## 命令 Commands
 

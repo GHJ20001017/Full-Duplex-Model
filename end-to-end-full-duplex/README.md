@@ -11,9 +11,12 @@
 通过 **ModelScope（魔搭）** 下载 [Qwen/Qwen3-1.7B](https://modelscope.cn/models/Qwen/Qwen3-1.7B)（非 Base 版）的权重、配置和 tokenizer，以及 **Mimi 音频编解码器**权重。Mimi 从 ModelScope 上的 [kyutai/moshiko-pytorch-bf16](https://modelscope.cn/models/kyutai/moshiko-pytorch-bf16) 仓库下载，仅获取 `tokenizer-e351c8d8-checkpoint125.safetensors`，不下载 Moshi 7B 语言模型。
 
 ```bash
-cd "/Users/guhj/Documents/Full-Duplex_Model/end-to-end-full-duplex"
-python3 -m pip install -U modelscope
-python3 scripts/download_models.py
+# 在仓库根目录先按首页创建环境；已有环境无需重复创建
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+python -m pip install -r requirements.txt
+cd end-to-end-full-duplex
+python scripts/download_models.py
 ```
 
 ## Step2: 可视化 Mimi codebook 并检查音频重建
@@ -21,7 +24,7 @@ python3 scripts/download_models.py
 运行多个音频 case（不会下载模型，也不会修改原始音频）：
 
 ```bash
-python3 scripts/visualize_mimi_codebooks.py \
+python scripts/visualize_mimi_codebooks.py \
   --mimi-checkpoint checkpoints/base/mimi/tokenizer-e351c8d8-checkpoint125.safetensors \
   --output-dir outputs/step2-codebooks \
   cases/example-01.wav cases/example-02.wav
@@ -50,11 +53,10 @@ Step3 按路线文档第 1 步实现 Qwen3-Moshi 的可导入模型骨架：Qwen
 - 文本 CE、8 路 audio CE、语义 codebook 加权 audio loss，以及 padding/无效帧 mask；
 - `tests/test_qwen3_moshi.py` 中的小模型单元测试，不下载 Qwen3 或 Mimi 权重。
 
-安装实际运行模型所需的 PyTorch 和 Transformers 后，可对本地 Qwen3 checkpoint 只做结构检查：
+根目录 [`requirements.txt`](../requirements.txt) 已包含 ModelScope、PyTorch 和 Transformers。激活上述 Conda 环境后，可对本地 Qwen3 checkpoint 只做结构检查：
 
 ```bash
-python3 -m pip install torch transformers
-PYTHONPATH=. python3 scripts/inspect_qwen3_moshi.py \
+PYTHONPATH=. python scripts/inspect_qwen3_moshi.py \
   checkpoints/base/qwen3 \
   --local-files-only
 ```
