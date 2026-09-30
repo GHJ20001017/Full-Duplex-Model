@@ -20,6 +20,7 @@ function harness({
   respondInput,
   permissionPolicy,
   onPermissionDeliveryFailed,
+  willAnnounceExecutionStarted,
   clientContext = {},
   presenceController,
   inputAssets,
@@ -74,6 +75,7 @@ function harness({
     respondInput,
     permissionPolicy,
     onPermissionDeliveryFailed,
+    willAnnounceExecutionStarted,
     getClientContext: () => clientContext,
     presenceController,
     onAgentActivity,
@@ -712,6 +714,7 @@ async function permissionHarness({
   respondPermission,
   permissionPolicy,
   onPermissionDeliveryFailed,
+  willAnnounceExecutionStarted,
 }) {
   const manager = new TaskManager()
   let release
@@ -740,6 +743,7 @@ async function permissionHarness({
     respondPermission,
     permissionPolicy,
     onPermissionDeliveryFailed,
+    willAnnounceExecutionStarted,
   })
   kit.transcripts.record('turn-one', answer)
   return {
@@ -786,6 +790,10 @@ test('submits one nonblocking coordinator work item with organized intent', asyn
     '工作已受理，请自然确认一次，不要再次调用工具。',
   )
   assert.equal(kit.outputs[0][1].marker, undefined)
+  assert.equal(kit.outputs[0][1].objective, '继续修改此前讨论的页面')
+  assert.equal(kit.outputs[0][1].receipt_only, true)
+  assert.match(kit.outputs[0][3].response.instructions, /不能证明后台已开始执行/)
+  assert.match(kit.outputs[0][3].response.instructions, /不要再次调用工具/)
   assert.equal(typeof kit.outputs[0][3].shouldRespond, 'function')
   assert.equal(kit.manager.list({ ownerId: 'owner' }).length, 1)
   await waitForTask(kit.manager, kit.outputs[0][1].task_id)
@@ -944,7 +952,8 @@ test('accepts distinct spawn_thinking calls from one realtime response', async (
     output[1].message === '工作已受理，请自然确认一次，不要再次调用工具。'
   )))
   assert.equal(kit.ensuredResponses.length, 1)
-  assert.equal(kit.ensuredResponses[0][1].response, undefined)
+  assert.match(kit.ensuredResponses[0][1].response.instructions, /不能证明后台已开始执行/)
+  assert.ok(kit.outputs.every(output => output[1].receipt_only === true))
   // Both fake works finish immediately: their accepted-only speech is stale.
   assert.equal(kit.ensuredResponses[0][1].shouldCreate(), false)
   await Promise.all(kit.manager.list({ ownerId: 'owner' }).map(task => (
@@ -1955,6 +1964,141 @@ test('a cancelled permission ID never targets a newer pending request', async ()
   assert.equal(kit.outputs.at(-1)[1].error_code, 'permission_not_pending')
   assert.equal(calls.length, 0)
   await kit.finish()
+})
+
+test('successful permission startup confirmation suppresses only its response', async () => {
+  const kit = await permissionHarness({
+    answer: '可以',
+    willAnnounceExecutionStarted: () => true,
+    respondPermission: async (id, decision) => ({ id, taskId: 'work-one', status: 'approved', decision }),
+  })
+  await kit.handler.handle({
+    call_id: 'startup-confirmation', response_id: 'permission-startup',
+    name: 'respond_permission',
+    arguments: '{"permission_id":"auth-one","decision":"task"}',
+  }, { turnId: 'turn-one', turnGeneration: 1, responseId: 'permission-startup' })
+  assert.equal(kit.outputs.at(-1)[1].status, 'submitted')
+  assert.equal(kit.outputs.at(-1)[3].createResponse, false)
+  await kit.handler.finishToolResponse('permission-startup')
+  assert.equal(kit.ensuredResponses.length, 0)
+  await kit.handler.handle({
+    call_id: 'startup-confirmation-repeat', response_id: 'permission-repeat',
+    name: 'respond_permission',
+    arguments: '{"decision":"task"}',
+  }, { turnId: 'turn-one', turnGeneration: 1, responseId: 'permission-repeat' })
+  assert.equal(kit.outputs.at(-1)[1].status, 'already_submitted')
+  assert.equal(kit.outputs.at(-1)[3].createResponse, false)
+  await kit.handler.finishToolResponse('permission-repeat')
+  assert.equal(kit.ensuredResponses.length, 0)
+  await kit.finish()
+})
+
+test('startup confirmation sends the permission result silently without a response ID', async () => {
+  const kit = await permissionHarness({
+    answer: '可以',
+    willAnnounceExecutionStarted: () => true,
+    respondPermission: async id => ({ id, taskId: 'work-one', status: 'approved' }),
+  })
+  await kit.handler.handle({
+    call_id: 'uncorrelated-permission', name: 'respond_permission',
+    arguments: '{"permission_id":"auth-one","decision":"task"}',
+  })
+  assert.equal(kit.outputs.at(-1)[1].status, 'submitted')
+  assert.equal(kit.outputs.at(-1)[3].createResponse, false)
+  assert.equal(kit.ensuredResponses.length, 0)
+  await kit.finish()
+})
+
+test('rejected and invalid permission decisions retain a response', async () => {
+  const rejected = await permissionHarness({
+    answer: '不允许',
+    willAnnounceExecutionStarted: () => true,
+    respondPermission: async (id) => ({ id, taskId: 'work-one', status: 'rejected' }),
+  })
+  await rejected.handler.handle({
+    call_id: 'reject-with-response', response_id: 'reject-response', name: 'respond_permission',
+    arguments: '{"permission_id":"auth-one","decision":"reject"}',
+  }, { turnId: 'turn-one', turnGeneration: 1, responseId: 'reject-response' })
+  assert.equal(rejected.outputs.at(-1)[3].createResponse, false)
+  await rejected.handler.finishToolResponse('reject-response')
+  assert.equal(rejected.ensuredResponses.length, 1)
+  await rejected.finish()
+
+  const invalid = await permissionHarness({ answer: '可以', respondPermission: async () => ({}) })
+  await invalid.handler.handle({
+    call_id: 'invalid-permission', response_id: 'invalid-response', name: 'respond_permission',
+    arguments: '{"permission_id":"missing","decision":"always"}',
+  }, { turnId: 'turn-one', turnGeneration: 1, responseId: 'invalid-response' })
+  assert.equal(invalid.outputs.at(-1)[1].error_code, 'permission_not_pending')
+  await invalid.handler.finishToolResponse('invalid-response')
+  assert.equal(invalid.ensuredResponses.length, 1)
+  await invalid.finish()
+})
+
+test('silent permission approval preserves a status result in the same response', async () => {
+  const kit = await permissionHarness({
+    answer: '可以',
+    willAnnounceExecutionStarted: () => true,
+    respondPermission: async id => ({ id, taskId: 'work-one', status: 'approved' }),
+  })
+  const context = { turnId: 'turn-one', turnGeneration: 1, responseId: 'mixed-permission' }
+  await kit.handler.handle({
+    call_id: 'mixed-approval', name: 'respond_permission',
+    arguments: '{"permission_id":"auth-one","decision":"task"}',
+  }, context)
+  await kit.handler.handle({
+    call_id: 'mixed-status', name: 'get_agent_task_status', arguments: '{}',
+  }, context)
+  assert.equal(kit.outputs[0][1].status, 'submitted')
+  assert.equal(kit.outputs[1][1].status, 'ok')
+  assert.equal(kit.ensuredResponses.length, 0)
+  await kit.handler.finishToolResponse('mixed-permission')
+  assert.equal(kit.ensuredResponses.length, 1)
+  await kit.finish()
+})
+
+test('silent settlement waits for source completion and every pending tool', async () => {
+  for (const sourceFirst of [true, false]) {
+    const kit = harness()
+    const settled = []
+    kit.handler.onToolResponseSilent = event => settled.push(event)
+    for (let index = 0; index < 2; index += 1) {
+      kit.handler.beginDeferredToolResponse('silent-response', {
+        turnId: 'turn-one', turnGeneration: 1, requestResponse: false,
+      })
+    }
+    if (sourceFirst) await kit.handler.finishToolResponse('silent-response')
+    await kit.handler.completeDeferredToolResponse('silent-response')
+    assert.equal(settled.length, 0)
+    await kit.handler.completeDeferredToolResponse('silent-response')
+    if (!sourceFirst) {
+      assert.equal(settled.length, 0)
+      await kit.handler.finishToolResponse('silent-response')
+    }
+    assert.deepEqual(settled, [{
+      responseId: 'silent-response', turnId: 'turn-one', turnGeneration: 1,
+    }])
+    await kit.handler.finishToolResponse('silent-response')
+    assert.equal(settled.length, 1)
+    assert.equal(kit.ensuredResponses.length, 0)
+  }
+})
+
+test('deferred completion requests a response when any mixed tool needs one', async () => {
+  const kit = harness()
+  const settled = []
+  kit.handler.onToolResponseSilent = event => settled.push(event)
+  kit.handler.beginDeferredToolResponse('mixed-response', {
+    turnId: 'turn-one', turnGeneration: 1, requestResponse: false,
+  })
+  kit.handler.beginDeferredToolResponse('mixed-response', {
+    turnId: 'turn-one', turnGeneration: 1, requestResponse: false,
+  })
+  await kit.handler.completeDeferredToolResponse('mixed-response', { requestResponse: true })
+  await kit.handler.completeDeferredToolResponse('mixed-response')
+  await kit.handler.finishToolResponse('mixed-response')
+  assert.equal(kit.ensuredResponses.length, 1)
+  assert.equal(settled.length, 0)
 })
 
 test('confirms a rejected realtime permission exactly once', async () => {

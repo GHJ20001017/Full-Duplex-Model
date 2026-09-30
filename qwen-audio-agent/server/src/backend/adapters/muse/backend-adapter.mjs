@@ -698,6 +698,17 @@ export class MuseBackendAdapter {
     if (task.itemDigests.get(item.itemId) === digest) return
     task.itemDigests.set(item.itemId, digest)
     task.items.set(item.itemId, item)
+    // Only received execution items count, never the local pre-send activity
+    // or the queued turn acknowledgement.
+    if (
+      ['inProgress', 'completed'].includes(item.status)
+      && (
+        (item.kind === 'agentMessage' && clean(item.text))
+        || ['reasoning', 'toolCall', 'userShell'].includes(item.kind)
+      )
+    ) {
+      this.publish(backendEvent(BackendEventType.EXECUTION_STARTED), task)
+    }
     const activity = itemActivity(item)
     if (activity) {
       task.activities.set(activity.id, activity)

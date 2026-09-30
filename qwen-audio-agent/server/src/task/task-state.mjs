@@ -156,6 +156,7 @@ export function publicTask(task, { now = Date.now() } = {}) {
     turnId: task.turnId,
     createdAt: task.createdAt,
     startedAt: task.startedAt,
+    executionStartedAt: task.executionStartedAt ?? null,
     completedAt: task.completedAt,
     elapsedMs: task.startedAt && isTaskActive(task.status)
       ? now - task.startedAt

@@ -324,3 +324,81 @@ test('user Task kinds share result delivery while system jobs stay outside the f
   assert.equal(h.injectCalls.length, 3)
   assert.equal(h.events.length, count)
 })
+
+test('verified remote execution start announces once with bounded no-tool status', async t => {
+  const h = harness(t)
+  const run = await startTask(h, { objective: '整理项目报告' })
+  run.emit({ type: 'backend.execution.started' })
+  await flush()
+  assert.equal(h.injectCalls.filter(call => call.origin === 'execution-started').length, 1)
+  const call = h.injectCalls.find(value => value.origin === 'execution-started')
+  assert.match(call.text, /status=remote_execution_verified; completed=false/u)
+  assert.match(call.text, /objective=整理项目报告/u)
+  assert.match(call.text, /<backend_execution_started>\n/u)
+  assert.equal(call.options.allowTools, false)
+  assert.match(call.options.instructions, /固定模板/u)
+  h.coordinator.announcePendingExecutionStarts()
+  await flush()
+  assert.equal(h.injectCalls.filter(value => value.origin === 'execution-started').length, 1)
+})
+
+test('willAnnounceExecutionStarted covers no-start, blocked, pending, delivered and closed states', async t => {
+  const h = harness(t)
+  const run = await startTask(h)
+  assert.equal(h.coordinator.willAnnounceExecutionStarted(run.task.id), false)
+
+  h.state.ready = false
+  run.emit({ type: 'backend.execution.started' })
+  await flush()
+  assert.equal(h.coordinator.willAnnounceExecutionStarted(run.task.id), false)
+
+  h.state.ready = true
+  h.coordinator.announcePendingExecutionStarts()
+  assert.equal(h.coordinator.willAnnounceExecutionStarted(run.task.id), true)
+  await flush()
+  assert.equal(h.coordinator.willAnnounceExecutionStarted(run.task.id), false)
+
+  h.coordinator.close()
+  assert.equal(h.coordinator.willAnnounceExecutionStarted(run.task.id), false)
+})
+
+test('accepted or locally running work does not produce execution-started speech', async t => {
+  const h = harness(t)
+  const run = await startTask(h)
+  await flush()
+  assert.equal(h.injectCalls.some(call => call.origin === 'execution-started'), false)
+  assert.equal(h.taskManager.get(run.task.id).executionStartedAt, null)
+})
+
+test('execution-started speech is skipped when the task finishes before dispatch', async t => {
+  const h = harness(t)
+  const run = await startTask(h, { objective: '快速任务' })
+  run.emit({ type: 'backend.execution.started' })
+  run.complete({ content: 'done' })
+  await h.taskManager.wait(run.task.id)
+  await flush()
+  assert.equal(h.injectCalls.some(call => call.origin === 'execution-started'), false)
+})
+
+test('execution-started delivery defers while busy and resumes', async t => {
+  const h = harness(t)
+  const run = await startTask(h)
+  h.state.busy = true
+  run.emit({ type: 'backend.execution.started' })
+  await flush()
+  assert.equal(h.injectCalls.some(call => call.origin === 'execution-started'), false)
+  h.state.busy = false
+  await new Promise(resolve => setTimeout(resolve, 120))
+  assert.equal(h.injectCalls.filter(call => call.origin === 'execution-started').length, 1)
+})
+
+test('successful execution-started delivery is not repeated after reconnect', async t => {
+  const h = harness(t)
+  const run = await startTask(h)
+  run.emit({ type: 'backend.execution.started' })
+  await flush()
+  h.coordinator.resetPresentation()
+  h.coordinator.announcePendingExecutionStarts()
+  await flush()
+  assert.equal(h.injectCalls.filter(call => call.origin === 'execution-started').length, 1)
+})

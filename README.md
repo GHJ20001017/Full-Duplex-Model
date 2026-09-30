@@ -16,6 +16,8 @@
 
 https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
 
+https://github.com/user-attachments/assets/4e341571-aa07-4ddf-acd4-7b683fa5f7b8
+
 ## 安装与启动
 
 下面以 **Apple Silicon macOS 14+** 为例，使用 **Paraformer + OpenAI 兼容 Chat Completions API + Qwen3-TTS** 启动语音服务端，再选择一种客户端连接。需要 Conda（Miniconda 或 Miniforge）、Python 3.12、Homebrew，以及可用的 LLM API 地址、模型名称和密钥。

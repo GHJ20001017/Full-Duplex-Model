@@ -206,6 +206,11 @@ export function createRealtimeSessionRuntime({
       ...(sessionOutputVoice ? { voice: sessionOutputVoice } : {}),
     }),
     shouldReconnect: () => inputEnabled || outputEnabled,
+    getTraceContext: event => ({
+      sessionId,
+      turnId: event?.item_id ? turns.resolveInput(event.item_id)?.turnId || '' : turns.turnId,
+      committedTurnId: turns.committedTurnId,
+    }),
     onEvent: event => handleEvent(event),
     onDiagnostic: diagnostic => {
       const { event, ...fields } = diagnostic
@@ -390,6 +395,14 @@ export function createRealtimeSessionRuntime({
     respondAuthorization,
     respondInput,
     permissionPolicy,
+    willAnnounceExecutionStarted: taskId => taskCoordinator.willAnnounceExecutionStarted(taskId),
+    onToolResponseSilent: ({ turnId }) => {
+      if (closed) return
+      announcementWindow.responseDone({ turnId, origin: 'agent' })
+      taskCoordinator.announcePendingPermissions()
+      taskCoordinator.announcePendingInputs()
+      announcements.flush()
+    },
     // The permission decision was accepted locally but never reached the
     // backend: the authorization is still pending there, so clear the
     // announced mark and let the standard re-announce path ask again.

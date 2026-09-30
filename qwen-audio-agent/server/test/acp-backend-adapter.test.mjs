@@ -12,6 +12,25 @@ function completed(speech = '完成') {
   return speech
 }
 
+test('ACP execution evidence excludes session metadata and pending tools', () => {
+  const adapter = new AcpBackendAdapter({ client: {}, profile: {} })
+  const events = []
+  const run = { onEvent: event => events.push(event) }
+  for (const update of [
+    { sessionUpdate: 'session_info_update', title: 'ready' },
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ' ' } },
+    { sessionUpdate: 'tool_call', toolCallId: 'tool', status: 'pending' },
+  ]) adapter.onSessionUpdate(run, update)
+  assert.equal(events.some(event => event.type === 'backend.execution.started'), false)
+  adapter.onSessionUpdate(run, {
+    sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'in_progress',
+  })
+  adapter.onSessionUpdate(run, {
+    sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Actual response' },
+  })
+  assert.equal(events.filter(event => event.type === 'backend.execution.started').length, 2)
+})
+
 function delegated() {
   return '已经交给独立项目处理。'
 }

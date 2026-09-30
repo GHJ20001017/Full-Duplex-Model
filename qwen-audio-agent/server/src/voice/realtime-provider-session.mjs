@@ -19,6 +19,7 @@ export class RealtimeProviderSession {
     shouldReconnect,
     onEvent,
     onDiagnostic,
+    getTraceContext,
     onResponseSettled,
     onConnected,
     onReady,
@@ -40,6 +41,7 @@ export class RealtimeProviderSession {
     this.shouldReconnect = shouldReconnect
     this.onEvent = onEvent
     this.onDiagnostic = onDiagnostic
+    this.getTraceContext = getTraceContext
     this.onResponseSettled = onResponseSettled
     this.onConnected = onConnected
     this.onReady = onReady
@@ -198,6 +200,7 @@ export class RealtimeProviderSession {
         if (this.frontend === createdFrontend) this.onEvent(event)
       },
       onDiagnostic: this.onDiagnostic,
+      getTraceContext: this.getTraceContext,
       onResponseSettled: event => {
         if (this.frontend === createdFrontend) this.onResponseSettled?.(event)
       },

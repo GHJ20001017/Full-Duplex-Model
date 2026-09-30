@@ -581,6 +581,17 @@ export class AcpBackendAdapter {
     run.receivedUpdate = true
     run.toolCalls ||= new Map()
     run.messageStreams ||= {}
+    const kind = update?.sessionUpdate
+    const hasExecutionEvidence = (
+      ['agent_message_chunk', 'agent_thought_chunk'].includes(kind)
+      && update.content?.type === 'text' && clean(update.content.text)
+    ) || (
+      ['tool_call', 'tool_call_update'].includes(kind)
+      && ['in_progress', 'completed'].includes(update.status)
+    )
+    if (hasExecutionEvidence) {
+      run.onEvent?.(backendEvent(BackendEventType.EXECUTION_STARTED))
+    }
     const streamedMessage = messageFromUpdate(update, run.messageStreams)
     if (streamedMessage?.message) {
       run.onEvent?.(backendEvent(BackendEventType.MESSAGE, {

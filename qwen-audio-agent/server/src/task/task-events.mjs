@@ -2,6 +2,7 @@ export const TaskDomainEvent = Object.freeze({
   ACCEPTED: 'task.accepted',
   SCHEDULED: 'task.scheduled',
   SCHEDULED_FIRED: 'task.scheduled.fired',
+  EXECUTION_STARTED: 'task.execution.started',
   RUNNING: 'task.running',
   DELEGATED: 'task.delegated',
   FINALIZING: 'task.finalizing',

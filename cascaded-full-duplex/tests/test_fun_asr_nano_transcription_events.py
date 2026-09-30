@@ -5,6 +5,7 @@ import types
 
 import numpy as np
 import pytest
+import torch
 
 from speech_to_speech.pipeline.messages import PartialTranscription, Transcription, VADAudio
 from speech_to_speech.STT.fun_asr_nano_handler import FunASRNanoSTTHandler
@@ -18,6 +19,7 @@ class FakeModel:
         self.generate_calls = []
 
     def generate(self, **kwargs):
+        assert all(isinstance(audio, torch.Tensor) for audio in kwargs["input"])
         self.generate_calls.append(kwargs)
         return self.generate_result
 
@@ -135,6 +137,26 @@ def test_hotwords_support_bom_comments_dedup_and_multiword_phrases(monkeypatch, 
     )
 
     assert handler.hotwords == ["hello world", "New York City"]
+
+
+@pytest.mark.parametrize("mode", ["progressive", "final"])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_process_passes_owned_cpu_float32_tensor(monkeypatch, tmp_path, mode, dtype):
+    handler, model, _ = configured_handler(monkeypatch, tmp_path)
+    source = np.array([0.25, -0.5, 0.75, 0.0], dtype=dtype)[::2]
+    snapshot = VADAudio(audio=source, mode=mode)
+
+    list(handler.process(snapshot))
+
+    audio = model.generate_calls[0]["input"][0]
+    assert isinstance(audio, torch.Tensor)
+    assert audio.dtype == torch.float32
+    assert audio.device.type == "cpu"
+    assert audio.shape == (2,)
+    assert audio.is_contiguous()
+    torch.testing.assert_close(audio, torch.tensor([0.25, 0.75]))
+    audio.zero_()
+    np.testing.assert_array_equal(source, [0.25, 0.75])
 
 
 def test_process_redecodes_each_cumulative_snapshot_with_fresh_cache(monkeypatch, tmp_path):
