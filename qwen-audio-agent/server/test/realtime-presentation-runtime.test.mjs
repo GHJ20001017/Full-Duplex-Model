@@ -9,6 +9,7 @@ function harness({
   terminalToolResponses = [],
   resultSummaryResponses = [],
   perResponseInstructions = false,
+  tasks = [],
 } = {}) {
   const events = []
   const records = []
@@ -41,6 +42,7 @@ function harness({
       flush: () => calls.push(['flush']),
     },
     toolCalls: {
+      taskOperations: { get: id => tasks.find(task => task.id === id) },
       requiresToolResultSummary: id => resultSummaryResponses.includes(id),
       consumeTerminalToolResponse: id => {
         calls.push(['consumeTerminalToolResponse', id])
@@ -75,6 +77,248 @@ function harness({
     },
   }
 }
+
+const taskSpeech = '我已经启动后台任务，正在执行了。'
+const speechEvents = setup => setup.events.filter(event =>
+  event.type === 'audio.delta' || event.type.startsWith('transcript.'))
+
+for (const audioType of ['response.audio.delta', 'response.output_audio.delta']) {
+  test(`blocks an uninvoked task claim before ${audioType} or text reaches the client`, () => {
+    const setup = harness({ perResponseInstructions: true })
+    const turn = setup.turns.beginVoice('input-guard').context
+    setup.turns.endSpeech()
+    setup.turns.commit(turn)
+    deliver(setup.runtime, {
+      type: audioType, response_id: 'guarded', delta: 'early-audio',
+      __voiceContext: { ...turn, taskId: 'uninvoked-task' },
+    })
+    deliver(setup.runtime, { type: 'response.text.delta', response_id: 'guarded', delta: taskSpeech })
+    setup.runtime.startPlayback('guarded')
+    assert.equal(speechEvents(setup).length, 0)
+    deliver(setup.runtime, { type: 'response.text.done', response_id: 'guarded', text: taskSpeech })
+    deliver(setup.runtime, { type: 'response.audio.delta', response_id: 'guarded', delta: 'late-audio' })
+    deliver(setup.runtime, { type: 'response.done', response: { id: 'guarded', status: 'completed' } })
+    assert.equal(speechEvents(setup).length, 0)
+    assert.equal(setup.records.length, 0)
+    assert.equal(setup.calls.filter(([name]) => name === 'ensureResponse').length, 1)
+  })
+}
+
+for (const [status, executionStartedAt, allowed] of [
+  ['running', undefined, false], ['running', null, false], ['running', 0, true],
+  ['queued', undefined, false], ['failed', 123, false], ['cancelled', 123, false],
+  ['delegated', undefined, false], ['finalizing', undefined, false],
+]) {
+  test(`uses actual ${status} task evidence (execution marker ${executionStartedAt})`, () => {
+    const setup = harness({ tasks: [{
+      id: 'real-task', ownerId: 'owner-1', sessionId: 'session-1', turnId: 'turn-1', status, executionStartedAt,
+    }] })
+    const context = { turnId: 'turn-1', taskIds: ['real-task'], consumesTaskNotification: true }
+    deliver(setup.runtime, {
+      type: 'response.audio.delta', response_id: 'guarded', delta: 'audio', __voiceContext: context,
+    })
+    assert.equal(speechEvents(setup).length, 0)
+    setup.runtime.markFunctionCall('guarded')
+    deliver(setup.runtime, {
+      type: 'response.audio_transcript.done', response_id: 'guarded', transcript: taskSpeech,
+    })
+    setup.runtime.startPlayback('guarded')
+    deliver(setup.runtime, { type: 'response.done', response: { id: 'guarded', status: 'completed' } })
+    assert.equal(speechEvents(setup).length > 0, allowed)
+    if (!allowed) {
+      const finish = setup.calls.find(([name]) => name === 'finishToolResponse')
+      assert.equal(finish[2].sourceHasSpeech, false)
+      assert.equal(finish[2].suppressResponse, false)
+    }
+  })
+}
+
+for (const transcript of [
+  '后台任务已经执行了。', '已完成任务。', '已经重启服务。',
+  'I restarted the service.', 'I have completed the background task.',
+]) {
+  for (const [label, task, allowed] of [
+    ['no invocation', null, false],
+    ['accepted', { status: 'queued' }, false],
+    ['executing', { status: 'running', executionStartedAt: 123, result: 'partial progress' }, false],
+    ['empty completed', { status: 'completed', executionStartedAt: 123, result: '' }, false],
+    ['blank completed', { status: 'completed', result: '  ' }, false],
+    ['failed', { status: 'failed', result: 'partial result' }, false],
+    ['completed result', { status: 'completed', executionStartedAt: 123, result: '实际执行结果：服务已重启。' }, true],
+  ]) {
+    test(`completion speech gate: ${label}: ${transcript}`, () => {
+      const setup = harness({ tasks: task ? [{
+        id: 'work', ownerId: 'owner-1', sessionId: 'session-1', turnId: 'turn-1', ...task,
+      }] : [] })
+      deliver(setup.runtime, {
+        type: 'response.audio.delta', response_id: 'completion', delta: 'early-audio',
+        __voiceContext: { turnId: 'turn-1', taskId: 'work' },
+      })
+      deliver(setup.runtime, {
+        type: 'response.audio_transcript.delta', response_id: 'completion', delta: transcript,
+      })
+      assert.equal(speechEvents(setup).length, 0)
+      deliver(setup.runtime, {
+        type: 'response.audio_transcript.done', response_id: 'completion', transcript,
+      })
+      setup.runtime.startPlayback('completion')
+      deliver(setup.runtime, { type: 'response.done', response: { id: 'completion', status: 'completed' } })
+      assert.equal(speechEvents(setup).length > 0, allowed)
+      assert.equal(setup.records.length, allowed ? 1 : 0)
+    })
+  }
+}
+
+for (const [label, other, acceptance, execution, completion] of [
+  ['missing', null, false, false, false],
+  ['wrong owner', { ownerId: 'someone-else' }, false, false, false],
+  ['wrong session', { sessionId: 'another-session' }, false, false, false],
+  ['wrong turn', { turnId: 'another-turn' }, false, false, false],
+  ['failed', { status: 'failed' }, false, false, false],
+  ['queued', { status: 'queued', executionStartedAt: undefined }, true, false, false],
+  ['admitted', { status: 'running', executionStartedAt: undefined }, true, false, false],
+  ['started', { status: 'running' }, true, true, false],
+  ['empty result', { result: '' }, true, true, false],
+  ['completed', {}, true, true, true],
+]) {
+  for (const reverse of [false, true]) {
+    for (const [text, allowed] of [
+      ['后台任务已经提交。', acceptance],
+      ['我已经开始处理后台任务。', execution],
+      ['已完成任务。', completion],
+    ]) {
+      test(`batch evidence requires every task: ${label}, reversed=${reverse}, ${text}`, () => {
+        const valid = { ownerId: 'owner-1', sessionId: 'session-1', turnId: 'turn-1',
+          status: 'completed', executionStartedAt: 123, result: '实际结果' }
+        const setup = harness({ tasks: [
+          { ...valid, id: 'first' },
+          ...(other ? [{ ...valid, ...other, id: 'second' }] : []),
+        ] })
+        const taskIds = reverse ? ['second', 'first'] : ['first', 'second']
+        deliver(setup.runtime, { type: 'response.audio.delta', response_id: 'batch', delta: 'audio',
+          __voiceContext: { turnId: 'turn-1', taskIds } })
+        assert.equal(speechEvents(setup).length, 0)
+        deliver(setup.runtime, { type: 'response.audio_transcript.done', response_id: 'batch', transcript: text })
+        setup.runtime.startPlayback('batch')
+        deliver(setup.runtime, { type: 'response.done', response: { id: 'batch', status: 'completed' } })
+        assert.equal(speechEvents(setup).length > 0, allowed)
+        assert.equal(setup.records.length, allowed ? 1 : 0)
+      })
+    }
+  }
+}
+
+test('executing task allows started processing but not a subsequent completion claim', () => {
+  const setup = harness({ tasks: [{
+    id: 'work', ownerId: 'owner-1', sessionId: 'session-1', turnId: 'turn-1',
+    status: 'running', executionStartedAt: 123,
+  }] })
+  for (const [id, text] of [['started', '我已经开始处理后台任务。'], ['finished', '后台任务已经执行了。']]) {
+    deliver(setup.runtime, { type: 'response.text.delta', response_id: id, delta: text,
+      __voiceContext: { turnId: 'turn-1', taskId: 'work' } })
+    assert.equal(speechEvents(setup).some(event => event.responseId === id), false)
+    deliver(setup.runtime, { type: 'response.text.done', response_id: id, text })
+    assert.equal(speechEvents(setup).some(event => event.responseId === id), id === 'started')
+  }
+})
+
+test('a real queued task permits submission but not execution claims', () => {
+  const setup = harness({ tasks: [{
+    id: 'queued', ownerId: 'owner-1', sessionId: 'session-1', turnId: 'turn-1', status: 'queued',
+  }] })
+  deliver(setup.runtime, {
+    type: 'response.text.done', response_id: 'receipt', text: '后台任务已经提交。',
+    __voiceContext: { turnId: 'turn-1', taskId: 'queued' },
+  })
+  assert.equal(setup.records.length, 1)
+})
+
+for (const transcript of [
+  '你好，今天想聊什么？',
+  '例如：“我已经启动后台任务。”这只是一个例句。',
+  '后台任务没有启动。',
+  'Background tasks run independently of the foreground UI.',
+]) {
+  test(`ordinary chat and discussion remains deliverable: ${transcript}`, () => {
+    const setup = harness()
+    deliver(setup.runtime, { type: 'response.audio.delta', response_id: 'chat', delta: 'audio-1' })
+    deliver(setup.runtime, { type: 'response.audio.delta', response_id: 'chat', delta: 'audio-2' })
+    deliver(setup.runtime, { type: 'response.text.delta', response_id: 'chat', delta: transcript })
+    // Ordinary model replies stream immediately; no transcript-done barrier.
+    assert.deepEqual(
+      speechEvents(setup).filter(event => event.type === 'audio.delta').map(event => event.audio),
+      ['audio-1', 'audio-2'],
+    )
+    assert.equal(
+      speechEvents(setup).some(event => event.type === 'transcript.delta'),
+      true,
+    )
+    deliver(setup.runtime, { type: 'response.text.done', response_id: 'chat', text: transcript })
+    setup.runtime.startPlayback('chat')
+    assert.deepEqual(speechEvents(setup).filter(e => e.type === 'audio.delta').map(e => e.audio), ['audio-1', 'audio-2'])
+    assert.equal(setup.records[0].content, transcript)
+  })
+}
+
+for (const audioType of ['response.audio.delta', 'response.output_audio.delta']) {
+  test(`ordinary ${audioType} streams before done and transcripts follow playback`, () => {
+    const setup = harness()
+    deliver(setup.runtime, { type: audioType, response_id: 'stream', delta: 'first' })
+    assert.equal(speechEvents(setup)[0]?.audio, 'first')
+    deliver(setup.runtime, {
+      type: 'response.audio_transcript.delta', response_id: 'stream', delta: '你好',
+    })
+    assert.equal(speechEvents(setup).length, 1)
+    setup.runtime.startPlayback('stream')
+    assert.equal(speechEvents(setup)[1]?.content, '你好')
+    assert.equal(setup.runtime.get('stream').transcriptDone, false)
+    assert.equal(setup.records.length, 0)
+  })
+}
+
+test('uncorrelated task claims stream without a false withheld-speech correction at response.done', () => {
+  const setup = harness({ perResponseInstructions: true })
+  const turn = setup.turns.beginVoice('input').context
+  setup.turns.endSpeech()
+  setup.turns.commit(turn)
+  deliver(setup.runtime, {
+    type: 'response.audio.delta', response_id: 'streamed', delta: 'audio', __voiceContext: turn,
+  })
+  deliver(setup.runtime, { type: 'response.text.delta', response_id: 'streamed', delta: taskSpeech })
+  assert.equal(speechEvents(setup).length, 2)
+  deliver(setup.runtime, { type: 'response.text.done', response_id: 'streamed', text: taskSpeech })
+  deliver(setup.runtime, { type: 'response.done', response: { id: 'streamed', status: 'completed' } })
+  assert.equal(setup.calls.some(([name]) => name === 'ensureResponse'), false)
+  assert.equal(setup.records[0].content, taskSpeech)
+})
+
+for (const status of ['failed', 'cancelled', 'incomplete', 'completed']) {
+  test(`does not release unclassified task-correlated audio on ${status} completion`, () => {
+    const setup = harness()
+    deliver(setup.runtime, {
+      type: 'response.audio.delta', response_id: 'silent', delta: 'unclassified',
+      __voiceContext: { taskId: 'unverified-task' },
+    })
+    deliver(setup.runtime, {
+      type: 'response.done', response: { id: 'silent', status },
+      __voiceContext: { taskId: 'unverified-task' },
+    })
+    assert.equal(speechEvents(setup).length, 0)
+    assert.equal(setup.runtime.has('silent'), false)
+  })
+}
+
+test('a proposed function call and bare task ID are not successful submission evidence', () => {
+  const setup = harness()
+  deliver(setup.runtime, {
+    type: 'response.created', response: { id: 'proposal' },
+    __voiceContext: { taskId: 'invented', consumesTaskNotification: true },
+  })
+  setup.runtime.markFunctionCall('proposal')
+  deliver(setup.runtime, { type: 'response.text.delta', response_id: 'proposal', delta: taskSpeech })
+  deliver(setup.runtime, { type: 'response.done', response: { id: 'proposal', status: 'completed' } })
+  assert.equal(speechEvents(setup).length, 0)
+})
 
 test('projects turn citations once on the final assistant transcript', () => {
   const stored = [{
@@ -180,6 +424,10 @@ test('correlates an implicit provider response with the pending voice turn', () 
 
   assert.deepEqual(setup.turns.committed(), candidate)
   assert.equal(setup.events[0].type, 'response.started')
+  assert.equal(setup.events.length, 2)
+  deliver(setup.runtime, {
+    type: 'response.audio_transcript.done', response_id: 'response-1', transcript: '你好。',
+  })
   assert.equal(setup.events[1].type, 'audio.delta')
   assert.equal(setup.events[1].sampleRate, 24000)
   assert.equal(
@@ -189,7 +437,10 @@ test('correlates an implicit provider response with the pending voice turn', () 
 })
 
 test('holds audio transcripts until playback starts and records them once', () => {
-  const { runtime, events, records, calls } = harness()
+  const { runtime, events, records, calls } = harness({ tasks: [{
+    id: 'work-1', ownerId: 'owner-1', sessionId: 'session-1', turnId: 'turn-1',
+    status: 'completed', result: '实际任务结果',
+  }] })
   const context = {
     turnId: 'turn-1',
     turnGeneration: 1,
@@ -313,6 +564,9 @@ test('releases a spoken function-call turn when its tool follow-up is suppressed
     __voiceContext: { turnId: 'turn-1', turnGeneration: 1 },
   })
   runtime.markFunctionCall('response-1')
+  deliver(runtime, {
+    type: 'response.audio_transcript.done', response_id: 'response-1', transcript: '好的。',
+  })
   runtime.startPlayback('response-1')
   deliver(runtime, {
     type: 'response.done',
@@ -349,6 +603,9 @@ test('keeps a spoken inline-tool turn open until its results can be summarized',
     response_id: 'response-1',
     delta: 'audio',
     __voiceContext: { turnId: 'turn-1', turnGeneration: 1 },
+  })
+  deliver(runtime, {
+    type: 'response.audio_transcript.done', response_id: 'response-1', transcript: '请稍等。',
   })
   runtime.markFunctionCall('response-1')
   deliver(runtime, {

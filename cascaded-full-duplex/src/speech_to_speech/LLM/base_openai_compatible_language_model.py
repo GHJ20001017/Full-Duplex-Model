@@ -39,6 +39,7 @@ from speech_to_speech.LLM.chat import (
     make_user_audio_message,
 )
 from speech_to_speech.LLM.compaction_prompt import CompactGenerateFn, build_compactor
+from speech_to_speech.LLM.delegation_trace import trace_context
 from speech_to_speech.LLM.text_prompt import build_text_system_prompt
 from speech_to_speech.LLM.utils import (
     language_name_for_prompt,
@@ -803,7 +804,17 @@ class BaseOpenAICompatibleHandler(BaseHandler[LLMIn, LLMOut], ABC):
                     provider_request_started = True
 
                     def make_request() -> Any:
-                        return (request_fn or self._request)(api_input, optional_kwargs)
+                        # Set inside the callable: prefetch executes it on a worker.
+                        token = trace_context.set({
+                            "turn_id": turn.turn_id,
+                            "turn_revision": turn.turn_revision,
+                            "response_key": turn.response_key,
+                            "cancel_generation": turn.gen,
+                        })
+                        try:
+                            return (request_fn or self._request)(api_input, optional_kwargs)
+                        finally:
+                            trace_context.reset(token)
 
                     if turn.prefetch_transaction is not None:
                         events = self._iter_prefetch_events_interruptibly(

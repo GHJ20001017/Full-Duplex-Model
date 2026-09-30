@@ -1,3 +1,4 @@
+import { createDelegationTrace } from '../../core/delegation-trace.mjs'
 import {
   CANCEL_AGENT_TASK_TOOL_NAME,
   RESPOND_PERMISSION_TOOL_NAME,
@@ -95,6 +96,8 @@ export class ToolCallHandler {
     respondInput,
     permissionPolicy,
     onPermissionDeliveryFailed = () => {},
+    willAnnounceExecutionStarted = () => false,
+    onToolResponseSilent = () => {},
     onToolResultReady = () => {},
     onToolCallDebug = () => {},
     onAgentActivity = () => {},
@@ -110,6 +113,10 @@ export class ToolCallHandler {
     this.taskManager = taskManager
     this.ownerId = ownerId
     this.sessionId = sessionId
+    this.delegationTrace = createDelegationTrace({ context: () => ({
+      sessionId, connectionId: this.getFrontend?.()?.connectionId,
+      upstreamSessionId: this.getFrontend?.()?.traceSessionId,
+    }) })
     this.transcripts = transcripts
     this.getFrontend = getFrontend
     this.getTurnId = getTurnId
@@ -123,6 +130,8 @@ export class ToolCallHandler {
     this.getClientContext = getClientContext
     this.onMemoryChanged = onMemoryChanged
     this.onPermissionDeliveryFailed = onPermissionDeliveryFailed
+    this.willAnnounceExecutionStarted = willAnnounceExecutionStarted
+    this.onToolResponseSilent = onToolResponseSilent
     this.onToolResultReady = onToolResultReady
     this.onToolCallDebug = onToolCallDebug
     this.onAgentActivity = onAgentActivity
@@ -335,6 +344,10 @@ export class ToolCallHandler {
         ...(taskId ? { taskId } : {}),
       })
     }
+    this.delegationTrace('dispatch.result_ready', {
+      callId, turnId, taskId, responseId: debug?.responseId || '', toolName: tool?.name || '',
+      output: projectedOutput, createResponse: frontendOptions.createResponse,
+    })
     await this.getFrontend()?.sendFunctionOutput(
       callId,
       projectedOutput,
@@ -388,10 +401,11 @@ export class ToolCallHandler {
     batch.responseInstructions.push(value)
   }
 
-  async completeDeferredToolResponse(responseId, { failed = false } = {}) {
+  async completeDeferredToolResponse(responseId, { failed = false, requestResponse = false } = {}) {
     const batch = this.deferredToolResponses.get(responseId)
     if (!batch) return
     batch.pending = Math.max(0, batch.pending - 1)
+    batch.responseRequested ||= requestResponse
     batch.failed ||= failed
     await this.flushDeferredToolResponse(responseId, batch)
   }
@@ -417,6 +431,13 @@ export class ToolCallHandler {
   async flushDeferredToolResponse(responseId, batch) {
     if (!batch.sourceDone || batch.pending > 0) return
     this.deferredToolResponses.delete(responseId)
+    if (!batch.responseRequested) {
+      // Settle the user turn only after every tool result and source response.
+      // Otherwise its expected follow-up can block the startup announcement.
+      queueMicrotask(() => this.onToolResponseSilent({
+        responseId, turnId: batch.turnId, turnGeneration: batch.turnGeneration,
+      }))
+    }
     if (
       batch.failed || batch.suppressResponse || !batch.responseRequested
       || (batch.sourceHasSpeech && !batch.requiresResultSummary)
@@ -481,8 +502,16 @@ export class ToolCallHandler {
   async handle(event, callContext = {}) {
     const callId = event.call_id || event.item?.call_id || ''
     const toolName = event.name || event.item?.name || ''
-    if (!callId) throw new Error('Realtime 工具调用缺少 call_id')
-    if (this.processedCalls.has(callId)) return
+    const traceFields = { callId, toolName, responseId: callContext.responseId || event.response_id || '', turnId: callContext.turnId || event.__voiceContext?.turnId || '' }
+    this.delegationTrace('dispatch.received', traceFields)
+    if (!callId) {
+      this.delegationTrace('dispatch.rejected', { ...traceFields, reason: 'missing_call_id' })
+      throw new Error('Realtime 工具调用缺少 call_id')
+    }
+    if (this.processedCalls.has(callId)) {
+      this.delegationTrace('dispatch.rejected', { ...traceFields, reason: 'duplicate_call_id' })
+      return
+    }
     this.processedCalls.add(callId)
     if (this.processedCalls.size > 500) {
       this.processedCalls.delete(this.processedCalls.values().next().value)
@@ -503,7 +532,9 @@ export class ToolCallHandler {
       // Invalid arguments are handled as missing fields below.
     }
 
+    traceFields.turnId = turnId
     if (this.isStale(turnId, generation)) {
+      this.delegationTrace('dispatch.rejected', { ...traceFields, reason: 'stale_turn', generation, currentGeneration: this.getTurnGeneration() })
       await this.closeStaleCall(callId, turnId)
       return
     }
@@ -533,9 +564,11 @@ export class ToolCallHandler {
       requiresResultSummary: tool?.policy?.responseOnSuccess !== 'none' && needsToolResultSummary(toolName, args),
     })
     let failed = false
+    this.delegationTrace('dispatch.admitted', traceFields)
     try {
       if (external) {
-        return await this.executeExternalToolCall(external, {
+        this.delegationTrace('dispatch.execution', { ...traceFields, source: 'external' })
+        const execution = await this.executeExternalToolCall(external, {
           callId,
           turnId,
           turnGeneration: generation,
@@ -543,7 +576,10 @@ export class ToolCallHandler {
           event,
           callContext,
         })
+        this.delegationTrace('dispatch.outcome', { ...traceFields, execution })
+        return execution
       }
+      this.delegationTrace('dispatch.execution', { ...traceFields, source: 'registry' })
       const execution = await this.toolExecutor.execute(toolName, {
         callId,
         turnId,
@@ -565,6 +601,7 @@ export class ToolCallHandler {
           inputPending: this.hasPendingBackendInput(),
         }),
       })
+      this.delegationTrace('dispatch.outcome', { ...traceFields, execution })
       if (execution.handled && !execution.executed) {
         const responseId = String(
           callContext.responseId || event.response_id || '',
@@ -604,6 +641,7 @@ export class ToolCallHandler {
       return execution
     } catch (error) {
       failed = true
+      this.delegationTrace('dispatch.failed', { ...traceFields, error: { name: error?.name, message: error?.message } })
       throw error
     } finally {
       this.activeToolEntries.delete(callId)

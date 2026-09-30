@@ -723,6 +723,11 @@ export class A2ABackendAdapter {
     record.task = task
     record.remoteTaskId = clean(task?.id) || record.remoteTaskId
     const state = publicState(taskState(task))
+    // publicState deliberately maps unspecified/unknown states to working;
+    // that fallback is presentation, not remote execution evidence.
+    if (taskState(task) === TaskState.TASK_STATE_WORKING) {
+      this.publish(backendEvent(BackendEventType.EXECUTION_STARTED), record)
+    }
     const message = bounded(messageText(task?.status?.message), 1_000)
     const digest = `${state}\u0000${message}`
     if (digest !== record.lastDigest) {
@@ -957,7 +962,7 @@ export class A2ABackendAdapter {
         task ||= record.task || {
           id: clean(event.taskId) || record.remoteTaskId,
           contextId: clean(event.contextId),
-          status: { state: TaskState.TASK_STATE_WORKING },
+          status: { state: TaskState.TASK_STATE_UNSPECIFIED },
           artifacts: [],
         }
         const previous = Array.isArray(task.artifacts) ? task.artifacts : []

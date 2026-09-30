@@ -43,9 +43,23 @@ test('projects every Task domain event into an explicit public event', () => {
       task: task(),
     })
     assert.ok(projected, `missing public projection for ${type}`)
-    assert.equal(projected.type, type)
+    assert.equal(projected.type, type === TaskDomainEvent.EXECUTION_STARTED
+      ? GatewayTaskEvent.UPDATED
+      : type)
     assert.equal('ownerId' in projected, false)
   }
+})
+
+test('execution evidence projects as an update without claiming completion', () => {
+  const projected = projectGatewayTaskEvent({
+    type: TaskDomainEvent.EXECUTION_STARTED,
+    task: task({ executionStartedAt: 2, completedAt: null }),
+  })
+  assert.equal(projected.type, GatewayTaskEvent.UPDATED)
+  assert.equal(projected.task.executionStartedAt, 2)
+  assert.equal(projected.task.status, 'running')
+  assert.equal(projected.task.completedAt, null)
+  assert.equal(projected.task.result, null)
 })
 
 test('keeps public details and strips undeclared Task fields', () => {

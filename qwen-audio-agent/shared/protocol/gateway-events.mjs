@@ -135,6 +135,7 @@ export const GatewayTaskSchema = z.object({
   turnId: z.string().nullable().optional(),
   createdAt: z.number(),
   startedAt: z.number().nullable().optional(),
+  executionStartedAt: z.number().nullable().optional(),
   completedAt: z.number().nullable().optional(),
   elapsedMs: z.number(),
   result: z.string().nullable().optional(),

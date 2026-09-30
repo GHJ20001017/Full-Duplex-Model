@@ -10,7 +10,11 @@ import {
 } from './response-guards/index.mjs'
 import {
   containsReservedProtocolEnvelope,
+  reservedProtocolEnvelopeGuard,
 } from './response-guards/reserved-protocol-envelope.mjs'
+import {
+  unsupportedTaskStartGuard,
+} from './response-guards/unsupported-task-start.mjs'
 import { realtimeResponseId } from './response-lifecycle.mjs'
 
 const PRESENTATION_RESPONSE_EVENTS = new Set([
@@ -210,6 +214,7 @@ export class RealtimePresentationRuntime {
   handle(event) {
     if (!PRESENTATION_RESPONSE_EVENTS.has(event?.type)) return false
     if (event.type === 'response.created') return true
+    if (this.#holdUnverifiedSpeech(event)) return true
     if (
       event.type === 'response.audio.delta'
       || event.type === 'response.output_audio.delta'
@@ -233,6 +238,106 @@ export class RealtimePresentationRuntime {
       this.#responseDone(event)
     }
     return true
+  }
+
+  #holdUnverifiedSpeech(event) {
+    const context = this.#contextFor(event)
+    if (context.replayingGuardedSpeech) return false
+    const terminal = event.type === 'response.done'
+    // Correlation alone is not success evidence: status queries also attach
+    // IDs to failed/cancelled work. Resolve only this response's current-turn
+    // task through the existing server-owned task operations boundary.
+    const taskIds = contextTaskIds(context)
+    context.taskAcceptanceVerified = taskIds.length > 0
+    context.taskExecutionVerified = taskIds.length > 0
+    context.taskCompletionVerified = taskIds.length > 0
+    // Ambiguous batch receipts require evidence for every correlated task.
+    for (const taskId of taskIds) {
+      let task
+      try {
+        task = this.toolCalls.taskOperations?.get?.(taskId, { ownerId: this.ownerId })
+      } catch {
+        // Unavailable evidence must not fail open or break delivery.
+      }
+      const accepted = Boolean(task && task.ownerId === this.ownerId && task.sessionId === this.sessionId
+        && task.turnId === context.turnId
+        && ['queued', 'running', 'delegated', 'finalizing', 'completed'].includes(task.status))
+      context.taskAcceptanceVerified &&= accepted
+      // RUNNING is scheduler admission, not proof of backend execution.
+      context.taskExecutionVerified &&= accepted && task.executionStartedAt != null
+      // Starting execution is never completion evidence. This establishes
+      // task-level evidence, not semantic truth of arbitrary claimed operations.
+      context.taskCompletionVerified &&= accepted && task.status === 'completed'
+        && typeof task.result === 'string' && Boolean(task.result.trim())
+    }
+    if (context.taskSpeechBlocked || context.suppressed) {
+      context.guardedSpeech = []
+      return !terminal
+    }
+    // Audio can precede its transcript, and a harmless prefix can be followed
+    // by a false receipt. Retain model speech until a complete transcript is
+    // available, including for executing tasks: evidence of starting cannot
+    // authorize completion claims. Non-model presentations still stream.
+    if (context.origin !== 'model') {
+      this.#releaseGuardedSpeech(context)
+      return false
+    }
+    // Ordinary model replies have no task receipt to validate. Do not buffer
+    // their provider deltas waiting for a transcript that may arrive seconds
+    // later; task-claim validation is scoped to explicitly correlated tasks.
+    if (taskIds.length === 0) return false
+    if (terminal && ['failed', 'cancelled', 'incomplete'].includes(event.response?.status)) {
+      context.guardedSpeech = []
+      return false
+    }
+    if (!terminal) {
+      context.guardedSpeech ||= []
+      context.guardedSpeech.push(event)
+      context.guardedSpeechBytes = (context.guardedSpeechBytes || 0)
+        + String(event.delta || event.transcript || event.text || '').length
+      // Bound an untranscribed provider stream; never fail open on overflow.
+      if (context.guardedSpeechBytes > 8 * 1024 * 1024) {
+        context.taskSpeechBlocked = true
+        context.guardedSpeech = []
+        return true
+      }
+    }
+    const finalTranscript = /(?:transcript|text)\.done$/.test(event.type)
+    if (!terminal && !finalTranscript) return true
+    const transcript = finalTranscript
+      ? String(event.transcript ?? event.text ?? '')
+      : (context.guardedSpeech || [])
+        .filter(item => /(?:transcript|text)\.delta$/.test(item.type))
+        .map(item => item.delta || '').join('')
+    if (unsupportedTaskStartGuard.matches({ ...context, transcript })) {
+      context.taskSpeechBlocked = true
+      context.taskSpeechGuardDecision = {
+        guardId: unsupportedTaskStartGuard.id,
+        instructions: unsupportedTaskStartGuard.instructions,
+      }
+      context.guardedSpeech = []
+      context.pendingTranscripts = []
+      return !terminal
+    }
+    if (transcript.trim() || (terminal && context.transcriptDone)) {
+      this.#releaseGuardedSpeech(context)
+    } else if (terminal) {
+      // No transcript means no basis for classifying audio: discard it.
+      context.guardedSpeech = []
+    }
+    return !terminal
+  }
+
+  #releaseGuardedSpeech(context) {
+    const events = context.guardedSpeech || []
+    context.guardedSpeech = []
+    context.guardedSpeechBytes = 0
+    context.replayingGuardedSpeech = true
+    try {
+      for (const event of events) this.handle(event)
+    } finally {
+      context.replayingGuardedSpeech = false
+    }
   }
 
   #contextFor(event) {
@@ -360,12 +465,19 @@ export class RealtimePresentationRuntime {
       type: GatewayServerEvent.ERROR,
       message: error.message,
     }))
-    const guardDecision = evaluateResponseGuards({
+    const guardDecision = (!failed && context?.taskSpeechGuardDecision) || evaluateResponseGuards({
+      ...context,
       origin: context?.origin || 'model',
       hasFunctionCall: Boolean(context?.hasFunctionCall),
       failed,
       suppressed: Boolean(context?.suppressed),
       transcript: context?.assistantTranscript || '',
+    }, {
+      // Unsupported task claims are pre-delivery guarded only when the
+      // response carries an explicit task receipt. Ordinary model speech has
+      // already streamed and must not receive a correction claiming it was
+      // withheld; reserved protocol envelopes remain post-hoc guarded.
+      guards: [reservedProtocolEnvelopeGuard],
     })
     if (!context?.suppressed) {
       this.send({
@@ -434,7 +546,9 @@ export class RealtimePresentationRuntime {
       suppressed: Boolean(context?.suppressed) || terminalToolResponse,
       failed,
     })
-    if (guardDecision) this.#requestGuardCorrection(guardDecision, context, responseTurnId)
+    if (guardDecision && !toolFollowUpPending) {
+      this.#requestGuardCorrection(guardDecision, context, responseTurnId)
+    }
     this.#flushAnnouncementsSoon()
   }
 
@@ -552,7 +666,7 @@ export class RealtimePresentationRuntime {
 
   startPlayback(id) {
     const context = this.contexts.get(id)
-    if (context?.suppressed) return
+    if (context?.suppressed || context?.taskSpeechBlocked || context?.guardedSpeech?.length) return
     this.announcementWindow.startPlayback(id)
     const playbackTurnId = context?.turnId
       || this.playbackTurns.get(id)
@@ -630,6 +744,8 @@ export class RealtimePresentationRuntime {
       context.suppressed = true
       context.playbackEnded = true
       context.pendingTranscripts = []
+      context.guardedSpeech = []
+      context.guardedSpeechBytes = 0
       this.#scheduleContextCleanup(id, context)
     }
     this.send({

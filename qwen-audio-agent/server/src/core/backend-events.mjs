@@ -6,6 +6,7 @@
  * escape their adapter.
  */
 export const BackendEventType = Object.freeze({
+  EXECUTION_STARTED: 'backend.execution.started',
   ACTIVITY: 'backend.activity',
   MESSAGE: 'backend.message',
   ARTIFACT: 'backend.artifact',

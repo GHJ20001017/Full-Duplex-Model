@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import Any, Iterator
 
+import torch
+
 from speech_to_speech.pipeline.handler_types import STTIn, STTOut
 from speech_to_speech.pipeline.messages import PartialTranscription, Transcription
 from speech_to_speech.STT.base_stt_handler import BaseSTTHandler
@@ -58,8 +60,11 @@ class FunASRNanoSTTHandler(BaseSTTHandler):
         # and a reopened turn must never inherit a stale text prefix or cache.
         text = ""
         if vad_audio.audio.size:
+            # Nano's ChatML adapter accepts Tensor audio, not NumPy arrays.
+            # Copy the snapshot so inference cannot mutate the VAD-owned buffer.
+            audio = torch.tensor(vad_audio.audio, dtype=torch.float32, device="cpu")
             result = self.model.generate(
-                input=[vad_audio.audio],
+                input=[audio],
                 cache={},
                 batch_size=1,
                 hotwords=list(self.hotwords),

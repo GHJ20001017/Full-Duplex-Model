@@ -1,3 +1,4 @@
+import { unsupportedTaskStartGuard } from './unsupported-task-start.mjs'
 import {
   reservedProtocolEnvelopeGuard,
 } from './reserved-protocol-envelope.mjs'
@@ -6,6 +7,7 @@ import {
 // not runtime configuration, and the first matching guard is the only correction
 // allowed for one response.
 const RESPONSE_GUARDS = Object.freeze([
+  unsupportedTaskStartGuard,
   reservedProtocolEnvelopeGuard,
 ])
 

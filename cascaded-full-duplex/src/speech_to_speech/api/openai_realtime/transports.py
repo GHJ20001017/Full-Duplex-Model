@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from speech_to_speech.LLM.delegation_trace import trace_realtime_event
+
 if TYPE_CHECKING:
     from speech_to_speech.api.openai_realtime.service import RealtimeService, ServerEvent
 
@@ -64,7 +66,12 @@ async def send_ws_event(ws: WebSocket, event: ServerEvent) -> None:
     if ws.application_state != WebSocketState.CONNECTED:
         return
     try:
-        await ws.send_json(event.model_dump())
+        payload = event.model_dump()
+        await ws.send_json(payload)
+        # Use the already-serialized event, not response state (which may have
+        # been cleared by finish_response before this send).
+        if not event.type.endswith(".delta"):
+            trace_realtime_event("realtime_outbound", payload)
     except WebSocketDisconnect:
         logger.debug("Skipped event: ws disconnected mid-send")
     except RuntimeError as e:
