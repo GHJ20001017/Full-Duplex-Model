@@ -12,9 +12,11 @@
 
 · **语音驱动的 Agent 执行**：[Qwen Audio Agent](qwen-audio-agent/README.md) 连接实时对话与后台任务执行，可通过 **MCP** 接入 Computer Use 等工具，也可通过 **ACP 适配器**连接 Codex、Claude Code（CC）等 **Agent Harness**。用户可以用语音发起任务，在后台 Agent 执行期间继续交流、补充需求或查询进度，任务结果再返回当前对话，让语音助手从“回答问题”走向“执行任务”。
 
-## Demo 展示
+## 系统架构
 
-https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
+![ARVIS 系统架构图](./arvis-architecture.png)
+
+## Demo 展示
 
 https://github.com/user-attachments/assets/4e341571-aa07-4ddf-acd4-7b683fa5f7b8
 
