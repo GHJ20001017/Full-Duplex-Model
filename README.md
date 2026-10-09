@@ -186,9 +186,10 @@ npm run desktop
 
 更多语音后端与服务端参数见 [级联服务文档](cascaded-full-duplex/README.md)；Qwen Audio Agent 的客户端、后台任务及工具配置见 [Qwen Audio Agent 文档](qwen-audio-agent/README.md)。
 
-## 引用
+## 😊 鸣谢
 
-级联路线基于 Hugging Face 的 [speech-to-speech](https://github.com/huggingface/speech-to-speech) 项目，使用或分发时请同时引用上游原项目；组件模型引用见 `cascaded-full-duplex/README.md`。
+- [Qwen Audio Agent](https://github.com/QwenAudio/qwen-audio-agent)
+- [speech-to-speech](https://github.com/huggingface/speech-to-speech)
 
 ## ⚖️ 开源协议
 
