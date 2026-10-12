@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -d /gpu3/guhj/nltk_data ]]; then
+  export NLTK_DATA="${NLTK_DATA:-/gpu3/guhj/nltk_data}"
+fi
+
 # ===== 本地配置：替换占位值；真实密钥不得提交到仓库 =====
 # 已设置的环境变量优先于这里的默认值。
 export OPENAI_API_KEY="${OPENAI_API_KEY:-替换为你的 API 密钥}"
@@ -8,7 +12,7 @@ export LLM_BASE_URL="${LLM_BASE_URL:-https://你的服务域名/v1}"
 export LLM_MODEL="${LLM_MODEL:-替换为该服务实际提供的模型名称}"
 # 独立语义路由服务的完整接口 URL；按实际协议和地址修改。
 # 同机且未配置 TLS 时使用 http://127.0.0.1:8792/v1/systemone。
-export S2S_SEMANTIC_TURN_URL="${S2S_SEMANTIC_TURN_URL:-https://0.0.0.0:8792/v1/systemone}"
+export S2S_SEMANTIC_TURN_URL="${S2S_SEMANTIC_TURN_URL:-http://127.0.0.1:8792/v1/systemone}"
 export S2S_SEMANTIC_TURN_TIMEOUT_S="${S2S_SEMANTIC_TURN_TIMEOUT_S:-1}" # 秒
 
 # Nano accepts a local model directory here or via --fun_asr_nano_stt_model_name.

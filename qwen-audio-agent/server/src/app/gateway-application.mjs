@@ -54,6 +54,7 @@ import {
 import {
   loadFrontendOpenApiConfiguration,
 } from '../frontend/tools/openapi/frontend-openapi-config.mjs'
+import { createLocalMeetingDocumentsSource } from '../frontend/tools/local-meeting-documents.mjs'
 import { GatewayClientCommandRuntime } from '../client/client-command-runtime.mjs'
 import {
   ClientEventDefinitionRegistry,
@@ -191,9 +192,13 @@ const unsubscribeSessionTaskJournal = taskManager.subscribe(event => {
     },
   })
 }, { scope: 'all' })
+const localMeetingDocumentsSource = createLocalMeetingDocumentsSource(
+  config.localMeetingDocumentsDir,
+)
 const frontendToolSources = [
   frontendMcpRuntime,
   frontendOpenApiRuntime,
+  localMeetingDocumentsSource,
   ...additionalToolSources,
 ].filter(Boolean).map(source => assertFrontendToolSource(source))
 const identityManager = new IdentityManager({
@@ -489,6 +494,7 @@ const close = () => {
     await frontendRuntime.close()
     await frontendMcpRuntime?.close?.()
     await frontendOpenApiRuntime?.close?.()
+    await localMeetingDocumentsSource?.close?.()
     for (const source of additionalToolSources) await source.close()
     for (const module of [...optionalModules].reverse()) await module.close?.()
     await publicEndpointRuntime?.close?.()
