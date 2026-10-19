@@ -19,3 +19,6 @@ __pycache__/
 /end-to-end-full-duplex/models/qwen3-asr-1.7b/
 /end-to-end-full-duplex/models/qwen3-forcedaligner-0.6b/
 /semantic-route-jev/checkpoint/
+
+# Machine-local voice credentials
+/cascaded-full-duplex/scripts/start_voice_server.env.local

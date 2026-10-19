@@ -7,6 +7,12 @@ fi
 
 # ===== 本地配置：替换占位值；真实密钥不得提交到仓库 =====
 # 已设置的环境变量优先于这里的默认值。
+# 可在同目录的 start_voice_server.env.local 中配置密钥；该文件不进入 Git。
+# 显式设置的环境变量优先，避免本地配置覆盖调用方的密钥。
+voice_local_env="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/start_voice_server.env.local"
+if [[ -z "${OPENAI_API_KEY:-}" && -f "$voice_local_env" ]]; then
+  source "$voice_local_env"
+fi
 export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 export LLM_BASE_URL="http://192.168.18.94:30377/v1"
 export LLM_MODEL="qwen3.8-27b-nothink"
@@ -69,7 +75,7 @@ while (( $# )); do
   shift
 done
 
-[[ -n "$OPENAI_API_KEY" && "$OPENAI_API_KEY" != '替换为你的 API 密钥' ]] || fail 'Configure OPENAI_API_KEY in the script or environment.'
+[[ -n "$OPENAI_API_KEY" && "$OPENAI_API_KEY" != '替换为你的 API 密钥' ]] || fail 'Configure OPENAI_API_KEY in start_voice_server.env.local or the environment.'
 [[ -n "$base_url" && "$base_url" != 'https://你的服务域名/v1' ]] || fail 'Configure LLM_BASE_URL or pass --responses_api_base_url.'
 [[ -n "$model" && "$model" != '替换为该服务实际提供的模型名称' ]] || fail 'Configure LLM_MODEL or pass --model_name.'
 
