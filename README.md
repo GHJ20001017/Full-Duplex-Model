@@ -12,9 +12,13 @@
 
 · **语音驱动的 Agent 执行**：[Qwen Audio Agent](qwen-audio-agent/README.md) 连接实时对话与后台任务执行，可通过 **MCP** 接入 Computer Use 等工具，也可通过 **ACP 适配器**连接 Codex、Claude Code（CC）等 **Agent Harness**。用户可以用语音发起任务，在后台 Agent 执行期间继续交流、补充需求或查询进度，任务结果再返回当前对话，让语音助手从“回答问题”走向“执行任务”。
 
+## 系统架构
+
+![ARVIS 系统架构图](./arvis-architecture.png)
+
 ## Demo 展示
 
-https://github.com/user-attachments/assets/39a33a28-4189-48f3-a419-51ceb4859e0b
+https://github.com/user-attachments/assets/4e341571-aa07-4ddf-acd4-7b683fa5f7b8
 
 ## 安装与启动
 
@@ -73,7 +77,7 @@ CKPT="$PWD/semantic-route-jev/checkpoint" \
 
 ### 3. 启动服务端
 
-进入 `cascaded-full-duplex` 目录，先编辑 `scripts/start_voice_server.sh` 顶部的「本地配置」区：填写 API 密钥、LLM 基地址与模型名称，并确认语义路由 URL 和超时。`LLM_BASE_URL` 不要填写完整的 `/chat/completions` 路径。语义服务同机且未配置 TLS 时，URL 应改为 `http://127.0.0.1:8792/v1/systemone`。脚本会自动导出这些变量，无需每次手动 `export`；外部环境变量优先。**本地填入真实密钥后不要提交该文件**；共享或提交代码时，建议通过外部环境变量提供密钥，保留脚本中的占位值。
+进入 `cascaded-full-duplex` 目录，在 `scripts/start_voice_server.env.local` 中设置 `export OPENAI_API_KEY=你的密钥`，并将该文件权限设为 `600`。该文件已被 Git 忽略；已设置的 `OPENAI_API_KEY` 环境变量优先。LLM 基地址、模型名称及语义路由可分别通过 `LLM_BASE_URL`、`LLM_MODEL`、`S2S_SEMANTIC_TURN_URL`、`S2S_SEMANTIC_TURN_TIMEOUT_S` 环境变量覆盖。`LLM_BASE_URL` 不要包含 `/chat/completions` 路径。同机语义服务可使用 `http://127.0.0.1:8792/v1/systemone`。不要把真实密钥写入受 Git 跟踪的启动脚本。
 
 启动命令已集中到 [`scripts/start_voice_server.sh`](cascaded-full-duplex/scripts/start_voice_server.sh)，使用 Bash 执行。默认保留 **Paraformer（CPU）+ Chat Completions + Qwen3-TTS（CUDA/torch）**；TTS 默认需要 NVIDIA GPU，不适用于直接在 macOS 上执行。脚本不会安装依赖、下载模型或启动语义路由服务。
 
@@ -84,12 +88,12 @@ conda activate speech_to_speech_system
 bash scripts/start_voice_server.sh
 ```
 
-**切换 Fun-ASR-Nano。** 根 requirements 已包含该后端依赖，准备 UTF-8 热词文件（每行一个词或短语，忽略空行和 `#` 注释行，不使用 `:权重` 格式）：
+**切换 Fun-ASR-Nano。** 根 requirements 已包含该后端依赖，脚本默认读取 `cascaded-full-duplex/hotwords.txt`，无需单独指定热词文件。通过以下参数指定已下载的本地模型目录（按实际位置替换）：
 
 ```bash
 bash scripts/start_voice_server.sh \
   --stt fun-asr-nano \
-  --fun_asr_nano_stt_hotwords_file /absolute/path/hotwords.txt
+  --fun_asr_nano_stt_model_name /gpu3/guhj/models/Fun-ASR-Nano-2512
 ```
 
 ### 4. 选择并启动客户端
@@ -182,9 +186,10 @@ npm run desktop
 
 更多语音后端与服务端参数见 [级联服务文档](cascaded-full-duplex/README.md)；Qwen Audio Agent 的客户端、后台任务及工具配置见 [Qwen Audio Agent 文档](qwen-audio-agent/README.md)。
 
-## 引用
+## 😊 鸣谢
 
-级联路线基于 Hugging Face 的 [speech-to-speech](https://github.com/huggingface/speech-to-speech) 项目，使用或分发时请同时引用上游原项目；组件模型引用见 `cascaded-full-duplex/README.md`。
+- [Qwen Audio Agent](https://github.com/QwenAudio/qwen-audio-agent)
+- [speech-to-speech](https://github.com/huggingface/speech-to-speech)
 
 ## ⚖️ 开源协议
 

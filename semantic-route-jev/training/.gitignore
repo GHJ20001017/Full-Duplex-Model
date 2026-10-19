@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.jsonl
+reference*.json
+*.safetensors
+*.bin
+*.pt
+*.log
+.env*
+outputs/
+checkpoints/

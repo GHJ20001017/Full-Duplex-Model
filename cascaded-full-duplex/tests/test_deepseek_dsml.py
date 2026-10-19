@@ -56,6 +56,97 @@ def request(text=DSML, *, stream=True, parts=None, options=None, native=False):
     return handler._iter_events(handler._request([], TOOLS if options is None else options))
 
 
+XML_QUESTION = "95服务器的地址或连接方式是什么？"
+XML_CALL = f"<tool_call>\n<function=ask_user>\n<parameter=question>\n{XML_QUESTION}\n</parameter>\n</function>\n</tool_call>"
+XML_TOOLS = {"tools": [{"type": "function", "function": {
+    "name": "ask_user", "parameters": {
+        "type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"],
+    },
+}}]}
+
+
+@pytest.mark.parametrize("split", range(len(XML_CALL) + 1))
+def test_xml_screenshot_every_split(split):
+    events = list(request(parts=[XML_CALL[:split], XML_CALL[split:]], options=XML_TOOLS))
+    assert not any(isinstance(e, TextDelta) for e in events)
+    call, = [e for e in events if isinstance(e, ToolCall)]
+    assert call.item.name == "ask_user"
+    assert json.loads(call.item.arguments) == {"question": XML_QUESTION}
+    assert call.reasoning_content == "think"
+
+
+@pytest.mark.parametrize("stream", [True, False])
+def test_xml_multiple_calls(stream):
+    events = list(request(XML_CALL + "\n" + XML_CALL, stream=stream, options=XML_TOOLS))
+    assert not any(isinstance(e, TextDelta) for e in events)
+    assert len([e for e in events if isinstance(e, ToolCall)]) == 2
+
+
+@pytest.mark.parametrize("cut", range(len("<tool_"), len(XML_CALL)))
+def test_xml_truncation_does_not_leak(cut):
+    with pytest.raises(ValueError):
+        list(request(parts=list(XML_CALL[:cut]), options=XML_TOOLS))
+
+
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize("text", [
+    XML_CALL + "extra", XML_CALL.replace("ask_user", "unknown"),
+    XML_CALL.replace("question>", "unknown>"), XML_CALL.replace("</function>", ""),
+    XML_CALL.replace("<parameter=question>", "<parameter=question>x</parameter><parameter=question>"),
+    "<tool_call><function=ask_user></function></tool_call>",
+    XML_CALL + XML_CALL.replace("ask_user", "unknown"),
+])
+def test_xml_invalid_response_is_atomic(stream, text):
+    events = []
+    with pytest.raises(ValueError):
+        for event in request(text, stream=stream, options=XML_TOOLS):
+            events.append(event)
+    assert not any(isinstance(e, (TextDelta, ToolCall)) for e in events)
+
+
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize("choice", ["none", {"type": "function", "function": {"name": "other"}}])
+def test_xml_tool_choice_guard(stream, choice):
+    with pytest.raises(ValueError):
+        list(request(XML_CALL, stream=stream, options={**XML_TOOLS, "tool_choice": choice}))
+
+
+@pytest.mark.parametrize("stream", [True, False])
+def test_xml_mixed_native_rejected(stream):
+    with pytest.raises(ValueError):
+        list(request(XML_CALL, stream=stream, options=XML_TOOLS, native=True))
+
+
+@pytest.mark.parametrize("text", ["Example: " + XML_CALL, "```xml\n" + XML_CALL + "\n```", "<table>example</table>"])
+def test_xml_examples_remain_text(text):
+    events = list(request(parts=list(text), options=XML_TOOLS))
+    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == text
+    assert not any(isinstance(e, ToolCall) for e in events)
+
+
+@pytest.mark.parametrize("kind,value,expected", [
+    ("string", "123", "123"), ("integer", "123", 123), ("boolean", "true", True),
+    ("array", '[1,"x"]', [1, "x"]), ("object", '{"a":2}', {"a": 2}), ("null", "null", None),
+])
+def test_xml_schema_argument_types(kind, value, expected):
+    options = {"tools": [{"type": "function", "function": {
+        "name": "ask_user", "parameters": {"properties": {"question": {"type": kind}}},
+    }}]}
+    events = list(request(XML_CALL.replace(XML_QUESTION, value), options=options))
+    call, = [e for e in events if isinstance(e, ToolCall)]
+    assert json.loads(call.item.arguments) == {"question": expected}
+
+
+def test_xml_process_emits_call_without_markup():
+    handler = _make_handler()
+    handler.client.chat.completions.next_result = _FakeStream([chunk(XML_CALL)])
+    text, calls, _, _, end = _drive(handler, tools=[{"type": "function", **XML_TOOLS["tools"][0]["function"]}])
+    assert text == ""
+    assert len(calls) == 1
+    assert calls[0].name == "ask_user"
+    assert end is not None and not end.error
+
+
 @pytest.mark.parametrize("split", range(len(DSML) + 1))
 def test_every_split(split):
     events = list(request(parts=[DSML[:split], DSML[split:]]))

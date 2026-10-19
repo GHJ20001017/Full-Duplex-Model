@@ -14,12 +14,12 @@ if [[ -z "${OPENAI_API_KEY:-}" && -f "$voice_local_env" ]]; then
   source "$voice_local_env"
 fi
 export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
-export LLM_BASE_URL="http://192.168.18.94:30377/v1"
-export LLM_MODEL="qwen3.8-27b-nothink"
+export LLM_BASE_URL="${LLM_BASE_URL:-http://192.168.18.94:30377/v1}"
+export LLM_MODEL="${LLM_MODEL:-deepseek-v4.1-flash-nothink}"
 # 独立语义路由服务的完整接口 URL；按实际协议和地址修改。
 # 同机且未配置 TLS 时使用 http://127.0.0.1:8792/v1/systemone。
-export S2S_SEMANTIC_TURN_URL="http://127.0.0.1:8792/v1/systemone"
-export S2S_SEMANTIC_TURN_TIMEOUT_S="1" # 秒
+export S2S_SEMANTIC_TURN_URL="${S2S_SEMANTIC_TURN_URL:-http://127.0.0.1:8792/v1/systemone}"
+export S2S_SEMANTIC_TURN_TIMEOUT_S="${S2S_SEMANTIC_TURN_TIMEOUT_S:-1}" # 秒
 
 # Nano accepts a local model directory here or via --fun_asr_nano_stt_model_name.
 FUN_ASR_NANO_MODEL_DIR="${FUN_ASR_NANO_MODEL_DIR:-}"
@@ -119,7 +119,7 @@ args+=(
   --init_chat_prompt '你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。'
   # TTS defaults require an NVIDIA GPU; they are not macOS defaults.
   --tts qwen3
-  --qwen3_tts_model_name /gpu3/guhj/models/Qwen3-TTS-12Hz-1.7B-CustomVoice
+  --qwen3_tts_model_name "${QWEN3_TTS_MODEL_NAME:-/gpu3/guhj/models/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
   --qwen3_tts_device cuda --qwen3_tts_backend torch
   --qwen3_tts_language Chinese --qwen3_tts_speaker Aiden
   --qwen3_tts_streaming_chunk_size 4 --qwen3_tts_max_new_tokens 1536

@@ -23,7 +23,10 @@ from jsonschema import ValidationError, validate
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageFunctionToolCall
 
-_MARKERS = ("<｜DSML｜", "<DSML")
+_XML_MARKER = "<tool_call>"
+_XML_FUNCTION = re.compile(r"<function=([^<>\s]+)>")
+_XML_PARAMETER = re.compile(r"<parameter=([^<>\s]+)>")
+_MARKERS = ("<｜DSML｜", "<DSML", _XML_MARKER)
 # A lone "<" is ordinary text; "<｜" (or a longer marker prefix) is identifiable.
 _MARKER_PREFIX_MIN = len("<｜")
 _CONTAINER = re.compile(r"<｜DSML｜(tool_calls|function_calls|calls)>")
@@ -49,12 +52,75 @@ def _looks_like_dsml(text: str) -> bool:
     through to ordinary text, while an identifiable ``<｜DSML…`` prefix does not.
     """
     text = text.strip()
-    return any(text.startswith(marker) or (len(text) >= _MARKER_PREFIX_MIN and marker.startswith(text))
+    return any(text.startswith(marker) or (len(text) >= (len("<tool_") if marker == _XML_MARKER else _MARKER_PREFIX_MIN) and marker.startswith(text))
                for marker in _MARKERS)
 
 
 def _invalid() -> None:
     raise ValueError("Invalid, truncated, or unauthorized DeepSeek DSML tool response")
+
+
+def _parse_xml_calls(text: str, options: dict[str, Any], allowed: set[str]) -> list[dict[str, Any]]:
+    schemas = {tool.get("function", tool)["name"]: tool.get("function", tool).get("parameters", {})
+               for tool in options.get("tools") or [] if tool.get("type") == "function"}
+    calls = []
+    while text:
+        if not text.startswith(_XML_MARKER):
+            _invalid()
+        body = text[len(_XML_MARKER):].lstrip()
+        function = _XML_FUNCTION.match(body)
+        if not function or function[1] not in allowed:
+            _invalid()
+        name = function[1]
+        properties = schemas[name].get("properties", {})
+        body = body[function.end():].lstrip()
+        arguments = {}
+        while not body.startswith("</function>"):
+            parameter = _XML_PARAMETER.match(body)
+            if not parameter or parameter[1] in arguments:
+                _invalid()
+            key = parameter[1]
+            value, separator, body = body[parameter.end():].partition("</parameter>")
+            if not separator or any(tag in value for tag in ("<tool_call", "<function=", "<parameter=", "</function>", "</tool_call>")):
+                _invalid()
+            # This format has no DSML string flag. Only the advertised schema
+            # can distinguish a string such as "123" from a JSON number.
+            value = value.strip()
+            kind = properties.get(key, {}).get("type")
+            if kind != "string":
+                if kind not in ("integer", "number", "boolean", "null", "array", "object"):
+                    _invalid()
+                try:
+                    value = json.loads(value)
+                    json.dumps(value, allow_nan=False)
+                except (ValueError, TypeError):
+                    _invalid()
+                valid = {
+                    "integer": type(value) is int,
+                    "number": type(value) in (int, float),
+                    "boolean": type(value) is bool,
+                    "null": value is None,
+                    "array": isinstance(value, list),
+                    "object": isinstance(value, dict),
+                }
+                if not valid[kind]:
+                    _invalid()
+            arguments[key] = value
+            body = body.lstrip()
+        if not set(schemas[name].get("required", [])).issubset(arguments):
+            _invalid()
+        try:
+            validate(arguments, schemas[name])
+        except ValidationError:
+            _invalid()
+        body = body[len("</function>"):].lstrip()
+        if not body.startswith("</tool_call>"):
+            _invalid()
+        text = body[len("</tool_call>"):].lstrip()
+        calls.append({"type": "function", "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}})
+    if not calls or (options.get("parallel_tool_calls") is False and len(calls) > 1):
+        _invalid()
+    return calls
 
 
 def _parse(text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
@@ -72,6 +138,8 @@ def _parse(text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
     # Canonicalize only protocol tag prefixes. DSML inside parameter values is
     # rejected below, and ordinary XML/entities in raw string values stay intact.
     text = text.strip().replace("<DSML ", "<｜DSML｜").replace("</DSML ", "</｜DSML｜")
+    if text.startswith(_XML_MARKER):
+        return _parse_xml_calls(text, options, allowed)
     match = _CONTAINER.match(text)
     if not match or not allowed:
         _invalid()
