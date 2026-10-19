@@ -694,3 +694,15 @@ test('a provider failure retries an undelivered announcement', () => {
     ['retryMany', ['work-1']],
   )
 })
+
+for (const status of ['cancelled', 'failed', 'incomplete']) {
+  test(`provider ${status} interrupts buffered playback and rejects late audio`, () => {
+    const setup = harness()
+    deliver(setup.runtime, { type: 'response.output_audio.delta', response_id: 'cancel-me', delta: 'first' })
+    deliver(setup.runtime, { type: 'response.done', response: { id: 'cancel-me', status } })
+    deliver(setup.runtime, { type: 'response.output_audio.delta', response_id: 'cancel-me', delta: 'late' })
+    assert.equal(setup.events.filter(e => e.type === 'response.interrupted').length, 1)
+    assert.deepEqual(setup.events.filter(e => e.type === 'audio.delta').map(e => e.audio), ['first'])
+    assert.equal(setup.runtime.has('cancel-me'), false)
+  })
+}

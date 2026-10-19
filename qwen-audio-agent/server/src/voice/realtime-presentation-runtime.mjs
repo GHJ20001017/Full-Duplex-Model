@@ -98,6 +98,7 @@ export class RealtimePresentationRuntime {
     this.announcementQuietMs = announcementQuietMs
     this.responseContextCleanupMs = responseContextCleanupMs
     this.turnCitations = turnCitations
+    this.cancelledResponses = new Set()
     this.contexts = new Map()
     this.playbackTurns = new Map()
     this.lastCorrectionTurn = null
@@ -152,7 +153,7 @@ export class RealtimePresentationRuntime {
 
   begin(event) {
     const id = realtimeResponseId(event)
-    if (!id) return null
+    if (!id || this.cancelledResponses.has(id)) return null
     const existing = this.contexts.get(id)
     const automaticResponse = (
       !existing
@@ -213,6 +214,7 @@ export class RealtimePresentationRuntime {
 
   handle(event) {
     if (!PRESENTATION_RESPONSE_EVENTS.has(event?.type)) return false
+    if (this.cancelledResponses.has(realtimeResponseId(event))) return true
     if (event.type === 'response.created') return true
     if (this.#holdUnverifiedSpeech(event)) return true
     if (
@@ -445,6 +447,15 @@ export class RealtimePresentationRuntime {
     const responseTurnId = context?.turnId || this.turns.turnId
     const responseStatus = event.response?.status
     const failed = ['failed', 'cancelled', 'incomplete'].includes(responseStatus)
+    if (failed) {
+      this.cancelledResponses.add(id)
+      if (this.cancelledResponses.size > 256) this.cancelledResponses.delete(this.cancelledResponses.values().next().value)
+      // The provider may cancel during semantic classification. Stop queued
+      // client audio and retain suppression for late chunks of this response.
+      this.send({ type: GatewayServerEvent.RESPONSE_INTERRUPTED,
+        responseId: id, ...this.publicContext(context || {}) })
+      if (context) context.suppressed = true
+    }
     const sourceHasSpeech = Boolean(context?.hasAudio || context?.assistantTranscript?.trim())
     const suppressResponse = Boolean(failed || context?.suppressed)
     // A spoken task-acceptance receipt needs no second acknowledgement, but

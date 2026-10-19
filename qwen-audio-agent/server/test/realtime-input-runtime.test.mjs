@@ -5,13 +5,14 @@ import { RealtimeInputRuntime } from '../src/voice/realtime-input-runtime.mjs'
 import { RealtimeTurnState } from '../src/voice/realtime-turn-state.mjs'
 import { TurnTranscripts } from '../src/frontend/tools/turn-transcripts.mjs'
 
-function harness({ responseOutcome } = {}) {
+function harness({ responseOutcome, semantic = false } = {}) {
   const events = []
   const records = []
   const calls = []
   const speechStarts = []
   const speechStops = []
   const frontend = {
+    provider: { capabilities: { semanticInterruption: semantic } },
     cancel: () => calls.push(['cancel']),
     sendUserInput: async (parts, context) => {
       calls.push(['sendUserInput', parts, context])
@@ -224,3 +225,29 @@ test('reports an explicit text response that never starts without an implicit wa
   assert.equal(events.at(-1).type, 'voice.state')
   assert.equal(events.at(-1).state, 'idle')
 })
+
+for (const decision of ['continue', 'yield', 'wait', undefined]) {
+  test(`semantic STS defers interruption until final ${decision}`, () => {
+    const { runtime, turns, calls, events } = harness({ semantic: true })
+    const old = turns.beginVoice('old').context
+    turns.commit(old)
+    turns.endSpeech()
+    runtime.handleProviderEvent({ type: 'input_audio_buffer.speech_started', item_id: 'new' })
+    runtime.handleProviderEvent({ type: 'input_audio_buffer.speech_stopped', item_id: 'new' })
+    runtime.handleProviderEvent({ type: 'input_audio_buffer.committed', item_id: 'new' })
+    assert.deepEqual(turns.current(), old)
+    assert.equal(calls.length, 0)
+    const final = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'new', transcript: '嗯', semantic_decision: decision }
+    runtime.handleProviderEvent(final)
+    runtime.handleProviderEvent(final)
+    assert.equal(calls.filter(c => c[0] === 'cancel').length, 0)
+    assert.equal(events.filter(e => e.type === 'transcript.final').length, 1)
+    if (decision === 'continue') {
+      assert.deepEqual(turns.committed(), old)
+      assert.equal(events.filter(e => e.type === 'playback.clear').length, 0)
+    } else {
+      assert.equal(turns.committed().turnGeneration, old.turnGeneration + 1)
+      assert.equal(events.filter(e => e.type === 'playback.clear').length, 1)
+    }
+  })
+}

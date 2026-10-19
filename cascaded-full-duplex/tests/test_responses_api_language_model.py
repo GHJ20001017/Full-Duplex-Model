@@ -143,6 +143,7 @@ def _make_handler(*, disable_thinking=False, stream=True, cancel_scope=None, rea
     handler.stream = stream
     handler.stream_batch_sentences = 1
     handler.gen_kwargs = {}
+    handler.max_output_tokens = 1024
     handler.request_timeout_s = 20.0
     handler.request_timeout = 20.0
     handler.disable_thinking = disable_thinking

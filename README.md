@@ -77,7 +77,7 @@ CKPT="$PWD/semantic-route-jev/checkpoint" \
 
 ### 3. 启动服务端
 
-进入 `cascaded-full-duplex` 目录，先编辑 `scripts/start_voice_server.sh` 顶部的「本地配置」区：填写 API 密钥、LLM 基地址与模型名称，并确认语义路由 URL 和超时。`LLM_BASE_URL` 不要填写完整的 `/chat/completions` 路径。语义服务同机且未配置 TLS 时，URL 应改为 `http://127.0.0.1:8792/v1/systemone`。脚本会自动导出这些变量，无需每次手动 `export`；外部环境变量优先。**本地填入真实密钥后不要提交该文件**；共享或提交代码时，建议通过外部环境变量提供密钥，保留脚本中的占位值。
+进入 `cascaded-full-duplex` 目录，在 `scripts/start_voice_server.env.local` 中设置 `export OPENAI_API_KEY=你的密钥`，并将该文件权限设为 `600`。该文件已被 Git 忽略；已设置的 `OPENAI_API_KEY` 环境变量优先。LLM 基地址、模型名称及语义路由可分别通过 `LLM_BASE_URL`、`LLM_MODEL`、`S2S_SEMANTIC_TURN_URL`、`S2S_SEMANTIC_TURN_TIMEOUT_S` 环境变量覆盖。`LLM_BASE_URL` 不要包含 `/chat/completions` 路径。同机语义服务可使用 `http://127.0.0.1:8792/v1/systemone`。不要把真实密钥写入受 Git 跟踪的启动脚本。
 
 启动命令已集中到 [`scripts/start_voice_server.sh`](cascaded-full-duplex/scripts/start_voice_server.sh)，使用 Bash 执行。默认保留 **Paraformer（CPU）+ Chat Completions + Qwen3-TTS（CUDA/torch）**；TTS 默认需要 NVIDIA GPU，不适用于直接在 macOS 上执行。脚本不会安装依赖、下载模型或启动语义路由服务。
 

@@ -1,4 +1,4 @@
-"""Conservative wire-level fallback for DSML and XML-style tool containers.
+"""Conservative wire-level fallback for DeepSeek DSML tool containers.
 
 Only a container at the beginning of content is executable; quoted/embedded
 examples remain text. Marked responses are validated in full before any call
@@ -19,16 +19,17 @@ from collections.abc import Iterator
 from threading import Lock
 from typing import Any
 
+from jsonschema import ValidationError, validate
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageFunctionToolCall
 
 _XML_MARKER = "<tool_call>"
 _XML_FUNCTION = re.compile(r"<function=([^<>\s]+)>")
 _XML_PARAMETER = re.compile(r"<parameter=([^<>\s]+)>")
-_MARKER = "<｜DSML｜"
+_MARKERS = ("<｜DSML｜", "<DSML", _XML_MARKER)
 # A lone "<" is ordinary text; "<｜" (or a longer marker prefix) is identifiable.
 _MARKER_PREFIX_MIN = len("<｜")
-_CONTAINER = re.compile(r"<｜DSML｜(tool_calls|function_calls)>")
+_CONTAINER = re.compile(r"<｜DSML｜(tool_calls|function_calls|calls)>")
 _INVOKE = re.compile(r'<｜DSML｜invoke name="([^"<>]+)">')
 _PARAMETER = re.compile(r'<｜DSML｜parameter name="([^"<>]+)" string="(true|false)">')
 
@@ -41,18 +42,18 @@ def _candidate(text: str) -> bool:
     ordinary ``<``/``whitespace + <`` text is preserved rather than rejected.
     """
     text = text.lstrip()
-    return not text or any(marker.startswith(text) or text.startswith(marker) for marker in (_MARKER, _XML_MARKER))
+    return not text or any(marker.startswith(text) or text.startswith(marker) for marker in _MARKERS)
 
 
 def _looks_like_dsml(text: str) -> bool:
-    """True for an identifiable DSML or XML tool prefix, including truncation."""
+    """True for complete text that must be parsed as DSML.
+
+    Requires at least ``<｜`` so a bare ``<`` (or whitespace + ``<``) falls
+    through to ordinary text, while an identifiable ``<｜DSML…`` prefix does not.
+    """
     text = text.strip()
-    return (
-        text.startswith(_MARKER)
-        or (len(text) >= _MARKER_PREFIX_MIN and _MARKER.startswith(text))
-        or text.startswith(_XML_MARKER)
-        or (len(text) >= len("<tool_") and _XML_MARKER.startswith(text))
-    )
+    return any(text.startswith(marker) or (len(text) >= (len("<tool_") if marker == _XML_MARKER else _MARKER_PREFIX_MIN) and marker.startswith(text))
+               for marker in _MARKERS)
 
 
 def _invalid() -> None:
@@ -60,8 +61,8 @@ def _invalid() -> None:
 
 
 def _parse_xml_calls(text: str, options: dict[str, Any], allowed: set[str]) -> list[dict[str, Any]]:
-    schemas = {tool["function"]["name"]: tool["function"].get("parameters", {})
-               for tool in options.get("tools", []) if tool.get("type") == "function"}
+    schemas = {tool.get("function", tool)["name"]: tool.get("function", tool).get("parameters", {})
+               for tool in options.get("tools") or [] if tool.get("type") == "function"}
     calls = []
     while text:
         if not text.startswith(_XML_MARKER):
@@ -108,26 +109,35 @@ def _parse_xml_calls(text: str, options: dict[str, Any], allowed: set[str]) -> l
             body = body.lstrip()
         if not set(schemas[name].get("required", [])).issubset(arguments):
             _invalid()
+        try:
+            validate(arguments, schemas[name])
+        except ValidationError:
+            _invalid()
         body = body[len("</function>"):].lstrip()
         if not body.startswith("</tool_call>"):
             _invalid()
         text = body[len("</tool_call>"):].lstrip()
         calls.append({"type": "function", "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}})
+    if not calls or (options.get("parallel_tool_calls") is False and len(calls) > 1):
+        _invalid()
     return calls
 
 
 def _parse(text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
-    allowed = {
-        tool["function"]["name"]
-        for tool in options.get("tools", [])
-        if tool.get("type") == "function"
-    }
+    definitions = {}
+    for tool in options.get("tools") or []:
+        if tool.get("type") == "function":
+            function = tool.get("function", tool)
+            definitions[function["name"]] = function
+    allowed = set(definitions)
     choice = options.get("tool_choice")
     if choice == "none":
         allowed.clear()
     elif isinstance(choice, dict):
-        allowed.intersection_update([choice.get("function", {}).get("name")])
-    text = text.strip()
+        allowed.intersection_update([choice.get("function", choice).get("name")])
+    # Canonicalize only protocol tag prefixes. DSML inside parameter values is
+    # rejected below, and ordinary XML/entities in raw string values stay intact.
+    text = text.strip().replace("<DSML ", "<｜DSML｜").replace("</DSML ", "</｜DSML｜")
     if text.startswith(_XML_MARKER):
         return _parse_xml_calls(text, options, allowed)
     match = _CONTAINER.match(text)
@@ -151,7 +161,7 @@ def _parse(text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
                 _invalid()
             body = body[parameter.end():]
             value, separator, body = body.partition("</｜DSML｜parameter>")
-            if not separator or "｜DSML｜" in value:
+            if not separator or "｜DSML｜" in value or "<DSML" in value or "</DSML" in value:
                 _invalid()
             if parameter[2] == "false":
                 try:
@@ -163,8 +173,14 @@ def _parse(text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
             arguments[parameter[1]] = value
             body = body.lstrip()
         body = body[len("</｜DSML｜invoke>"):].lstrip()
+        schema = definitions[name].get("parameters")
+        if schema is not None:
+            try:
+                validate(arguments, schema)
+            except ValidationError:
+                _invalid()
         calls.append({"type": "function", "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}})
-    if not calls:
+    if not calls or (options.get("parallel_tool_calls") is False and len(calls) > 1):
         _invalid()
     return calls
 

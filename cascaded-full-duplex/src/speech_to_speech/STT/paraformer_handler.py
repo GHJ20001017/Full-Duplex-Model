@@ -51,7 +51,7 @@ class ParaformerSTTHandler(BaseSTTHandler):
                 "Paraformer STT requires the optional 'paraformer' extra. "
                 "Install it with `pip install speech-to-speech[paraformer]`."
             ) from exc
-        self.model = AutoModel(model=model_name, device=device)
+        self.model = AutoModel(model=model_name, device=device, disable_update=True)
         self.warmup()
 
     def warmup(self) -> None:

@@ -67,6 +67,8 @@ export class RealtimeInputRuntime {
     this.reportFrontendError = reportFrontendError
     this.onSpeechStarted = onSpeechStarted
     this.onSpeechStopped = onSpeechStopped
+    this.semanticInputs = new Set()
+    this.semanticCompleted = new Set()
     this.createInputTurnId = createInputTurnId
   }
 
@@ -76,6 +78,40 @@ export class RealtimeInputRuntime {
 
   handleProviderEvent(event) {
     if (!this.handles(event)) return false
+    if (this.getFrontend()?.provider?.capabilities?.semanticInterruption === true) {
+      const id = event.item_id
+      if (event.type === 'input_audio_buffer.speech_started') {
+        this.semanticInputs.add(id)
+        this.onSpeechStarted({ turnId: id, source: 'realtime_provider', provisional: true })
+        return true
+      }
+      if (event.type === 'conversation.item.input_audio_transcription.completed') {
+        if (this.semanticCompleted.has(id)) return true
+        this.semanticInputs.delete(id)
+        this.semanticCompleted.add(id)
+        if (this.semanticCompleted.size > 256) this.semanticCompleted.delete(this.semanticCompleted.values().next().value)
+        if (event.semantic_decision === 'continue' || !String(event.transcript || '').trim()) {
+          // A backchannel must not advance the generation or invalidate tools
+          // and audio belonging to the response that the provider preserved.
+          if (event.transcript?.trim()) this.send({
+            type: GatewayServerEvent.TRANSCRIPT_FINAL, role: 'user',
+            content: event.transcript.trim(), turnId: id,
+            semanticDecision: 'continue',
+          })
+          return true
+        }
+        this.#startSpeech(event, { providerOwnsCancellation: true })
+        this.#stopSpeech(event)
+      } else if (event.type === 'conversation.item.input_audio_transcription.failed'
+        || event.type === 'conversation.item.ambient_audio_transcription.completed') {
+        this.semanticInputs.delete(id)
+        return true
+      } else {
+        // STS owns VAD and the final decision. Provisional speech/commit and
+        // partial transcripts cannot claim the active response's turn.
+        return true
+      }
+    }
 
     if (event.type === 'input_audio_buffer.speech_started') {
       this.#startSpeech(event)
@@ -104,7 +140,7 @@ export class RealtimeInputRuntime {
     return true
   }
 
-  #startSpeech(event) {
+  #startSpeech(event, { providerOwnsCancellation = false } = {}) {
     const started = this.turns.beginVoice(event.item_id)
     if (!started.accepted) return
     this.clearResponseCandidate()
@@ -127,7 +163,7 @@ export class RealtimeInputRuntime {
       state: 'listening',
       turnId: started.context.turnId,
     })
-    this.getFrontend()?.cancel()
+    if (!providerOwnsCancellation) this.getFrontend()?.cancel()
   }
 
   #stopSpeech(event) {

@@ -1140,6 +1140,14 @@ export function createRealtimeSessionRuntime({
       // 桌面快捷键/托盘唤起恢复可见性和输入；Realtime 连接在休眠期间保持。
       if (sleeping) wakeFromSleep()
       else sleepController.recordActivity()
+      if (event.text?.trim() && voiceAccess.isActive() && outputEnabled
+        && realtimeSession.provider()?.key === 'speech-to-speech') {
+        realtimeSession.ensure().then(() => {
+          if (!closed && voiceAccess.isActive() && outputEnabled) {
+            realtimeSession.frontend.send({ type: 'wake_word.detected', text: event.text.trim() })
+          }
+        }).catch(reportFrontendError)
+      }
     } else if (event.type === GatewayClientEvent.INPUT_SUSPEND_ACK) {
       connectionLogger.debug('input.suspend_acknowledged', {
         clientType: descriptor.type,

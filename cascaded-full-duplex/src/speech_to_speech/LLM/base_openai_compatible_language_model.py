@@ -40,6 +40,7 @@ from speech_to_speech.LLM.chat import (
 )
 from speech_to_speech.LLM.compaction_prompt import CompactGenerateFn, build_compactor
 from speech_to_speech.LLM.delegation_trace import trace_context
+from speech_to_speech.LLM.dsml_speech_guard import normalize_speech_events
 from speech_to_speech.LLM.text_prompt import build_text_system_prompt
 from speech_to_speech.LLM.utils import (
     language_name_for_prompt,
@@ -826,6 +827,11 @@ class BaseOpenAICompatibleHandler(BaseHandler[LLMIn, LLMOut], ABC):
                         api_response = make_request()
                         events = (event_iterator_fn or self._iter_events)(api_response)
                 if events is not None:
+                    events = normalize_speech_events(
+                        events, optional_kwargs,
+                        cancelled=lambda: self._turn_is_cancelled(turn)
+                        or not self._turn_is_latest(turn.turn_id, turn.turn_revision),
+                    )
                     if self.stream:
                         generation_completed = yield from self._consume_streaming(events, state, turn)
                     else:

@@ -199,6 +199,7 @@ const GatewayClientPayloadSchemas = Object.freeze({
     clientStates: z.array(z.string().min(1)).optional(),
     takeoverRequested: z.boolean().optional(),
   }).passthrough(),
+  [GatewayClientEvent.WAKE]: z.object({ text: z.string().max(1000).optional() }).passthrough(),
   [GatewayClientEvent.AUDIO_APPEND]: z.object({
     audio: z.string().min(1),
   }).passthrough(),

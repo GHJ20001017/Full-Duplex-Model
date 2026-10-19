@@ -7,9 +7,15 @@ fi
 
 # ===== 本地配置：替换占位值；真实密钥不得提交到仓库 =====
 # 已设置的环境变量优先于这里的默认值。
-export OPENAI_API_KEY="${OPENAI_API_KEY:-替换为你的 API 密钥}"
-export LLM_BASE_URL="${LLM_BASE_URL:-https://你的服务域名/v1}"
-export LLM_MODEL="${LLM_MODEL:-替换为该服务实际提供的模型名称}"
+# 可在同目录的 start_voice_server.env.local 中配置密钥；该文件不进入 Git。
+# 显式设置的环境变量优先，避免本地配置覆盖调用方的密钥。
+voice_local_env="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/start_voice_server.env.local"
+if [[ -z "${OPENAI_API_KEY:-}" && -f "$voice_local_env" ]]; then
+  source "$voice_local_env"
+fi
+export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+export LLM_BASE_URL="${LLM_BASE_URL:-http://192.168.18.94:30377/v1}"
+export LLM_MODEL="${LLM_MODEL:-deepseek-v4.1-flash-nothink}"
 # 独立语义路由服务的完整接口 URL；按实际协议和地址修改。
 # 同机且未配置 TLS 时使用 http://127.0.0.1:8792/v1/systemone。
 export S2S_SEMANTIC_TURN_URL="${S2S_SEMANTIC_TURN_URL:-http://127.0.0.1:8792/v1/systemone}"
@@ -69,7 +75,7 @@ while (( $# )); do
   shift
 done
 
-[[ -n "$OPENAI_API_KEY" && "$OPENAI_API_KEY" != '替换为你的 API 密钥' ]] || fail 'Configure OPENAI_API_KEY in the script or environment.'
+[[ -n "$OPENAI_API_KEY" && "$OPENAI_API_KEY" != '替换为你的 API 密钥' ]] || fail 'Configure OPENAI_API_KEY in start_voice_server.env.local or the environment.'
 [[ -n "$base_url" && "$base_url" != 'https://你的服务域名/v1' ]] || fail 'Configure LLM_BASE_URL or pass --responses_api_base_url.'
 [[ -n "$model" && "$model" != '替换为该服务实际提供的模型名称' ]] || fail 'Configure LLM_MODEL or pass --model_name.'
 
@@ -113,7 +119,7 @@ args+=(
   --init_chat_prompt '你是 ARVIS，一个实时语音助手。请用简洁、自然的中文回答。'
   # TTS defaults require an NVIDIA GPU; they are not macOS defaults.
   --tts qwen3
-  --qwen3_tts_model_name Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+  --qwen3_tts_model_name "${QWEN3_TTS_MODEL_NAME:-/gpu3/guhj/models/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
   --qwen3_tts_device cuda --qwen3_tts_backend torch
   --qwen3_tts_language Chinese --qwen3_tts_speaker Aiden
   --qwen3_tts_streaming_chunk_size 4 --qwen3_tts_max_new_tokens 1536
