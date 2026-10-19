@@ -1,0 +1,21 @@
+# OS metadata and Python caches
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local source backups
+*.py.before-start-*
+
+# Local training data and manifests
+/cascaded-full-duplex/turn_intent_25k_random_length.jsonl
+/cascaded-full-duplex/turn_intent_25k_random_length.jsonl.manifest.jsonl
+
+# Local audio samples
+/end-to-end-full-duplex/cases/*.wav
+
+# Downloaded model assets (keep Python model implementations tracked)
+/end-to-end-full-duplex/models/mimi/
+/end-to-end-full-duplex/models/qwen3-1.7b/
+/end-to-end-full-duplex/models/qwen3-asr-1.7b/
+/end-to-end-full-duplex/models/qwen3-forcedaligner-0.6b/
+/semantic-route-jev/checkpoint/
