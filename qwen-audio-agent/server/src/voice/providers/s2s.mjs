@@ -40,6 +40,7 @@ export const s2sProvider = {
   protocol: gaRealtimeProtocol,
 
   capabilities: {
+    semanticInterruption: true,
     // speech-to-speech applies session.update without sending session.updated.
     acknowledgesSessionUpdate: false,
     // One response slot per session: a gateway response.create can race a
@@ -83,7 +84,7 @@ export const s2sProvider = {
           // 16 kHz PCM pipeline rate. OpenAI's GA AudioPCM schema only accepts
           // 24 kHz when the format is explicit, so declaring 16 kHz here would
           // make the entire session.update invalid.
-          turn_detection: { type: 'server_vad', interrupt_response: true },
+          turn_detection: { type: 'server_vad', interrupt_response: true, threshold: 0.5, silence_duration_ms: 200 },
         },
         output: {
           // Negotiate the common client playback rate explicitly. The

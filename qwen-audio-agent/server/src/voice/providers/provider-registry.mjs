@@ -28,6 +28,7 @@ const PROTOCOL_METHODS = [
 ]
 
 const CAPABILITY_FLAGS = [
+  'semanticInterruption',
   'acknowledgesSessionUpdate',
   'singleResponseSlot',
   'responseMetadataCorrelation',

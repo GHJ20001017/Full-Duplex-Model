@@ -30,6 +30,7 @@ from aiortc.mediastreams import MediaStreamError, MediaStreamTrack
 
 from speech_to_speech.api.openai_realtime.service import PIPELINE_SAMPLE_RATE
 from speech_to_speech.api.openai_realtime.transports import SessionTransport
+from speech_to_speech.LLM.delegation_trace import trace_realtime_event
 from speech_to_speech.pipeline.transcript_logging import log_exception, transcript_for_log
 
 if TYPE_CHECKING:
@@ -283,7 +284,10 @@ class WebRTCSession(SessionTransport):
             return
         for event in events:
             try:
-                dc.send(json.dumps(event.model_dump()))
+                payload = event.model_dump()
+                dc.send(json.dumps(payload))
+                if not event.type.endswith(".delta"):
+                    trace_realtime_event("realtime_outbound", payload)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"[WebRTC] Data channel send error: {e}")
 

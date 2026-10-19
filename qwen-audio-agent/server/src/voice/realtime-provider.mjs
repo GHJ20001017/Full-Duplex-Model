@@ -1,3 +1,4 @@
+import { createDelegationTrace, delegationWirePayload } from '../core/delegation-trace.mjs'
 import WebSocket from 'ws'
 import { randomUUID } from 'node:crypto'
 import {
@@ -115,6 +116,7 @@ export class RealtimeFrontend {
     onError,
     onClose,
     onDiagnostic,
+    getTraceContext = () => ({}),
     onResponseSettled,
     agentContext = {},
     sessionOptions = {},
@@ -125,6 +127,12 @@ export class RealtimeFrontend {
   } = {}) {
     this.provider = validateRealtimeProvider(provider)
     this.connectionId = randomUUID()
+    this.getTraceContext = getTraceContext
+    this.traceResponses = new Map()
+    this.delegationTrace = createDelegationTrace({ context: () => ({
+      provider: this.provider.key, connectionId: this.connectionId,
+      upstreamSessionId: this.traceSessionId || '', ...getTraceContext(),
+    }) })
     this.protocol = validateRealtimeProtocol(
       provider.createProtocol?.({
         connectionId: this.connectionId,
@@ -189,6 +197,7 @@ export class RealtimeFrontend {
   }
 
   diagnose(event) {
+    this.delegationTrace('provider.diagnostic', event)
     try { this.onDiagnostic?.(event) } catch { /* Logging is not control flow. */ }
   }
 
@@ -286,7 +295,30 @@ export class RealtimeFrontend {
     })
   }
 
+  traceWire(direction, event, extra = {}) {
+    if (!process.env.QWEN_AUDIO_DELEGATION_TRACE_PATH) return
+    try {
+      const payload = delegationWirePayload(event)
+      if (!payload) return
+      if (event.type === 'session.created') this.traceSessionId = event.session?.id
+      const responseId = realtimeResponseId(event)
+      const requestId = this.protocol.responseCorrelationId?.(event)
+      const pending = this.responseWaiters.get(responseId)
+        || this.pendingResponses.find(item => item.requestId === requestId)
+      const correlation = pending?.context || this.traceResponses.get(responseId) || this.getTraceContext(event)
+      if (event.type === 'response.created' && responseId) {
+        this.traceResponses.set(responseId, { ...correlation })
+        if (this.traceResponses.size > 256) this.traceResponses.delete(this.traceResponses.keys().next().value)
+      }
+      this.delegationTrace(`wire.${direction}`, {
+        responseId, requestId, ...correlation,
+        ...extra, payload,
+      })
+    } catch { /* Diagnostics must not alter the protocol. */ }
+  }
+
   handleProviderEvent(providerEvent, { onSessionReady, onSessionError } = {}) {
+    this.traceWire('inbound', providerEvent)
     const events = normalizedEvents(
       this.protocol.normalizeIncoming(providerEvent),
     )
@@ -1220,7 +1252,7 @@ export class RealtimeFrontend {
   }
 
   sendWireMessage(body, options = {}) {
-    return sendBoundedWebSocket(this.ws, JSON.stringify(body), {
+    const sent = sendBoundedWebSocket(this.ws, JSON.stringify(body), {
       ...options,
       onFailure: ({ code, bufferedBytes, messageBytes, limit }) => {
         this.ready = false
@@ -1231,6 +1263,8 @@ export class RealtimeFrontend {
         })
       },
     })
+    this.traceWire('outbound', body, { sent })
+    return sent
   }
 
   send(payload, options = {}) {

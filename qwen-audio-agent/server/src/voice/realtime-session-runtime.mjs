@@ -206,6 +206,11 @@ export function createRealtimeSessionRuntime({
       ...(sessionOutputVoice ? { voice: sessionOutputVoice } : {}),
     }),
     shouldReconnect: () => inputEnabled || outputEnabled,
+    getTraceContext: event => ({
+      sessionId,
+      turnId: event?.item_id ? turns.resolveInput(event.item_id)?.turnId || '' : turns.turnId,
+      committedTurnId: turns.committedTurnId,
+    }),
     onEvent: event => handleEvent(event),
     onDiagnostic: diagnostic => {
       const { event, ...fields } = diagnostic
@@ -390,6 +395,14 @@ export function createRealtimeSessionRuntime({
     respondAuthorization,
     respondInput,
     permissionPolicy,
+    willAnnounceExecutionStarted: taskId => taskCoordinator.willAnnounceExecutionStarted(taskId),
+    onToolResponseSilent: ({ turnId }) => {
+      if (closed) return
+      announcementWindow.responseDone({ turnId, origin: 'agent' })
+      taskCoordinator.announcePendingPermissions()
+      taskCoordinator.announcePendingInputs()
+      announcements.flush()
+    },
     // The permission decision was accepted locally but never reached the
     // backend: the authorization is still pending there, so clear the
     // announced mark and let the standard re-announce path ask again.
@@ -1127,6 +1140,14 @@ export function createRealtimeSessionRuntime({
       // 桌面快捷键/托盘唤起恢复可见性和输入；Realtime 连接在休眠期间保持。
       if (sleeping) wakeFromSleep()
       else sleepController.recordActivity()
+      if (event.text?.trim() && voiceAccess.isActive() && outputEnabled
+        && realtimeSession.provider()?.key === 'speech-to-speech') {
+        realtimeSession.ensure().then(() => {
+          if (!closed && voiceAccess.isActive() && outputEnabled) {
+            realtimeSession.frontend.send({ type: 'wake_word.detected', text: event.text.trim() })
+          }
+        }).catch(reportFrontendError)
+      }
     } else if (event.type === GatewayClientEvent.INPUT_SUSPEND_ACK) {
       connectionLogger.debug('input.suspend_acknowledged', {
         clientType: descriptor.type,

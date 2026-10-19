@@ -102,9 +102,17 @@ test('ACP submit exposes Work values while Session details stay private', async 
     state: 'working',
     activity: [],
   })
-  assert.equal(events[0].type, 'backend.activity')
-  assert.equal(events[0].taskId, 'work-one')
-  assert.equal(events[0].ownerId, 'owner-one')
+  assert.deepEqual(events.map(event => event.type), [
+    'backend.execution.started',
+    'backend.activity',
+  ])
+  assert.equal(events[1].activity.kind, 'tool')
+  assert.equal(events[1].activity.status, 'in_progress')
+  for (const event of events) {
+    assert.equal(event.taskId, 'work-one')
+    assert.equal(event.ownerId, 'owner-one')
+    assert.equal('sessionId' in event, false)
+  }
   assert.equal(client.prompts[0][0].type, 'text')
   assert.doesNotMatch(client.prompts[0][0].text, /reference\.png|work-one|job_1/u)
   assert.deepEqual(client.prompts[0][1], {

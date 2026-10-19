@@ -135,6 +135,7 @@ export const GatewayTaskSchema = z.object({
   turnId: z.string().nullable().optional(),
   createdAt: z.number(),
   startedAt: z.number().nullable().optional(),
+  executionStartedAt: z.number().nullable().optional(),
   completedAt: z.number().nullable().optional(),
   elapsedMs: z.number(),
   result: z.string().nullable().optional(),
@@ -198,6 +199,7 @@ const GatewayClientPayloadSchemas = Object.freeze({
     clientStates: z.array(z.string().min(1)).optional(),
     takeoverRequested: z.boolean().optional(),
   }).passthrough(),
+  [GatewayClientEvent.WAKE]: z.object({ text: z.string().max(1000).optional() }).passthrough(),
   [GatewayClientEvent.AUDIO_APPEND]: z.object({
     audio: z.string().min(1),
   }).passthrough(),

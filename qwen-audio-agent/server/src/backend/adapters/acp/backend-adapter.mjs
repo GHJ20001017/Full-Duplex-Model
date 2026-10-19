@@ -426,7 +426,10 @@ export class AcpBackendAdapter {
     if (this.builtinMcp.length) this.builtinMcpLifecycle.markUsed()
     const key = coordinatorKey(ownerId, this.protocol)
     if (this.coordinatorSessions.has(key)) {
-      return this.coordinatorSessions.get(key)
+      const session = this.coordinatorSessions.get(key)
+      if (session.connectionGeneration === this.client.connectionGeneration) return session
+      // A fresh ACP process must restore the Session and reconnect its MCPs.
+      this.coordinatorSessions.delete(key)
     }
     if (this.coordinatorSessionPromises.has(key)) {
       return this.coordinatorSessionPromises.get(key)
@@ -581,6 +584,17 @@ export class AcpBackendAdapter {
     run.receivedUpdate = true
     run.toolCalls ||= new Map()
     run.messageStreams ||= {}
+    const kind = update?.sessionUpdate
+    const hasExecutionEvidence = (
+      ['agent_message_chunk', 'agent_thought_chunk'].includes(kind)
+      && update.content?.type === 'text' && clean(update.content.text)
+    ) || (
+      ['tool_call', 'tool_call_update'].includes(kind)
+      && ['in_progress', 'completed'].includes(update.status)
+    )
+    if (hasExecutionEvidence) {
+      run.onEvent?.(backendEvent(BackendEventType.EXECUTION_STARTED))
+    }
     const streamedMessage = messageFromUpdate(update, run.messageStreams)
     if (streamedMessage?.message) {
       run.onEvent?.(backendEvent(BackendEventType.MESSAGE, {
@@ -988,17 +1002,9 @@ export class AcpBackendAdapter {
     session.permissionScopeId = permissionScopeId
     this.activeCoordinatorTurns.add(session.sessionId)
     try {
-      // Re-supply MCP definitions on resume: ACP Sessions do not require the
-      // agent to persist client-provided MCP connections across processes.
-      if (mcpServers.length && !session.isNew) {
-        await this.client.resumeSession(session.sessionId, {
-          cwd: session.cwd || this.directory,
-          mcpServers,
-          meta: this.coordinatorMeta(ownerId),
-          ownerId,
-          role: 'coordinator',
-        })
-      }
+      // ensureCoordinatorSession supplies MCPs on create/restore. An active
+      // Session already owns those connections; resuming it again is not a
+      // valid refresh operation for every ACP implementation.
       const result = await this.promptCoordinator(session, prompt, run, {
         signal,
         onUpdate: update => this.onSessionUpdate(run, update),

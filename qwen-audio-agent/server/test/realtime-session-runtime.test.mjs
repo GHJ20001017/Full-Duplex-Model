@@ -21,7 +21,7 @@ async function until(predicate) {
   }
 }
 
-function harness(t, { backend = true, ...overrides } = {}) {
+function harness(t, { backend = true, respondAuthorization, ...overrides } = {}) {
   const ownerId = 'runtime-owner', sessionId = 'conversation'
   const events = [], frontends = [], tasks = [], observations = [], done = []
   const runs = new Map(), memoryListeners = new Set()
@@ -41,7 +41,7 @@ function harness(t, { backend = true, ...overrides } = {}) {
     }),
     cancel: async () => ({ layer: 'backend', state: 'cancelled' }),
   }
-  const operations = new TaskOperations({ taskManager: manager, backendRuntime })
+  const operations = new TaskOperations({ taskManager: manager, backendRuntime, respondAuthorization })
   let active = false
   const runtime = createRealtimeSessionRuntime({
     ownerId, sessionId, logger, taskManager: manager, taskOperations: operations,
@@ -70,7 +70,7 @@ function harness(t, { backend = true, ...overrides } = {}) {
     taskAnnouncementFactory: createTaskAnnouncementRuntime,
     realtimeFrontendFactory: options => {
       const f = {
-        provider, ready: false, inputs: [], audio: [], images: [], outputs: [], deliveries: [], updates: [], cancels: 0,
+        provider, ready: false, inputs: [], audio: [], images: [], outputs: [], deliveries: [], updates: [], ensuredResponses: [], cancels: 0,
         initialContext: options.agentContext, sessionOptions: options.sessionOptions,
         async connect() { this.ready = true },
         close() { this.ready = false },
@@ -85,7 +85,9 @@ function harness(t, { backend = true, ...overrides } = {}) {
           this.deliveries.push({ text, origin, context, settings })
           return { completed: true, contextInjected: true }
         },
-        async appendUserInputContext() {}, async ensureResponse() {}, async whenIdle() {},
+        async appendUserInputContext() {},
+        async ensureResponse(context, settings) { this.ensuredResponses.push({ context, settings }) },
+        async whenIdle() {},
         emit: options.onEvent,
         settle: options.onResponseSettled,
         disconnect() { this.ready = false; options.onClose() },
@@ -255,6 +257,84 @@ test('pending permission tool exposure and input-busy retry use the production c
   assert.ok(!h.events.some(event => event.type === 'error'))
   h.runs.get(task.id).onEvent({ type: 'backend.permission.resolved', permission: { id: 'auth_1', status: 'approved' } })
   assert.equal(h.manager.get(task.id).authorization, null)
+})
+
+test('approved permission releases verified startup without a redundant follow-up or blocked announcement window', async t => {
+  const approvals = []
+  const h = harness(t, {
+    respondAuthorization: async (...args) => { approvals.push(args); return { accepted: true } },
+  })
+  const f = await h.connect()
+  h.send({ type: Input.TEXT_MESSAGE, text: 'approve the file operation' })
+  await until(() => f.inputs.length === 1)
+  f.emit({ type: 'response.created', response: { id: 'user-response' } })
+  f.emit({ type: 'response.done', response: { id: 'user-response', status: 'completed' } })
+  const task = h.request('read file')
+  await until(() => h.runs.has(task.id))
+  const run = h.runs.get(task.id)
+  run.onEvent({ type: 'backend.execution.started' })
+  run.onEvent({ type: 'backend.permission.requested', permission: {
+    id: 'auth-startup', status: 'pending', summary: 'read a file',
+  } })
+  await until(() => f.deliveries.some(delivery => delivery.origin === 'permission'))
+  await tick()
+  assert.equal(f.deliveries.some(delivery => delivery.origin === 'execution-started'), false)
+
+  h.send({ type: Input.TEXT_MESSAGE, text: '允许' })
+  await until(() => f.inputs.length === 2)
+  f.emit({ type: 'response.created', response: { id: 'permission-response' } })
+  f.emit({ type: 'response.function_call_arguments.done', response_id: 'permission-response',
+    call_id: 'permission-call', name: 'respond_permission',
+    arguments: JSON.stringify({ permission_id: 'auth-startup', decision: 'task' }) })
+  await until(() => approvals.length === 1 && f.outputs.length === 1)
+  assert.equal(f.outputs[0].result.status, 'submitted')
+  assert.equal(f.outputs[0].settings.createResponse, false)
+  run.onEvent({ type: 'backend.permission.resolved', permission: { id: 'auth-startup', status: 'approved' } })
+  await until(() => h.manager.get(task.id).authorization === null)
+  f.emit({ type: 'response.done', response: { id: 'permission-response', status: 'completed' } })
+
+  await until(() => f.deliveries.filter(delivery => delivery.origin === 'execution-started').length === 1)
+  await tick()
+  assert.equal(f.deliveries.filter(delivery => delivery.origin === 'execution-started').length, 1)
+  assert.equal(f.inputs.length, 2)
+  assert.equal(f.ensuredResponses.length, 0, 'permission approval must not trigger an agent follow-up')
+  assert.equal(h.manager.get(task.id).authorization, null)
+})
+
+test('rejected permission still produces the normal response when the provider can respond', async t => {
+  const approvals = []
+  const h = harness(t, {
+    respondAuthorization: async (...args) => { approvals.push(args); return { accepted: true } },
+  })
+  const f = await h.connect()
+  h.send({ type: Input.TEXT_MESSAGE, text: 'reject the file operation' })
+  await until(() => f.inputs.length === 1)
+  f.emit({ type: 'response.created', response: { id: 'reject-user-response' } })
+  f.emit({ type: 'response.done', response: { id: 'reject-user-response', status: 'completed' } })
+  const task = h.request('delete file')
+  await until(() => h.runs.has(task.id))
+  const run = h.runs.get(task.id)
+  run.onEvent({ type: 'backend.permission.requested', permission: {
+    id: 'auth-reject', status: 'pending', summary: 'delete a file',
+  } })
+  await until(() => f.deliveries.some(delivery => delivery.origin === 'permission'))
+  await tick()
+  h.send({ type: Input.TEXT_MESSAGE, text: '不允许' })
+  await until(() => f.inputs.length === 2)
+  f.emit({ type: 'response.created', response: { id: 'reject-response' } })
+  f.emit({ type: 'response.function_call_arguments.done', response_id: 'reject-response',
+    call_id: 'reject-call', name: 'respond_permission',
+    arguments: JSON.stringify({ permission_id: 'auth-reject', decision: 'reject' }) })
+  await until(() => approvals.length === 1 && f.outputs.length === 1)
+  assert.equal(f.outputs[0].result.status, 'submitted')
+  assert.equal(f.outputs[0].result.decision, 'reject')
+  assert.equal(f.outputs[0].settings.createResponse, false)
+  run.onEvent({ type: 'backend.permission.resolved', permission: { id: 'auth-reject', status: 'denied' } })
+  f.emit({ type: 'response.done', response: { id: 'reject-response', status: 'completed' } })
+  await until(() => h.manager.get(task.id).authorization === null)
+  await until(() => f.ensuredResponses.length === 1)
+  assert.match(f.ensuredResponses[0].settings.response.instructions, /已拒绝/)
+  assert.equal(f.outputs.length, 1)
 })
 
 test('a transport reconnect restores an unresolved permission without restarting backend work', async t => {

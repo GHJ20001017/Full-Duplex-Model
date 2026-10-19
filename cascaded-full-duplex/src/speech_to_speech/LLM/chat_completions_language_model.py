@@ -35,6 +35,8 @@ from speech_to_speech.LLM.base_openai_compatible_language_model import (
 )
 from speech_to_speech.LLM.chat import Chat
 from speech_to_speech.LLM.compaction_prompt import CompactGenerateFn
+from speech_to_speech.LLM.deepseek_dsml import normalize_response, normalize_stream
+from speech_to_speech.LLM.delegation_trace import DelegationTrace, TracedStream
 from speech_to_speech.utils.utils import _generate_id
 
 logger = logging.getLogger(__name__)
@@ -186,14 +188,43 @@ def _request_chat_completions(
     create_kwargs = dict(optional_kwargs)
     if stream:
         create_kwargs["stream_options"] = {"include_usage": True}
-    return client.chat.completions.create(
-        model=model_name,
-        messages=messages,
-        stream=stream,
-        extra_body=extra_body,
-        timeout=timeout,
-        **create_kwargs,
-    )
+    trace = DelegationTrace.from_env()
+    if trace is not None:
+        trace.protect_client(client)
+        trace.emit("request", {
+            "model": model_name, "messages": messages, "stream": stream,
+            "extra_body": extra_body, "timeout": timeout,
+            "tools": create_kwargs.get("tools"), "tool_choice": create_kwargs.get("tool_choice"),
+            **create_kwargs,
+        })
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            stream=stream,
+            extra_body=extra_body,
+            timeout=timeout,
+            **create_kwargs,
+        )
+    except BaseException as exc:
+        if trace is not None:
+            trace.emit("request_error", {"type": type(exc).__name__})
+        raise
+    if stream:
+        raw = TracedStream(response, trace, "raw_chunk") if trace is not None else response
+        normalized = normalize_stream(raw, optional_kwargs)
+        return TracedStream(normalized, trace, "normalized_chunk") if trace is not None else normalized
+    if trace is not None:
+        trace.emit("raw_response", response)
+    try:
+        normalized = normalize_response(response, optional_kwargs)
+    except BaseException as exc:
+        if trace is not None:
+            trace.emit("normalization_error", {"type": type(exc).__name__})
+        raise
+    if trace is not None:
+        trace.emit("normalized_response", normalized)
+    return normalized
 
 
 def _tool_calls_from_accum(tool_accum: dict[int, dict[str, str]]) -> Iterator[ToolCall]:

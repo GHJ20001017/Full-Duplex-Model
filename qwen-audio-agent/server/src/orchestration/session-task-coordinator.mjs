@@ -25,7 +25,8 @@ export class SessionTaskCoordinator {
     this.retryMs = Math.max(100, retryMs)
     this.claimantId = `session_${randomUUID()}`
     this.requests = { permission: new Map(), input: new Map() }
-    this.closed = false
+    this.startups = new Map()
+    this.deliveredStartups = new Set()
     this.retryTimer = null
     this.unsubscribe = null
     this.announcements = presentation.createAnnouncements({
@@ -86,8 +87,75 @@ export class SessionTaskCoordinator {
       this.retryTimer = null
       this.announcePendingPermissions()
       this.announcePendingInputs()
+      this.announcePendingExecutionStarts()
     }, this.retryMs)
     this.retryTimer.unref?.()
+  }
+
+  startupCanDeliver() {
+    const state = this.presentation.state()
+    return this.canDeliver() && !state.busy
+      && !state.windowBlocked && !state.userSpeaking
+  }
+
+  taskForStartup(id) {
+    return this.activeTasks().find(task => task.id === id
+      && task.executionStartedAt != null)
+  }
+
+  startupReady(task) {
+    return task && task.authorization?.status !== 'pending'
+      && task.inputRequest?.status !== 'pending'
+  }
+
+  willAnnounceExecutionStarted(taskId) {
+    // Pending permissions delay startup delivery; their resolution retries it.
+    return this.canDeliver() && Boolean(this.taskForStartup(taskId))
+      && !this.deliveredStartups.has(taskId)
+  }
+
+  announceExecutionStarted(task) {
+    if (!task?.id || this.closed || this.deliveredStartups.has(task.id)
+      || this.startups.has(task.id)) return
+    const current = this.taskForStartup(task.id)
+    if (!current || !this.startupReady(current)) return
+    if (!this.startupCanDeliver()) {
+      if (this.canDeliver()) this.scheduleRetry()
+      return
+    }
+    const attempt = {}
+    this.startups.set(task.id, attempt)
+    const shouldDeliver = () => this.startups.get(task.id) === attempt
+      && this.startupCanDeliver() && this.startupReady(this.taskForStartup(task.id))
+    const retry = () => {
+      if (this.closed || this.startups.get(task.id) !== attempt) return
+      this.startups.delete(task.id)
+      if (this.taskForStartup(task.id)) this.scheduleRetry()
+    }
+    Promise.resolve().then(() => Promise.resolve()).then(() => {
+      if (!shouldDeliver()) return { completed: false }
+      return this.presentation.presentExecutionStarted(task, { shouldDeliver })
+    }).then(outcome => {
+      if (outcome?.completed) {
+        this.deliveredStartups.add(task.id)
+        while (this.deliveredStartups.size > 512) {
+          this.deliveredStartups.delete(this.deliveredStartups.values().next().value)
+        }
+      } else retry()
+    }).catch(retry)
+  }
+
+  announcePendingExecutionStarts() {
+    const activeIds = new Set(this.activeTasks().map(task => task.id))
+    for (const id of this.deliveredStartups) {
+      if (!activeIds.has(id)) this.deliveredStartups.delete(id)
+    }
+    for (const id of this.startups.keys()) {
+      if (!this.taskForStartup(id)) this.startups.delete(id)
+    }
+    for (const task of this.activeTasks()) {
+      if (task.executionStartedAt != null) this.announceExecutionStarted(task)
+    }
   }
 
   announceRequest(task, kind) {
@@ -129,8 +197,14 @@ export class SessionTaskCoordinator {
     for (const task of tasks) this.announceRequest(task, kind)
   }
 
-  announcePendingPermissions() { this.announcePending('permission') }
-  announcePendingInputs() { this.announcePending('input') }
+  announcePendingPermissions() {
+    this.announcePending('permission')
+    this.announcePendingExecutionStarts()
+  }
+  announcePendingInputs() {
+    this.announcePending('input')
+    this.announcePendingExecutionStarts()
+  }
 
   resetPresentation() {
     // Requests belong to Tasks, but their delivery receipts belong to one
@@ -139,6 +213,7 @@ export class SessionTaskCoordinator {
     this.retryTimer = null
     this.requests.permission.clear()
     this.requests.input.clear()
+    this.startups.clear()
   }
 
   retryPermission(id) {
@@ -175,6 +250,10 @@ export class SessionTaskCoordinator {
     }
     if (task.sessionId !== this.sessionId) return
     this.onTaskEvent(event)
+    if (event.type === TaskDomainEvent.EXECUTION_STARTED) {
+      this.announceExecutionStarted(task)
+      return
+    }
     const state = this.presentation.state()
     if (event.type === TaskDomainEvent.UPDATED && event.message
       && task.authorization?.status !== 'pending' && task.inputRequest?.status !== 'pending'
@@ -203,9 +282,11 @@ export class SessionTaskCoordinator {
         this.requests[resolved].delete(id)
         this.presentation.resolveRequest(resolved, id, { announced })
       }
+      this.announcePendingExecutionStarts()
     }
     if ([TaskDomainEvent.COMPLETED, TaskDomainEvent.FAILED, TaskDomainEvent.CANCELLED]
       .includes(event.type)) {
+      this.startups.delete(task.id)
       this.announcements.progress.remove(task.id)
     }
     if ([TaskDomainEvent.COMPLETED, TaskDomainEvent.FAILED].includes(event.type)) {

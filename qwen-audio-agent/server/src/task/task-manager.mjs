@@ -488,6 +488,7 @@ export class TaskManager {
       laneLimit,
       createdAt: Date.now(),
       startedAt: null,
+      executionStartedAt: null,
       completedAt: null,
       elapsedMs: 0,
       result: null,
@@ -575,6 +576,7 @@ export class TaskManager {
         : null,
       createdAt: Date.now(),
       startedAt: null,
+      executionStartedAt: null,
       completedAt: null,
       elapsedMs: 0,
       result: null,
@@ -635,6 +637,20 @@ export class TaskManager {
     }, this.progressEventIntervalMs)
     task.progressTimer.unref?.()
     const onEvent = event => {
+      if (event?.type === BackendEventType.EXECUTION_STARTED) {
+        // RUNNING reserves local capacity; only adapter-verified remote evidence
+        // may set this durable marker. Never revive terminal or blocked work.
+        if (
+          task.executionStartedAt != null
+          || ![TaskStatus.RUNNING, TaskStatus.DELEGATED].includes(task.status)
+          || task.abortController?.signal.aborted
+          || task.authorization?.status === 'pending'
+          || task.inputRequest?.status === 'pending'
+        ) return
+        task.executionStartedAt = Date.now()
+        this.emit(TaskDomainEvent.EXECUTION_STARTED, task)
+        return
+      }
       if (
         event?.type === BackendEventType.AUTHORIZATION_REQUESTED
         && event.permission

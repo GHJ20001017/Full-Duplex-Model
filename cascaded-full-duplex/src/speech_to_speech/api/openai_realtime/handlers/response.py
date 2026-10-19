@@ -28,6 +28,7 @@ from openai.types.realtime.realtime_response_usage import RealtimeResponseUsage
 
 from speech_to_speech.api.openai_realtime.handlers.base import RealtimeBaseHandler
 from speech_to_speech.LLM.chat import ChatItemError, add_supported_item
+from speech_to_speech.LLM.delegation_trace import trace_realtime_event
 from speech_to_speech.pipeline.events import (
     AssistantOutputEvent,
     AssistantResponseDoneEvent,
@@ -54,6 +55,19 @@ class ResponseHandler(RealtimeBaseHandler):
 
     # ── ID / state helpers ────────────────────────
 
+    def _trace_response_mapping(self, conn_id: str) -> None:
+        """Record the pipeline/wire identity while both are still available."""
+        st = self._state(conn_id)
+        if st.current_response_key is not None and st.current_response_id is not None:
+            trace_realtime_event(
+                "realtime_response_mapping",
+                {
+                    "conn_id": conn_id,
+                    "response_key": st.current_response_key,
+                    "response_id": st.current_response_id,
+                },
+            )
+
     def _ensure_response(self, conn_id: str, response_key: str | None = None) -> tuple[str, str]:
         """Ensure a response and output item exist, creating them if needed."""
         st = self._state(conn_id)
@@ -70,8 +84,10 @@ class ResponseHandler(RealtimeBaseHandler):
             st.current_response_key = response_key
             self._start_item(conn_id)
             st.in_response = True
+            self._trace_response_mapping(conn_id)
         elif st.current_response_key is None:
             st.current_response_key = response_key
+            self._trace_response_mapping(conn_id)
         st.clear_pending_response(effective_response_key)
         return st.current_response_id, self._current_item_id(conn_id)
 
@@ -279,6 +295,7 @@ class ResponseHandler(RealtimeBaseHandler):
         st.current_response_params = event.response
         st.current_response_id = _generate_id("resp")
         st.current_response_key = request.response_key
+        self._trace_response_mapping(conn_id)
         st.assistant_text = ""
         st.response_created_pending_key = request.response_key
         self._start_item(conn_id)
@@ -606,6 +623,7 @@ class ResponseHandler(RealtimeBaseHandler):
         st.current_response_params = event.response
         st.current_response_id = _generate_id("resp")
         st.current_response_key = request.response_key
+        self._trace_response_mapping(conn_id)
         st.assistant_text = ""
         st.response_created_pending_key = request.response_key
         self._start_item(conn_id)

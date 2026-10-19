@@ -1,0 +1,224 @@
+"""Conservative wire-level fallback for DeepSeek DSML tool containers.
+
+Only a container at the beginning of content is executable; quoted/embedded
+examples remain text. Marked responses are validated in full before any call
+is released. DSML string values are raw text, not XML entities.
+
+Streaming responses are wrapped in :class:`_NormalizedStream`, which forwards
+``close`` (idempotently) to the underlying HTTP response even when it was never
+iterated or is closed concurrently. All normalization state is per-wrapper, so
+nothing is shared on the handler.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import re
+from collections.abc import Iterator
+from threading import Lock
+from typing import Any
+
+from jsonschema import ValidationError, validate
+from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageFunctionToolCall
+
+_MARKERS = ("<｜DSML｜", "<DSML")
+# A lone "<" is ordinary text; "<｜" (or a longer marker prefix) is identifiable.
+_MARKER_PREFIX_MIN = len("<｜")
+_CONTAINER = re.compile(r"<｜DSML｜(tool_calls|function_calls|calls)>")
+_INVOKE = re.compile(r'<｜DSML｜invoke name="([^"<>]+)">')
+_PARAMETER = re.compile(r'<｜DSML｜parameter name="([^"<>]+)" string="(true|false)">')
+
+
+def _candidate(text: str) -> bool:
+    """Whether a streaming prefix could still grow into a DSML container.
+
+    A lone ``<`` is a candidate (it may begin a marker split across chunks) but
+    is not *identified* as DSML here; :func:`_looks_like_dsml` decides at EOF so
+    ordinary ``<``/``whitespace + <`` text is preserved rather than rejected.
+    """
+    text = text.lstrip()
+    return not text or any(marker.startswith(text) or text.startswith(marker) for marker in _MARKERS)
+
+
+def _looks_like_dsml(text: str) -> bool:
+    """True for complete text that must be parsed as DSML.
+
+    Requires at least ``<｜`` so a bare ``<`` (or whitespace + ``<``) falls
+    through to ordinary text, while an identifiable ``<｜DSML…`` prefix does not.
+    """
+    text = text.strip()
+    return any(text.startswith(marker) or (len(text) >= _MARKER_PREFIX_MIN and marker.startswith(text))
+               for marker in _MARKERS)
+
+
+def _invalid() -> None:
+    raise ValueError("Invalid, truncated, or unauthorized DeepSeek DSML tool response")
+
+
+def _parse(text: str, options: dict[str, Any]) -> list[dict[str, Any]]:
+    definitions = {}
+    for tool in options.get("tools") or []:
+        if tool.get("type") == "function":
+            function = tool.get("function", tool)
+            definitions[function["name"]] = function
+    allowed = set(definitions)
+    choice = options.get("tool_choice")
+    if choice == "none":
+        allowed.clear()
+    elif isinstance(choice, dict):
+        allowed.intersection_update([choice.get("function", choice).get("name")])
+    # Canonicalize only protocol tag prefixes. DSML inside parameter values is
+    # rejected below, and ordinary XML/entities in raw string values stay intact.
+    text = text.strip().replace("<DSML ", "<｜DSML｜").replace("</DSML ", "</｜DSML｜")
+    match = _CONTAINER.match(text)
+    if not match or not allowed:
+        _invalid()
+    end = f"</｜DSML｜{match[1]}>"
+    if not text.endswith(end):
+        _invalid()
+    body = text[match.end():-len(end)].strip()
+    calls = []
+    while body:
+        invoke = _INVOKE.match(body)
+        if not invoke or invoke[1] not in allowed:
+            _invalid()
+        name = invoke[1]
+        body = body[invoke.end():].lstrip()
+        arguments = {}
+        while not body.startswith("</｜DSML｜invoke>"):
+            parameter = _PARAMETER.match(body)
+            if not parameter or parameter[1] in arguments:
+                _invalid()
+            body = body[parameter.end():]
+            value, separator, body = body.partition("</｜DSML｜parameter>")
+            if not separator or "｜DSML｜" in value or "<DSML" in value or "</DSML" in value:
+                _invalid()
+            if parameter[2] == "false":
+                try:
+                    value = json.loads(value)
+                    # Reject non-JSON NaN/Infinity accepted by Python's decoder.
+                    json.dumps(value, allow_nan=False)
+                except (ValueError, TypeError):
+                    _invalid()
+            arguments[parameter[1]] = value
+            body = body.lstrip()
+        body = body[len("</｜DSML｜invoke>"):].lstrip()
+        schema = definitions[name].get("parameters")
+        if schema is not None:
+            try:
+                validate(arguments, schema)
+            except ValidationError:
+                _invalid()
+        calls.append({"type": "function", "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}})
+    if not calls or (options.get("parallel_tool_calls") is False and len(calls) > 1):
+        _invalid()
+    return calls
+
+
+def _replace(obj: Any, **updates: Any) -> Any:
+    result = copy.copy(obj)
+    for key, value in updates.items():
+        setattr(result, key, value)
+    return result
+
+
+def normalize_response(response: Any, options: dict[str, Any]) -> Any:
+    if not response.choices:
+        return response
+    message = response.choices[0].message
+    text = message.content or ""
+    if not _looks_like_dsml(text):
+        return response
+    if message.tool_calls or getattr(message, "refusal", None):
+        _invalid()
+    calls = [ChatCompletionMessageFunctionToolCall(id=f"dsml_{i}", **call) for i, call in enumerate(_parse(text, options))]
+    choice = _replace(response.choices[0], message=_replace(message, content=None, tool_calls=calls))
+    return _replace(response, choices=[choice, *response.choices[1:]])
+
+
+def _normalize_chunks(response: Any, options: dict[str, Any]) -> Iterator[Any]:
+    """Buffer the leading content until it is known text or a DSML container."""
+    pending = []
+    text = ""
+    passthrough = False
+    for chunk in response:
+        if passthrough:
+            yield chunk
+            continue
+        pending.append(chunk)
+        if chunk.choices:
+            text += chunk.choices[0].delta.content or ""
+        if not _candidate(text):
+            passthrough = True
+            yield from pending
+            pending.clear()
+    if passthrough:
+        return
+    if not _looks_like_dsml(text):
+        # Ordinary text (including a lone "<") or a native/refusal-only turn.
+        yield from pending
+        return
+    # Do not release native calls before ruling out a mixed/ambiguous turn.
+    for chunk in pending:
+        if chunk.choices:
+            delta = chunk.choices[0].delta
+            if delta.tool_calls or getattr(delta, "refusal", None):
+                _invalid()
+    calls = [ChoiceDeltaToolCall(index=i, id=f"dsml_{i}", **call) for i, call in enumerate(_parse(text, options))]
+    last = max(i for i, chunk in enumerate(pending) if chunk.choices)
+    for i, chunk in enumerate(pending):
+        if chunk.choices:
+            delta = _replace(chunk.choices[0].delta, content=None, tool_calls=calls if i == last else None)
+            choice = _replace(chunk.choices[0], delta=delta)
+            chunk = _replace(chunk, choices=[choice, *chunk.choices[1:]])
+        yield chunk
+
+
+class _NormalizedStream:
+    """Iterator over a normalized chat-completions stream.
+
+    ``close`` forwards directly to the underlying HTTP response even when this
+    iterator was never started (a bare generator would not run its ``finally``
+    in that case), and it is idempotent and safe under concurrent cancellation.
+    """
+
+    def __init__(self, response: Any, options: dict[str, Any]) -> None:
+        self._response = response
+        self._generator = _normalize_chunks(response, options)
+        self._close_lock = Lock()
+        self._closed = False
+
+    def __iter__(self) -> _NormalizedStream:
+        return self
+
+    def __next__(self) -> Any:
+        try:
+            return next(self._generator)
+        except BaseException:
+            self._close_response()
+            raise
+
+    def close(self) -> None:
+        try:
+            self._generator.close()
+        except ValueError:
+            # The generator is executing on another thread (concurrent
+            # cancellation); the underlying stream is still closed below.
+            pass
+        self._close_response()
+
+    def _close_response(self) -> None:
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+        close = getattr(self._response, "close", None)
+        if close is not None:
+            close()
+
+
+def normalize_stream(response: Any, options: dict[str, Any]) -> _NormalizedStream:
+    """Wrap a raw streaming response in a close-forwarding normalizing iterator."""
+    return _NormalizedStream(response, options)

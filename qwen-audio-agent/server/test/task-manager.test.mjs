@@ -1,7 +1,70 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { TaskManager } from '../src/task/task-manager.mjs'
-import { TaskNotificationPolicy } from '../src/task/task-state.mjs'
+import { TaskNotificationPolicy, persistedTask } from '../src/task/task-state.mjs'
+import { BackendEventType } from '../src/core/backend-events.mjs'
+import { TaskDomainEvent } from '../src/task/task-events.mjs'
+
+test('execution start requires verified evidence, persists once, and is not completion', async () => {
+  const manager = new TaskManager()
+  const events = []
+  manager.subscribe(event => events.push(event))
+  let emit
+  const gate = Promise.withResolvers()
+  const task = manager.create({
+    objective: 'execute', ownerId: 'owner',
+    runner: async (_, { onEvent }) => { emit = onEvent; await gate.promise; return { content: 'done' } },
+  })
+  assert.equal(task.executionStartedAt, null)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(manager.get(task.id).status, 'running')
+  emit({ type: BackendEventType.ACTIVITY, activity: { kind: 'status', label: 'started' } })
+  assert.equal(manager.get(task.id).executionStartedAt, null)
+  emit({ type: BackendEventType.EXECUTION_STARTED })
+  const started = manager.get(task.id).executionStartedAt
+  assert.equal(typeof started, 'number')
+  emit({ type: BackendEventType.EXECUTION_STARTED })
+  assert.equal(manager.get(task.id).status, 'running')
+  assert.equal(manager.get(task.id).completedAt, null)
+  assert.equal(persistedTask(manager.tasks.get(task.id)).executionStartedAt, started)
+  assert.equal(events.filter(event => event.type === TaskDomainEvent.EXECUTION_STARTED).length, 1)
+  gate.resolve()
+  await manager.wait(task.id)
+  emit({ type: BackendEventType.EXECUTION_STARTED })
+  assert.equal(manager.get(task.id).executionStartedAt, started)
+})
+
+test('blocked, cancelled, and terminal tasks ignore late execution evidence', async () => {
+  for (const end of ['cancel', 'complete']) {
+    const manager = new TaskManager()
+    const gate = Promise.withResolvers()
+    let emit
+    const task = manager.create({
+      objective: 'execute', ownerId: 'owner',
+      runner: async (_, { onEvent }) => { emit = onEvent; await gate.promise; return { content: 'done' } },
+    })
+    await new Promise(resolve => setImmediate(resolve))
+    const internal = manager.tasks.get(task.id)
+    internal.authorization = { status: 'pending' }
+    emit({ type: BackendEventType.EXECUTION_STARTED })
+    assert.equal(manager.get(task.id).executionStartedAt, null)
+    internal.authorization = null
+    internal.inputRequest = { status: 'pending', kind: 'authorization' }
+    emit({ type: BackendEventType.EXECUTION_STARTED })
+    assert.equal(manager.get(task.id).executionStartedAt, null)
+    internal.inputRequest = null
+    if (end === 'cancel') {
+      const cancelling = manager.cancel(task.id)
+      emit({ type: BackendEventType.EXECUTION_STARTED })
+      assert.equal(manager.get(task.id).executionStartedAt, null)
+      await cancelling
+    }
+    gate.resolve()
+    await manager.wait(task.id)
+    emit({ type: BackendEventType.EXECUTION_STARTED })
+    assert.equal(manager.get(task.id).executionStartedAt, null)
+  }
+})
 
 test('uses one short task id across the public and execution layers', () => {
   const manager = new TaskManager()

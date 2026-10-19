@@ -50,6 +50,18 @@ function task(state, options = {}) {
   }
 }
 
+test('A2A execution evidence requires explicit raw WORKING, not submitted or fallback', () => {
+  const adapter = new A2ABackendAdapter({ agentCardUrl: 'http://localhost:9000/.well-known/agent-card.json' })
+  const events = []
+  const record = { ownerId: 'owner', artifactDigests: new Map(), onEvent: event => events.push(event) }
+  for (const state of [A2ATaskState.TASK_STATE_SUBMITTED, A2ATaskState.TASK_STATE_UNSPECIFIED, 999]) {
+    adapter.update(record, task(state))
+  }
+  assert.equal(events.some(event => event.type === 'backend.execution.started'), false)
+  adapter.update(record, task(A2ATaskState.TASK_STATE_WORKING))
+  assert.equal(events.filter(event => event.type === 'backend.execution.started').length, 1)
+})
+
 function work(index = 1) {
   return {
     id: `task_${index}`,

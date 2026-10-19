@@ -141,6 +141,25 @@ function fakeRuntime({ hold = false, approval = false, inputRequest = false } = 
   }
 }
 
+test('Muse queued acknowledgement and local started activity are not execution evidence', async () => {
+  const runtime = fakeRuntime({ hold: true })
+  const adapter = new MuseBackendAdapter({ clientFactory: runtime.clientFactory })
+  const events = []
+  const pending = adapter.submit(work(), { onEvent: event => events.push(event) })
+  await runtime.started
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(events.some(event => event.activity?.label === 'Muse Code started'))
+  assert.equal(events.some(event => event.type === 'backend.execution.started'), false)
+  const record = adapter.active.get(work().id)
+  adapter.updateItem(record, { itemId: 'tool', kind: 'toolCall', status: 'queued' })
+  assert.equal(events.some(event => event.type === 'backend.execution.started'), false)
+  adapter.updateItem(record, { itemId: 'tool', kind: 'toolCall', status: 'inProgress' })
+  assert.equal(events.filter(event => event.type === 'backend.execution.started').length, 1)
+  runtime.completion.resolve(completedOutcome())
+  await pending
+  await adapter.close()
+})
+
 function work(index = 1) {
   return {
     id: `muse-task-${index}`,

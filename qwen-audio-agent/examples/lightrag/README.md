@@ -36,7 +36,7 @@ responses never cross the provider boundary.
 
 ## Quick start
 
-Use the Node.js version required by the repository and install `uv` first. From the
+Use the Node.js version required by the repository and install Conda first. From the
 qwen-audio-agent repository root:
 
 ```bash
@@ -45,10 +45,15 @@ npm ci
 
 ### Install and configure LightRAG
 
-Install LightRAG independently with `uv`:
+Use a separate Python 3.12 Conda environment. The LightRAG entry in the main
+[requirements catalog](../../../requirements.txt) is commented intentionally;
+install only that entry here, not the main stack. Never install LightRAG into
+`speech_to_speech_system`:
 
 ```bash
-uv tool install "lightrag-hku[api]"
+conda create -n qwen_lightrag python=3.12 pip -y
+conda activate qwen_lightrag
+python -m pip install "lightrag-hku[api]"
 mkdir -p ~/lightrag-runtime
 cd ~/lightrag-runtime
 ```
@@ -79,6 +84,7 @@ after indexing data without clearing and rebuilding the LightRAG index as docume
 Start a server bound only to localhost:
 
 ```bash
+conda activate qwen_lightrag
 cd ~/lightrag-runtime
 lightrag-server --host 127.0.0.1 --port 9621
 ```

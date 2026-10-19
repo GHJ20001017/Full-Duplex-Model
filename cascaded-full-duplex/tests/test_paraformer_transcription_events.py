@@ -114,6 +114,7 @@ def test_streaming_paraformer_reuses_cache_and_flushes_final(monkeypatch):
     handler.device = "cpu"
     handler.streaming = True
     handler._streaming_sessions = {}
+    handler.gen_kwargs = {}
 
     list(handler.process(VADAudio(audio=np.zeros(512, dtype=np.float32), mode="progressive", turn_id="t", turn_revision=0)))
     result = list(handler.process(VADAudio(audio=np.zeros(512, dtype=np.float32), mode="final", turn_id="t", turn_revision=0)))

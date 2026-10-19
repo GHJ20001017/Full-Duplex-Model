@@ -10,6 +10,8 @@ const PUBLIC_EVENT_TYPE = new Map([
   [TaskDomainEvent.SCHEDULED, GatewayTaskEvent.SCHEDULED],
   [TaskDomainEvent.SCHEDULED_FIRED, GatewayTaskEvent.SCHEDULED_FIRED],
   [TaskDomainEvent.RUNNING, GatewayTaskEvent.RUNNING],
+  // Execution evidence updates the task without adding a public lifecycle phase.
+  [TaskDomainEvent.EXECUTION_STARTED, GatewayTaskEvent.UPDATED],
   [TaskDomainEvent.DELEGATED, GatewayTaskEvent.DELEGATED],
   [TaskDomainEvent.FINALIZING, GatewayTaskEvent.FINALIZING],
   [TaskDomainEvent.CANCELLING, GatewayTaskEvent.CANCELLING],

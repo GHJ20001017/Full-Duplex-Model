@@ -129,7 +129,7 @@ export function resolveBackendModels(env = process.env) {
     codex: common,
     claude: common,
     deepSeekHarness: String(
-      env.DEEPSEEK_HARNESS_MODEL || '',
+      common || env.DEEPSEEK_HARNESS_MODEL || '',
     ).trim(),
     pi: common,
     muse: common,
@@ -297,6 +297,9 @@ export const config = {
   frontendProfile: frontendProfileConfiguration.frontendProfile,
   frontendMcpConfigPath: frontendProfileConfiguration.frontendMcpConfigPath,
   frontendOpenApiConfigPath: frontendProfileConfiguration.frontendOpenApiConfigPath,
+  localMeetingDocumentsDir: process.env.QWEN_AUDIO_LOCAL_MEETING_DOCUMENTS_DIR
+    ? resolve(root, process.env.QWEN_AUDIO_LOCAL_MEETING_DOCUMENTS_DIR)
+    : '',
   allowedOrigins: String(process.env.QWEN_AUDIO_AGENT_ALLOWED_ORIGINS || '')
     .split(',')
     .map(value => value.trim())
@@ -442,11 +445,7 @@ export const config = {
     deepseek: {
       model: backendModels.deepSeekHarness,
       directory: resolveBackendWorkspace('deepseek'),
-      cliPath: String(process.env.DEEPSEEK_HARNESS_ACP_BIN || '').trim(),
-      sessionRoot: resolve(
-        runtimeEnvironment.stateDirectory,
-        'backends/deepseek-harness/sessions',
-      ),
+      cliPath: String(process.env.DEEPSEEK_HARNESS_BIN || '').trim(),
     },
     pi: {
       model: String(backendModels.pi).trim(),

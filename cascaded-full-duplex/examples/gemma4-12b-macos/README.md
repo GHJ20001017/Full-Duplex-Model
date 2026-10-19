@@ -19,7 +19,7 @@ barge-in use the same path as other Realtime clients.
   memory is recommended for comfortable headroom alongside Qwen3-TTS.
 - A recent llama.cpp build with Gemma 4 Unified multimodal support.
 - A source checkout that includes PR #298.
-- `uv`, Homebrew, and a modern browser.
+- Conda, Homebrew, and a modern browser.
 
 Install or update llama.cpp:
 
@@ -32,14 +32,25 @@ llama-server --version
 An older build may load the language model but fail on the multimodal projector
 with `unknown projector type: gemma4uv`. Upgrade llama.cpp if that happens.
 
-Install the speech-to-speech environment from the repository root:
+Install the speech-to-speech environment from `cascaded-full-duplex` using
+the [root requirements](../../../requirements.txt):
 
 ```bash
-uv sync
+conda create -n speech_to_speech_system python=3.12 pip -y
+conda activate speech_to_speech_system
+(cd .. && python -m pip install -r requirements.txt)
 ```
+
+The installation subshell runs pip at the repository root to resolve the
+editable project path. If starting in `examples/gemma4-12b-macos` instead,
+use `(cd ../../.. && python -m pip install -r requirements.txt)`.
 
 The first run downloads the Gemma GGUF, its multimodal projector, and the local
 MLX Qwen3-TTS model.
+
+Run subsequent commands from `cascaded-full-duplex`; activate
+`speech_to_speech_system` in every Python terminal. Install the browser SDK
+separately with `npm ci --prefix demo` before starting Terminal 3.
 
 ## Terminal 1: serve Gemma with llama.cpp
 
@@ -67,7 +78,7 @@ expected.
 ## Terminal 2: start the realtime speech pipeline
 
 ```bash
-uv run speech-to-speech serve \
+python -m speech_to_speech.cli serve \
     --stt none \
     --llm_backend chat-completions \
     --tts qwen3 \
@@ -87,8 +98,7 @@ Wait until the server is listening at `ws://127.0.0.1:8765/v1/realtime`.
 ```bash
 SPEECH_TO_SPEECH_URL="ws://localhost:8765/v1/realtime" \
 STARTUP_GREETING="" \
-uv run --with-requirements demo/requirements.txt \
-    uvicorn --app-dir demo server:app --port 7860
+python -m uvicorn --app-dir demo server:app --port 7860
 ```
 
 Open <http://localhost:7860>, click the orb, and allow microphone access. Speak
@@ -98,8 +108,8 @@ and server terminals to stop.
 
 The demo defaults to WebSocket, which is the path used by this example. It also
 shows WebRTC in **Settings -> Transport** because the backend URL is pinned. To
-try WebRTC, first install its backend dependencies with
-`uv sync --extra webrtc`. Otherwise, leave the transport set to WebSocket.
+try WebRTC, select it in Settings; the root requirements already include its
+backend dependencies. Otherwise, leave the transport set to WebSocket.
 
 The browser UI shows conversation history, user and assistant turn state,
 replayable user audio, voice and instruction settings, and barge-in. Setting
@@ -121,10 +131,12 @@ The important options are:
 ## Headless client alternative
 
 To test without the browser demo, replace Terminal 3 with the packaged
-microphone/speaker client:
+microphone/speaker client. Build/configure AEC3 first as described in the
+[main setup](../../README.md#1-aec3-回声抑制echo-cancellation). The main Python 3.12
+requirements do not install openWakeWord, so disable its CLI-default gate:
 
 ```bash
-uv run speech-to-speech talk \
+python -m speech_to_speech.cli talk --wake-word "" \
     --url ws://127.0.0.1:8765/v1/realtime
 ```
 

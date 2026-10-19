@@ -37,19 +37,21 @@ JSON 请求和响应。Python 代码和依赖不会进入核心 npm 包。
 
 ## 快速开始
 
-需要使用仓库要求的 Node.js 版本和 Python 3.10 或更高版本。在仓库根目录执行：
+需要仓库要求的 Node.js、Conda 和 Python 3.12。在 `qwen-audio-agent` 目录执行：
 
 ```bash
 npm ci
 ```
 
-请先按照 [VoiceMem 官方说明](https://github.com/xzf-thu/VoiceMem)完成安装。
-本示例推荐使用独立 Python 环境：
+依赖入口见主仓库 [requirements.txt](../../../requirements.txt) 的 VoiceMem 注释分组，
+该分组指向本示例维护的 sidecar 清单。必须使用独立 Conda 环境，
+不要在 `speech_to_speech_system` 中安装，也不要在此环境安装主 requirements。
+下列命令安装 VoiceMem 及 sidecar；其他配置参见 [VoiceMem 官方说明](https://github.com/xzf-thu/VoiceMem)：
 
 ```bash
-python3 --version # 需要 3.10 或更高版本
-python3.12 -m venv examples/voicemem/.venv
-examples/voicemem/.venv/bin/pip install \
+conda create -n qwen_voicemem python=3.12 pip -y
+conda activate qwen_voicemem
+python -m pip install \
   --index-url https://mirrors.aliyun.com/pypi/simple/ \
   -r examples/voicemem/sidecar/requirements.txt
 cp examples/voicemem/.env.example \
@@ -60,14 +62,16 @@ cp examples/voicemem/.env.example \
 运行数据，不会修改用户日常使用的 Gateway 配置：
 
 ```bash
+conda activate qwen_voicemem
+export VOICEMEM_PYTHON="$(python -c 'import sys; print(sys.executable)')"
 cd examples/voicemem
 node --env-file=.env.local gateway.mjs
 ```
 
 浏览器打开 `http://127.0.0.1:3101`。如果该端口已有 Gateway，可以使用 `PORT=3102`
 启动，并打开 `http://127.0.0.1:3102`。
-示例启动器优先使用本目录的 `.venv`，否则使用 `PATH` 中的 `python3`；Sidecar 也会
-自动发现。只有使用其他位置时才需要设置 `VOICEMEM_PYTHON` 或 `VOICEMEM_SIDECAR`。
+每个新终端先激活 `qwen_voicemem` 并设置上面的 `VOICEMEM_PYTHON`，
+防止启动器选择遗留 `.venv`。Sidecar 会自动发现；自定义位置时设置 `VOICEMEM_SIDECAR`。
 
 ## 推荐配置
 

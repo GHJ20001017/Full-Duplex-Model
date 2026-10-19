@@ -26,12 +26,22 @@ protocol implementation.
 
 ## Quick start (local)
 
-1. **Start the speech-to-speech backend** (from the repo root;
+Install the main environment using the [root requirements](../../requirements.txt)
+and [Conda setup](../../README.md#安装与启动). Run the commands below from
+`cascaded-full-duplex`, with `conda activate speech_to_speech_system` in each terminal.
+The main requirements include the Python demo and WebRTC dependencies; non-macOS
+Kokoro users must first uncomment its optional entry there and reinstall from
+`cascaded-full-duplex` with `(cd .. && python -m pip install -r requirements.txt)`.
+If starting from this `demo` directory instead, use
+`(cd ../.. && python -m pip install -r requirements.txt)`. The editable project
+path requires pip's working directory to be the repository root.
+
+1. **Start the speech-to-speech backend** (from `cascaded-full-duplex`;
    see the [backend README](https://github.com/huggingface/speech-to-speech/blob/main/src/speech_to_speech/api/openai_realtime/README.md)
    for more model combinations):
 
    ```bash
-   uv run speech-to-speech serve \
+   python -m speech_to_speech.cli serve \
      --stt parakeet-tdt \
      --llm_backend transformers \
      --tts kokoro \
@@ -49,11 +59,11 @@ protocol implementation.
 
    ```bash
    npm ci --prefix demo
-   uv pip install -r demo/requirements.txt
+   (cd .. && python -m pip install -r requirements.txt)
    export SPEECH_TO_SPEECH_URL=ws://localhost:8765/v1/realtime
    export SERPER_API_KEY=...   # optional; web search is disabled without it
    export STARTUP_GREETING=... # optional; empty disables the automatic greeting
-   uv run uvicorn --app-dir demo server:app --reload --port 7860
+   python -m uvicorn --app-dir demo server:app --reload --port 7860
    ```
 
    Or with Docker:
@@ -131,7 +141,7 @@ alternative to the WebSocket. Same conversation, different plumbing:
    `response.output_audio.delta`). Barge-in flushing is server-side.
 
 Backend requirement: the `webrtc` extra
-(`pip install "speech-to-speech[webrtc]"`), otherwise `/v1/realtime/calls`
+(included by the root requirements), otherwise `/v1/realtime/calls`
 answers 501 and the handshake fails with a clear message.
 
 Caveats vs. WebSocket:

@@ -32,7 +32,7 @@ LightRAG 的图谱对象、远程 `track_id` 和原始 HTTP 响应不会穿过 P
 
 ## 快速开始
 
-需要使用仓库要求的 Node.js 版本，并提前安装 `uv`。在 qwen-audio-agent 仓库根目录执行：
+需要使用仓库要求的 Node.js 版本，并提前安装 Conda。在 qwen-audio-agent 仓库根目录执行：
 
 ```bash
 npm ci
@@ -40,10 +40,14 @@ npm ci
 
 ### 安装并配置 LightRAG
 
-推荐使用 `uv` 独立安装：
+使用独立 Python 3.12 Conda 环境。主仓库 [requirements 目录](../../../requirements.txt)
+中的 LightRAG 条目保持注释；在此环境只安装该条目，不安装主项目清单，
+也不要将 LightRAG 安装到 `speech_to_speech_system`：
 
 ```bash
-uv tool install "lightrag-hku[api]"
+conda create -n qwen_lightrag python=3.12 pip -y
+conda activate qwen_lightrag
+python -m pip install "lightrag-hku[api]"
 mkdir -p ~/lightrag-runtime
 cd ~/lightrag-runtime
 ```
@@ -74,6 +78,7 @@ Embedding 维度必须与所选模型一致。首次索引后不要直接更换 
 启动仅监听本机的服务：
 
 ```bash
+conda activate qwen_lightrag
 cd ~/lightrag-runtime
 lightrag-server --host 127.0.0.1 --port 9621
 ```
