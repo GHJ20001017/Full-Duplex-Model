@@ -2,6 +2,7 @@ data/raw/*
 data/processed/*
 data/manifests/*
 checkpoints/*
+/model/
 logs/*
 outputs/*
 __pycache__/
