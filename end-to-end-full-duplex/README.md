@@ -1,89 +1,145 @@
-# 端到端全双工模型
+# VoxBase-omni
 
-本项目以 Qwen3 为语言骨干，结合 Mimi 音频编解码器，使用公开与仿真数据，复现 Moshi 的端到端全双工语音交互能力。
+**VoxBase-omni** 是一个以 **Qwen3-4B-Instruct-2507** 为文本与推理骨干、面向文本和音频的端到端 Omni 模型项目。最终目标是在统一的 Omni 基础模型之上，构建能够边听、边说的全双工交互模型。
 
-## Moshi 架构参考
+项目分两步推进：
 
-[![Moshi 全双工语音模型架构](assert/moshi-architecture-overview.png)](assert/moshi-architecture-overview.png)
+1. **先训练 Omni 基础模型**：建立文本和音频之间的语义对齐与理解、响应能力。
+2. **再训练全双工交互模型**：在 Omni 基础模型上引入流式输入输出、并行感知与生成，以及打断、附和和话轮交接能力。
 
-## Step1: 下载对应的模型文件
+音频的核心建模路线是：**先学习离散表征，再引入连续表征，最终联合使用两者。** 离散分支优先建立语义结构，连续分支进一步补充细粒度的声学与时序信息，而不是在两种表征之间二选一。
 
-通过 **ModelScope（魔搭）** 下载 [Qwen/Qwen3-1.7B](https://modelscope.cn/models/Qwen/Qwen3-1.7B)（非 Base 版）的权重、配置和 tokenizer，以及 **Mimi 音频编解码器**权重。Mimi 从 ModelScope 上的 [kyutai/moshiko-pytorch-bf16](https://modelscope.cn/models/kyutai/moshiko-pytorch-bf16) 仓库下载，仅获取 `tokenizer-e351c8d8-checkpoint125.safetensors`，不下载 Moshi 7B 语言模型。
+> 本文描述 VoxBase-omni 的新设计方向，不代表相关能力已经实现。此前的 Qwen3-Moshi、Mimi 与 Emilia 相关代码已移除，新的模型实现与训练入口尚待建立。
 
-```bash
-# 在仓库根目录先按首页创建环境；已有环境无需重复创建
-conda create -n speech_to_speech_system python=3.12 pip -y
-conda activate speech_to_speech_system
-python -m pip install -r requirements.txt
-cd end-to-end-full-duplex
-python scripts/download_models.py
+## 1. 模型定位
+
+| 项目 | 设计方向 |
+| --- | --- |
+| 模型名称 | **VoxBase-omni** |
+| 文本骨干 | **Qwen3-4B-Instruct-2507** |
+| 输入模态 | 文本、音频 |
+| 响应目标 | 文本与语音 |
+| 音频表征 | 离散表征与连续表征结合，按训练阶段逐步引入 |
+| 第一步 | 训练具备音频理解与响应能力的 Omni 基础模型 |
+| 第二步 | 将 Omni 基础模型扩展为端到端全双工交互模型 |
+
+这里的“端到端”指向统一模型直接处理文本和音频输入并产生响应的目标，而不是将独立 ASR、语言模型和 TTS 串联作为最终架构。音频编码器、模态适配器与输出解码器仍可以作为模型的组成部分；是否冻结或联合训练这些模块，需要在具体方案中确定。
+
+## 2. 核心思路：先离散，后连续，再联合
+
+### 2.1 离散表征：优先建立语义结构
+
+第一阶段先使用音频的离散表征，与文本骨干建立联系，让模型优先学习输入内容的语义及文本—音频之间的对应关系。
+
+- **音频**：重点建模语音内容、声音事件及其与文本语义的对应关系。
+- **跨模态**：让文本与音频中的相关内容能够进入共享的语义建模过程。
+
+离散表征的具体来源尚未固定，需要选择适合语义建模的 tokenizer、量化器或编码方案；不能仅因为特征被量化为 token，就认为它已经具备所需的语义信息。
+
+### 2.2 连续表征：补充细粒度信息
+
+当离散分支建立较稳定的语义对齐与任务能力后，再引入连续特征，补充离散表示可能压缩或遗漏的信息。
+
+| 模态 | 离散分支的优先目标 | 连续分支的补充目标 |
+| --- | --- | --- |
+| 音频 | 语音内容、声音事件与语义结构 | 音色、音高、韵律、情绪、发声细节与环境声细节 |
+
+这是预期的功能分工，不是严格的信息隔离：离散特征也可能保留声学细节，连续特征也可能包含语义。项目要验证的是两者是否形成有效互补，而不是预设某一种表征只能承载某一类信息。
+
+### 2.3 联合建模：保留离散分支，而非替换
+
+“加入连续特征”不是丢弃离散 token，也不是将原来的离散特征转换成浮点 embedding 后重新命名为连续分支。新增分支应提供来自音频编码过程的、未经该离散量化瓶颈压缩的连续特征。
+
+联合阶段需要满足以下设计要求：
+
+- **保留离散语义路径**，从已有训练结果继续学习。
+- **引入连续细节路径**，让模型能利用新增信息，而不只是增加输入长度。
+- **保持时间对应关系**，明确两类表征所覆盖的音频片段或时间窗口。
+- **支持模态缺失**，不要求每条样本都同时具有文本和音频。
+- **保留文本能力**，避免多模态训练明显破坏骨干已有的语言理解与指令遵循能力。
+
+## 3. 概念架构
+
+下面展示目标中的输入与融合关系，不规定最终的网络实现，也不代表现有代码结构。
+
+```text
+文本 ───────────────────── 文本 tokenizer / embedding ───────────┐
+                                                               │
+音频 ──┬── 离散音频表征 ── 离散 embedding / 适配器 ───────────────┤
+       └── 连续音频表征 ── 连续投影 / 适配器（后续引入）──────────┤
+                                                               ├── 时间对齐与多模态融合
+                                                              Qwen3-4B-Instruct-2507
+                                                                           │
+                                                                  多模态响应建模
+                                                                   ├── 文本输出
+                                                                   └── 语音生成与解码
 ```
 
-## Step2: 可视化 Mimi codebook 并检查音频重建
+文本骨干提供语言理解、推理和指令遵循的初始化能力。音频通过离散与连续表征分支及适配模块接入，具体采用序列拼接、交叉注意力或门控融合等方式，尚待选型。
 
-运行多个音频 case（不会下载模型，也不会修改原始音频）：
+输入表征与输出生成需要分别设计：**接入连续音频特征，并不等于模型已经能生成具有相应音色、音高和韵律的语音。** 语音输出仍需确定生成目标、条件传递方式与解码器，并验证这些细节能否在输出中得到保留或控制。
 
-```bash
-python scripts/visualize_mimi_codebooks.py \
-  --mimi-checkpoint checkpoints/base/mimi/tokenizer-e351c8d8-checkpoint125.safetensors \
-  --output-dir outputs/step2-codebooks \
-  cases/example-01.wav cases/example-02.wav
-```
+## 4. 第一步：训练 VoxBase-omni 基础模型
 
-### Step2 示例结果
+这一步先解决“能理解音频内容并给出响应”，不以自然全双工交互作为前置要求。内部按以下顺序推进。
 
-![Mimi codebook 与重建诊断图](assert/ZH_B00000_S09981_W000013.diagnostic.png)
+### 阶段 A：离散表征对齐与建模
 
-- [原始音频 WAV](assert/ZH_B00000_S09981_W000013.wav)
-- [Mimi 重建音频 WAV](assert/ZH_B00000_S09981_W000013.reconstructed.wav)
+以 Qwen3-4B-Instruct-2507 为起点，接入音频的离散分支，先学习语义层面的文本—音频对应关系。
 
-## Step3: 用 Qwen3 搭建 Moshi 联合模型框架
+- 使用音频—文本以及具备时间对应关系的语音数据建立对齐。
+- 训练音频适配与多模态任务能力，逐步建立理解与响应路径。
+- 在多模态训练中保留文本任务，跟踪语言与指令能力的变化。
+- 先形成可检查的离散表征基线，再引入连续分支。
 
-Step3 按路线文档第 1 步实现 Qwen3-Moshi 的可导入模型骨架：Qwen3 负责跨时间的 Temporal Transformer，独立的用户/助手 Mimi 音频 embedding 与 Qwen 文本 embedding 按时间步求和；文本 head 预测 Inner Monologue，Depth Transformer 在同一时间步按 8 个 Mimi codebook 自回归预测助手音频。Mimi 仍是外部冻结 codec，不在此模块中训练。
+### 阶段 B：引入连续特征并联合训练
 
-### Step3 架构图
+从阶段 A 的模型继续训练，为音频加入连续特征路径，并保留已有离散分支。
 
-![Qwen3-Moshi 联合模型架构图](assert/72fbdcb5609e4e70928a5fe0f3262ea5.png)
+- 对齐同一语音内容的离散与连续特征，处理不同采样率及序列长度。
+- 训练连续适配模块与融合模块，使新增信息能够参与理解和响应。
+- 关注音频的音色、音高、韵律与发声细节。
+- 记录引入连续分支前后的语义能力、细节感知能力、计算开销与训练稳定性。
 
-代码位于 `models/qwen3_moshi.py`，包括：
+**阶段切换以验证结果为依据，不先写死训练步数。** 具体需要达到的稳定性、语义对齐与任务能力标准，应在数据和训练配置确定后制定。
 
-- 从 Qwen3 config 读取 `hidden_size` 和 `vocab_size`，从 Mimi 配置传入 8 路 codebook cardinality；音频 token 不进入 Qwen3 原始词表；
-- acoustic delay（pre-training 默认 2 帧，后续阶段可设为 1 帧）、独立 shift/mask、时间戳对齐和会话 `reset_stream_state()`；
-- Temporal KV cache 接口、文本 head、Temporal→Depth 投影、因果 Depth Transformer 和 8 路音频 output heads；
-- 文本 CE、8 路 audio CE、语义 codebook 加权 audio loss，以及 padding/无效帧 mask；
-- `tests/test_qwen3_moshi.py` 中的小模型单元测试，不下载 Qwen3 或 Mimi 权重。
+### 阶段 C：统一的多模态指令与响应训练
 
-根目录 [`requirements.txt`](../requirements.txt) 已包含 ModelScope、PyTorch 和 Transformers。激活上述 Conda 环境后，可对本地 Qwen3 checkpoint 只做结构检查：
+在离散与连续表征联合工作的基础上，训练面向实际任务的 Omni 模型。
 
-```bash
-PYTHONPATH=. python scripts/inspect_qwen3_moshi.py \
-  checkpoints/base/qwen3 \
-  --local-files-only
-```
+- 处理文本、音频及其组合输入。
+- 根据输入内容与指令生成文本或语音响应。
+- 建立跨模态内容一致性，并检查单模态输入下的能力。
+- 形成可独立评估的 VoxBase-omni 基础模型，作为后续全双工训练的起点。
 
-## Step4: 第一阶段 Emilia 单流预训练
+## 5. 第二步：扩展为全双工交互模型
 
-在 `end-to-end-full-duplex/` 目录运行以下命令，先用已有的 schema 2 Emilia 时间戳文件做 10 步小规模训练检查。将模型路径替换为实际位置，并先将环境变量 `TEXT_PAD_TOKEN_ID` 设为已确认的、Qwen 现有词表中的文本占位 token ID；脚本不会自动猜测或新增 token。
+全双工不是简单地给 Omni 模型增加流式接口，而是让模型在持续接收输入的同时生成输出，并根据新到达的信息调整交互行为。
 
-```bash
-python -m trainer.train_stage1 \
-  --manifest outputs/emilia-qwen-raw-smoke.jsonl \
-  --qwen-model /absolute/path/to/qwen3-1.7b \
-  --mimi-checkpoint /absolute/path/to/tokenizer-e351c8d8-checkpoint125.safetensors \
-  --output-dir outputs/stage1-smoke \
-  --cache-dir outputs/emilia-token-cache \
-  --text-pad-token-id "${TEXT_PAD_TOKEN_ID:?请先设置文本占位token ID}" \
-  --device cuda:0 \
-  --precision bf16 \
-  --gradient-checkpointing \
-  --batch-size 1 \
-  --max-samples 32 \
-  --max-duration 10 \
-  --max-steps 10 \
-  --validation-interval 0 \
-  --validation-fraction 0
-```
+这一阶段的目标包括：
 
-该命令需要支持 bf16 的 CUDA 环境；Mimi 保持冻结，训练使用单路音频流。小样本检查显式关闭验证，避免同一来源的数据无法划出独立验证集；正式训练应使用完整时间戳文件，并启用按来源分组的验证划分。
+- **边听边说**：生成语音时仍持续接收用户音频，不因助手发言而停止感知。
+- **自然打断与附和**：区分用户的简短反馈、补充信息和真正的打断意图。
+- **话轮交接**：学习何时发言、继续、等待或让出话轮。
+- **流式状态管理**：维护跨模态时间线、上下文缓存和生成状态，处理暂停、打断与会话重置。
 
-训练输出为 `outputs/stage1-smoke/checkpoint.pt` 和 `metrics.jsonl`。断点恢复时保持原配置（尤其是 `--max-steps`）不变并追加 `--resume`；若需提前暂停，使用 `--stop-after-steps`，不要通过改变 `--max-steps` 模拟暂停。
+训练数据需要从片段级、多轮指令样本进一步扩展到保留真实时间关系的交互数据，包含双方独立音频流、停顿、重叠发言、附和和打断。
+
+编码、融合与生成路径都需要满足流式因果约束，不能在训练或评估中依赖实际交互时尚未到达的未来信息。第一步中的表征选型应提前考虑这一兼容性，但全双工行为的学习与验收放在第二步完成。
+
+## 6. 尚待确定的技术选型
+
+以下内容尚未固定，不沿用旧版 Moshi 方案中的参数作为默认结论：
+
+- 音频的离散 tokenizer、码本结构与语义监督方式。
+- 连续音频编码器、特征提取层及其与离散分支共享或独立的方式。
+- 离散与连续特征的融合位置、时间分辨率与上下文预算。
+- 各阶段的冻结策略、训练范围、损失函数与数据配比。
+- 语音生成模块、音色与韵律条件传递方式、解码与流式输出机制。
+- 阶段切换标准，以及基础 Omni 与全双工交互各自的验收指标。
+
+## 7. 当前目录状态
+
+此前围绕 Qwen3-Moshi 的模型、数据处理、训练脚本、诊断工具及测试代码已移除。VoxBase-omni 将按照本文的新路线建立实现与训练入口。
+
+目录中仍保留历史文档、架构图和 Mimi 重建样例，仅作历史参考，不代表 VoxBase-omni 的现有能力。其中 [`docs/route-a-implementation.md`](docs/route-a-implementation.md) 是旧版 Moshi 复现路线，其模型选择、训练顺序、代码路径和命令不再作为当前项目的实现或使用说明。

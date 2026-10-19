@@ -297,6 +297,9 @@ export const config = {
   frontendProfile: frontendProfileConfiguration.frontendProfile,
   frontendMcpConfigPath: frontendProfileConfiguration.frontendMcpConfigPath,
   frontendOpenApiConfigPath: frontendProfileConfiguration.frontendOpenApiConfigPath,
+  localMeetingDocumentsDir: process.env.QWEN_AUDIO_LOCAL_MEETING_DOCUMENTS_DIR
+    ? resolve(root, process.env.QWEN_AUDIO_LOCAL_MEETING_DOCUMENTS_DIR)
+    : '',
   allowedOrigins: String(process.env.QWEN_AUDIO_AGENT_ALLOWED_ORIGINS || '')
     .split(',')
     .map(value => value.trim())
