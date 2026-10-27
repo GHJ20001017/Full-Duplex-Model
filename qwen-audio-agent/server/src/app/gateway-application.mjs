@@ -308,10 +308,8 @@ const {
   frontendMemory: frontendMemoryRuntime = null,
   frontendKnowledge: frontendKnowledgeRuntime = null,
 } = optionalServices
-// 会话摘要：只记「聊了哪些话题 + 一句要点」，是 recall 工具的唯一
-// 数据来源。刻意不注入 instructions —— 这类数据每场都在变，注进去会让 prompt
-// 前缀每场都变、前缀缓存大面积失效。没有 API key 时摘要器为 null，池子空转，
-// 工具也不会暴露给模型。
+// Episodic summaries stay separate from profile instructions. Recall can read
+// older summaries even when text-model credentials are unavailable.
 let sessionDigests = null
 let sessionSummariser = null
 if (config.sessionDigestEnabled) {

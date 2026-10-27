@@ -1,0 +1,252 @@
+{
+  "started_at": 1792659999.2848537,
+  "model_dir": "/gpu3/guhj/Full-Duplex_Model/end-to-end-full-duplex/model/Qwen2.5-Omni-3B",
+  "cuda_visible_devices": "5",
+  "versions": {
+    "torch": "2.12.0",
+    "transformers": "5.6.0",
+    "accelerate": "1.6.0",
+    "numpy": "2.5.3",
+    "soundfile": "0.14.0"
+  },
+  "assets": {
+    "config_sha256": "20790f362c37a1718a3e764f597ae33dfc20177399762018dffaabf8321d4dd1",
+    "index_sha256": "5b7629198e2ef80e37612a491d9bfd71639d2f212632d36d8ab086922e74e129",
+    "weight_count": 2544,
+    "shards": {
+      "model-00001-of-00003.safetensors": 4994850880,
+      "model-00002-of-00003.safetensors": 4999787448,
+      "model-00003-of-00003.safetensors": 1978024880
+    },
+    "weight_prefixes": [
+      "talker.codec_head",
+      "talker.model",
+      "talker.thinker_to_talker_proj",
+      "thinker.audio_tower",
+      "thinker.lm_head",
+      "thinker.model",
+      "thinker.visual",
+      "token2wav.code2wav_bigvgan_model",
+      "token2wav.code2wav_dit_model"
+    ],
+    "waveform_codec_encoder_name_matches": []
+  },
+  "tests": {
+    "audio_to_text": {
+      "status": "passed",
+      "transcript": "Hi! It's surprising we've never met before.",
+      "reference": "Hi, Brion. It’s surprising we’ve never met before.",
+      "normalized_character_similarity": 0.9318181818181818,
+      "seconds": 0.9896039701998234,
+      "quality_note": "Single-example transcription comparison, not a benchmark."
+    },
+    "audio_to_text_and_speech": {
+      "status": "passed",
+      "reply_text": "Yeah, it is. But it's also kind of cool that we met. So, what's your name?",
+      "waveform_samples": 122400,
+      "sample_rate": 24000,
+      "seconds_of_audio": 5.1,
+      "rms": 0.1169905886054039,
+      "finite": true,
+      "wall_seconds": 7.282688029110432,
+      "talker_codes": {
+        "shape": [
+          1,
+          435
+        ],
+        "first_ids": [
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296,
+          8296
+        ]
+      },
+      "quality_note": "Pass establishes nonblank text/waveform output; intelligibility and voice quality require separate listening/evaluation."
+    },
+    "incremental_audio_during_cached_generation": {
+      "status": "unsupported_by_unmodified_cached_generation",
+      "evidence_type": "runtime_cached_generation_probe_plus_source",
+      "injected_audio_seconds": 0.1,
+      "control_trace": [
+        {
+          "step": 0,
+          "late_audio_requested": false,
+          "input_features_forwarded": true
+        },
+        {
+          "step": 1,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 2,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 3,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 4,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 5,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 6,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 7,
+          "late_audio_requested": false,
+          "input_features_forwarded": false
+        }
+      ],
+      "injection_trace": [
+        {
+          "step": 0,
+          "late_audio_requested": false,
+          "input_features_forwarded": true
+        },
+        {
+          "step": 1,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 2,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 3,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 4,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 5,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 6,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        },
+        {
+          "step": 7,
+          "late_audio_requested": true,
+          "input_features_forwarded": false
+        }
+      ],
+      "control_audio_encoder_calls": 1,
+      "injection_audio_encoder_calls": 1,
+      "output_token_ids_identical": true,
+      "scope": "Tests existing Thinker cached generation. It does not establish that a custom scheduler/model adaptation is impossible."
+    },
+    "encoder_prefix_causality": {
+      "status": "future_dependent_within_supplied_chunk",
+      "max_abs_difference_first_two_audio_embeddings": 4.666015625,
+      "unchanged_input_mel_frames": 10,
+      "modified_future_mel_frames": [
+        10,
+        200
+      ],
+      "scope": "Fixed-length mel-feature perturbation, not a waveform benchmark or proof of streaming equivalence."
+    },
+    "real_audio_to_native_talker_codes": {
+      "status": "blocked_no_compatible_encoder_found_in_inspected_assets",
+      "evidence_type": "local_asset_and_loaded_interface_inspection",
+      "module_methods": {
+        "thinker": {
+          "encode": false,
+          "decode": false,
+          "forward": true,
+          "generate": true
+        },
+        "talker": {
+          "encode": false,
+          "decode": false,
+          "forward": true,
+          "generate": true
+        },
+        "token2wav": {
+          "encode": false,
+          "decode": false,
+          "forward": true,
+          "generate": false
+        }
+      },
+      "encoder_weight_name_matches": [],
+      "talker_vocab_size": 8448,
+      "generated_codes_to_waveform": "passed",
+      "scope": "Only this local checkpoint and installed classes were inspected. Does not claim that no external compatible encoder exists.",
+      "not_valid_substitutes": [
+        "Thinker continuous audio embeddings",
+        "text tokenizer IDs",
+        "another codec IDs",
+        "model-generated codes treated as ground-truth waveform encodings"
+      ]
+    }
+  },
+  "gpu": {
+    "name": "NVIDIA A800-SXM4-80GB",
+    "free_bytes_before": 83348815872,
+    "total_bytes": 85093777408
+  },
+  "implementation": {
+    "path": "/gpu/anaconda3/lib/python3.12/site-packages/transformers/models/qwen2_5_omni/modeling_qwen2_5_omni.py",
+    "sha256": "7440eeda3f9053d7b9d26dee2e14e6d3dc2b0c70b8a06bfd6dadf8834cec123f"
+  },
+  "load_seconds": 4.4983374662697315,
+  "loaded_parameters": 5537120640,
+  "input": {
+    "shard": "/gpu3/guhj/Full-Duplex_Model/end-to-end-full-duplex/data/behavior-sd/test/0000.tar",
+    "member": "0000000005.flac",
+    "speaker_idx": 0,
+    "seconds": 4.6091875,
+    "sample_rate": 16000,
+    "reference_text": "Hi, Brion. It’s surprising we’ve never met before."
+  },
+  "input_tensor_shapes": {
+    "input_ids": [
+      1,
+      178
+    ],
+    "attention_mask": [
+      1,
+      178
+    ],
+    "feature_attention_mask": [
+      1,
+      30000
+    ],
+    "input_features": [
+      1,
+      128,
+      30000
+    ]
+  },
+  "finished_at": 1792660014.2519603,
+  "peak_cuda_allocated_bytes": 12176064000
+}

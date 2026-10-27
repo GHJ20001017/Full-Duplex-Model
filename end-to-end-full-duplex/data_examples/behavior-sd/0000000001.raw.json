@@ -1,0 +1,255 @@
+{
+  "file_name": "0000000001.flac",
+  "soda_split": "train",
+  "soda_index": 1,
+  "narrative": "Rylea sat down with Shavon and asked him what was wrong. Shavon told Rylea that he was having a hard time and needed someone to talk to. Rylea said that he would be happy to be there for his friend.",
+  "speakers": [
+    "Rylea",
+    "Shavon"
+  ],
+  "behaviors": [
+    {
+      "utterance_length": 2,
+      "filler_words": 0,
+      "backchannels": 0,
+      "interruptions": 1
+    },
+    {
+      "utterance_length": 1,
+      "filler_words": 0,
+      "backchannels": 1,
+      "interruptions": 0
+    }
+  ],
+  "num_turns": 10,
+  "utterances": [
+    {
+      "uttr_idx": 0,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "Hey Shavon, I noticed you're looking a bit down today. What's wrong?",
+      "dur_samples": 106496,
+      "start_time": 0.0,
+      "end_time": 4.829750566893424,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 1,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "I appreciate you asking, Rylea.",
+      "dur_samples": 45955,
+      "start_time": 5.218458049886621,
+      "end_time": 7.302585034013606,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 2,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "I'm just having a hard time with everything going on lately. It's like... there's so much happening that I don't know where to start.",
+      "dur_samples": 162949,
+      "start_time": 7.302585034013606,
+      "end_time": 14.692562358276644,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 3,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "I'm sorry to hear that. If you want, I'm more than happy to listen and help if I can.",
+      "dur_samples": 129086,
+      "start_time": 14.692562358276644,
+      "end_time": 20.546802721088437,
+      "backchannels": [
+        {
+          "bc_idx": 0,
+          "tts_text": "Mhm.",
+          "start_time": 15.796190476190477,
+          "end_time": 16.45578231292517
+        }
+      ]
+    },
+    {
+      "uttr_idx": 4,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "Sometimes discussing every little detail can provide clarity and relief.",
+      "dur_samples": 117248,
+      "start_time": 20.546802721088437,
+      "end_time": 25.86417233560091,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 5,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "Thanks, Rylea.",
+      "dur_samples": 20486,
+      "start_time": 26.59219954648526,
+      "end_time": 27.52126984126984,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 6,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "I think I just need someone to talk to and maybe throw around some ideas on how to approach things. I've been feeling overwhelmed by work pressure,",
+      "dur_samples": 198144,
+      "start_time": 27.52126984126984,
+      "end_time": 36.507392290249435,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 7,
+      "uttr_type": "interrupt",
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "Absolutely, then talking might really help sort through those thoughts.",
+      "dur_samples": 88963,
+      "start_time": 36.147074829931974,
+      "end_time": 40.18167800453515,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 8,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "Work can be incredibly demanding, especially when it feels like everything's happening all at once.",
+      "dur_samples": 136704,
+      "start_time": 40.18167800453515,
+      "end_time": 46.38140589569161,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 9,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "That's exactly it.",
+      "dur_samples": 24264,
+      "start_time": 46.613015873015875,
+      "end_time": 47.71342403628118,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 10,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "It's like deadlines keep piling up, and no matter how much I try, I can't seem to keep up. And on top of that, some personal issues are making it harder to focus.",
+      "dur_samples": 256794,
+      "start_time": 47.71342403628118,
+      "end_time": 59.359410430839006,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 11,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "Balancing personal life and work is challenging. Sometimes, it helps to prioritize tasks and tackle them one at a time. Would you consider making a list to organize everything?",
+      "dur_samples": 229763,
+      "start_time": 59.85995464852608,
+      "end_time": 70.28004535147392,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 12,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "I like the sound of that.",
+      "dur_samples": 31668,
+      "start_time": 70.43097505668935,
+      "end_time": 71.86716553287982,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 13,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "Maybe if I see everything laid out, I’ll feel less tangled up and more... composed.",
+      "dur_samples": 124160,
+      "start_time": 71.86716553287982,
+      "end_time": 77.49800453514739,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 14,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "That sounds like a good plan.",
+      "dur_samples": 38019,
+      "start_time": 77.68639455782314,
+      "end_time": 79.41061224489796,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 15,
+      "uttr_type": null,
+      "speaker_idx": 0,
+      "speaker": "Rylea",
+      "tts_text": "Plus, don't hesitate to lean on friends like me whenever you need some support or even just a break. We're here.",
+      "dur_samples": 180992,
+      "start_time": 79.41061224489796,
+      "end_time": 87.61886621315193,
+      "backchannels": []
+    },
+    {
+      "uttr_idx": 16,
+      "uttr_type": null,
+      "speaker_idx": 1,
+      "speaker": "Shavon",
+      "tts_text": "I really appreciate that, Rylea. It's reassuring to know I'm not in this alone.",
+      "dur_samples": 95944,
+      "start_time": 87.837052154195,
+      "end_time": 92.18825396825397,
+      "backchannels": []
+    }
+  ],
+  "tts_speaker_ids": [
+    "0000409830_0",
+    "0000471459_1"
+  ],
+  "tts_genders": [
+    "female",
+    "female"
+  ],
+  "statistics": {
+    "num_utterances": [
+      5,
+      5
+    ],
+    "num_turntaking": [
+      4,
+      5
+    ],
+    "durations": [
+      46.58825396825396,
+      43.553922902494335
+    ],
+    "num_interruptions": [
+      1,
+      0
+    ],
+    "num_backchannels": [
+      0,
+      1
+    ],
+    "num_filler_words": [
+      3,
+      3
+    ]
+  }
+}

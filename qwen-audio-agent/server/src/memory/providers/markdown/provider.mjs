@@ -38,7 +38,18 @@ export class MarkdownMemoryProvider {
     return scopes.flatMap(name => this.stores[name]?.list(ownerId) || [])
   }
 
-  apply(ownerId, changes = []) {
+  // Internal learning snapshot, never used for prompt injection or API output.
+  // Revisions cover the complete document, including text beyond its budget.
+  listForLearning(ownerId) {
+    return MEMORY_DOCUMENTS.flatMap(scope => {
+      const store = this.stores[scope]
+      if (!store) return []
+      const document = store.learningDocument(ownerId)
+      return document ? [document] : []
+    })
+  }
+
+  apply(ownerId, changes = [], context = {}) {
     if (!Array.isArray(changes) || !changes.length) {
       throw new Error('at least one memory change is required')
     }
@@ -61,7 +72,16 @@ export class MarkdownMemoryProvider {
       }
     })
     for (const item of prepared) {
-      if (item.result.changed) item.store.persist(ownerId, `${item.result.content}\n`)
+      if (!item.result.changed) continue
+      // Preserve one recoverable version before lossy model rewriting. It is
+      // never injected, and any subsequent edit invalidates this backup.
+      if (context.source === 'automatic-compaction') {
+        item.store.saveCompactionBackup(ownerId, item.result.previousContent)
+      }
+      item.store.persist(ownerId, `${item.result.content}\n`)
+      if (context.source !== 'automatic-compaction') {
+        item.store.clearCompactionBackup?.(ownerId)
+      }
     }
     return {
       changed: prepared.reduce((sum, item) => sum + item.result.changed, 0),

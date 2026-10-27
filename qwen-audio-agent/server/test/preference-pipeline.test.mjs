@@ -192,14 +192,14 @@ test('a value already promoted cannot be re-confirmed from the injected profile'
   }
 })
 
-test('a short session never reaches the model', () => {
+test('an empty session never reaches the model', () => {
   let calls = 0
   const observer = new ProfileObserver({
     candidatePool: new PreferenceCandidatePool(),
-    conversationSync: recordedConversation(transcript(['一', '二']), 's_a'),
+    conversationSync: recordedConversation([], 's_a'),
     llmCall: async () => { calls += 1; return OCCUPATION_REPLY },
     logger: { warn() {}, debug() {} },
   })
   assert.equal(observer.maybeRun({ ownerId: OWNER, sessionId: 's_a' }), null)
-  assert.equal(calls, 0, '短会话不该白花一次模型调用')
+  assert.equal(calls, 0, 'no model call without fresh user content')
 })

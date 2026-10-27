@@ -27,6 +27,8 @@
 // 与「不做完整转写持久化」的立场矛盾。因此 evidence 最多 3 条、每条 ≤50 字；
 // 确认次数继续累加但不再留原话，证据强度不受影响。
 
+import { COMPANIONSHIP_FIELDS, COMPANIONSHIP_LABELS } from './companionship-preferences.mjs'
+
 const MAX_EVIDENCE_ITEMS = 3
 const MAX_EVIDENCE_CHARS = 50
 // 判据比原话长一些：它要说明「凭什么从这句话得出这个结论」，
@@ -52,6 +54,7 @@ const STATES = new Set(['tentative', 'active', 'rejected'])
 // values 非空表示枚举字段：取值空间封闭且有数据支持才枚举，此时一致性判断
 // 退化成字符串相等；其余走自由文本，靠单槽 in-place 免掉归一化。
 export const PROFILE_FIELDS = Object.freeze({
+  ...COMPANIONSHIP_FIELDS,
   occupation: Object.freeze({ kind: 'slot', values: null }),
   response_style: Object.freeze({ kind: 'slot', values: null }),
   response_length: Object.freeze({
@@ -68,6 +71,7 @@ export const PROFILE_FIELDS = Object.freeze({
 // 枚举字段写进 USER.md 的措辞查表得到，不由模型生成 —— 否则同一个取值每次
 // 晋升写出来的话都不一样，用户会以为系统学了好几条。
 const ENUM_LABELS = Object.freeze({
+  ...COMPANIONSHIP_LABELS,
   response_length: Object.freeze({
     brief: '回答简短，直接说要点',
     normal: '回答长度适中',
@@ -138,11 +142,15 @@ export function evaluateSlot(slot) {
   const missing = []
   if (confirm < CONFIRM_TARGET) missing.push('confirm')
   if (sessionCount < SESSION_TARGET) missing.push('sessions')
+  const minSpanMs = PROFILE_FIELDS[slot?.field]?.minSpanMs || 0
+  const spanMs = Math.max(0, (slot?.lastAt || 0) - (slot?.firstAt || 0))
+  if (minSpanMs && spanMs < minSpanMs) missing.push('time_span')
   return {
     confirm,
     confirmTarget: CONFIRM_TARGET,
     sessionCount,
     sessionTarget: SESSION_TARGET,
+    ...(minSpanMs ? { minSpanMs, spanMs } : {}),
     missing,
     ready: missing.length === 0,
   }
@@ -193,11 +201,15 @@ export class PreferenceCandidatePool {
     staleMs = STALE_MS,
     // 可选注入：进程重启后仍能攒证据。不传就纯内存运行（测试与桌面调试便利）。
     store = null,
+    profileLearningEnabled = true,
+    companionshipEnabled = false,
   } = {}) {
     this.now = now
     this.targets = { confirmTarget, sessionTarget }
     this.staleMs = staleMs
     this.store = store
+    this.profileLearningEnabled = profileLearningEnabled
+    this.companionshipEnabled = companionshipEnabled
     // ownerId → Map<slotKey, slot>
     this.owners = new Map()
     // ownerId → Set<slotKey>：用户否决过的不再晋升
@@ -265,6 +277,11 @@ export class PreferenceCandidatePool {
     return this.owners.get(key)
   }
 
+  allows(field) {
+    return Boolean(PROFILE_FIELDS[field]) && (COMPANIONSHIP_FIELDS[field]
+      ? this.companionshipEnabled : this.profileLearningEnabled)
+  }
+
   // 某个槽位是否已被用户否决。
   //
   // 粒度刻意不一致，因为两类字段的否决语义不同：
@@ -297,7 +314,7 @@ export class PreferenceCandidatePool {
     relation = null,
   }) {
     const definition = PROFILE_FIELDS[field]
-    if (!definition || !String(ownerId || '')) return null
+    if (!definition || !this.allows(field) || !String(ownerId || '')) return null
     const safeValue = normaliseValue(field, value)
     if (!safeValue) return null
     if (this.blocked(ownerId, field, safeValue)) return null
@@ -341,9 +358,15 @@ export class PreferenceCandidatePool {
       existing.confirm = 0
       existing.sessions = []
       existing.evidence = []
+      if (COMPANIONSHIP_FIELDS[field]) existing.firstAt = at
     }
 
-    const link = relation || (existing.value === safeValue ? 'same' : 'contradict')
+    // Closed companionship enums cannot be "refined" into a different value.
+    const link = COMPANIONSHIP_FIELDS[field]
+      ? (existing.value === safeValue ? 'same' : 'contradict')
+      : (relation || (existing.value === safeValue ? 'same' : 'contradict'))
+    if (COMPANIONSHIP_FIELDS[field] && link === 'same'
+      && existing.sessions.includes(String(sessionId || ''))) return existing
     if (link === 'contradict') {
       existing.value = safeValue
       existing.key = slotKey(field, safeValue)
@@ -425,7 +448,8 @@ export class PreferenceCandidatePool {
   // 攒够确认的槽位。晋升扫描的输入。
   promotable(ownerId) {
     return this.list(ownerId, { state: 'tentative' })
-      .filter(slot => slot.ready && !this.blocked(ownerId, slot.field, slot.value))
+      .filter(slot => this.allows(slot.field) && slot.ready
+        && !this.blocked(ownerId, slot.field, slot.value))
   }
 
   isCurrent(ownerId, snapshot) {
@@ -515,6 +539,7 @@ export class PreferenceCandidatePool {
             confirmTarget: slot.confirmTarget,
             sessions: slot.sessionCount,
             sessionTarget: slot.sessionTarget,
+            ...(slot.minSpanMs ? { minSpanMs: slot.minSpanMs, spanMs: slot.spanMs } : {}),
             missing: slot.missing,
             ready: slot.ready,
             lastAt: slot.lastAt,

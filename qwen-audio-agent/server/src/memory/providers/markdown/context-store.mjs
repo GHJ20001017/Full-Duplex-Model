@@ -3,6 +3,7 @@ import {
   chmodSync,
   mkdirSync,
   readFileSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -132,6 +133,11 @@ export class MarkdownContextStore {
     return [publicDocument(this.scope, content, raw)]
   }
 
+  learningDocument(ownerId) {
+    const raw = this.readRaw(ownerId)
+    return raw ? { ...publicDocument(this.scope, raw), maxChars: this.maxChars } : null
+  }
+
   edit(ownerId, {
     edits = [],
     append = '',
@@ -216,7 +222,29 @@ export class MarkdownContextStore {
     return {
       changed,
       content: next,
+      previousContent: current,
       document: publicDocument(this.scope, next),
+    }
+  }
+
+  saveCompactionBackup(ownerId, content) {
+    const path = this.pathFor(ownerId)
+    if (!path) return
+    const backup = `${path}.pre-compaction`
+    mkdirSync(dirname(backup), { recursive: true, mode: 0o700 })
+    const temporary = `${backup}.${process.pid}.tmp`
+    writeFileSync(temporary, content, { encoding: 'utf8', mode: 0o600 })
+    replaceFileSync(temporary, backup)
+    chmodSync(backup, 0o600)
+  }
+
+  clearCompactionBackup(ownerId) {
+    const path = this.pathFor(ownerId)
+    if (!path) return
+    try {
+      unlinkSync(`${path}.pre-compaction`)
+    } catch (error) {
+      if (error.code !== 'ENOENT') this.warn(`Cannot remove compaction backup: ${error.message}`)
     }
   }
 

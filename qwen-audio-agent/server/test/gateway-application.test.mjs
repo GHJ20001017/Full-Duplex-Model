@@ -37,6 +37,12 @@ function createTestGatewayApplication(options = {}) {
     store: taskStore,
     sessionJournal,
   })
+  const testConfig = { ...(options.config || config) }
+  for (const key of ['sessionDigestPath', 'memoryAuditPath', 'preferenceCandidatePath',
+    'userModelPath', 'frontendMemoryPath']) {
+    if (testConfig[key] === config[key]) testConfig[key] = join(runtimeDirectory, key)
+  }
+  if (testConfig.memoryApiKey === config.memoryApiKey) testConfig.memoryApiKey = ''
   const application = createGatewayApplication({
     agent: disabledBackend(),
     publicEndpoint: null,
@@ -45,6 +51,7 @@ function createTestGatewayApplication(options = {}) {
     taskStore,
     sessionJournal,
     ...options,
+    config: testConfig,
   })
   const close = application.close
   application.close = async () => {
@@ -1294,12 +1301,14 @@ test('API memory edits refresh only the owning live Realtime session without rec
   assert.equal(subscriptions, 0, 'closing the session must release its memory subscription')
 })
 
-// 接线契约：新增的记忆模块默认关闭，显式开启时才装配。
+// 接线契约：记忆学习可显式关闭，且不被其他模块隐式带起。
 // config 是模块级单例（import 时已读完 env），所以这里注入伪 config
 // 而不是改 process.env —— 后者在同一进程内无效。
-test('leaves the new memory modules unwired unless explicitly enabled', async () => {
+test('leaves memory learning unwired when explicitly disabled', async () => {
   const app = createTestGatewayApplication({
-    config: { ...config, reminderSchedulerEnabled: false },
+    config: { ...config, reminderSchedulerEnabled: false,
+      memoryAutoEnabled: false, memoryCompactionEnabled: false, sessionDigestEnabled: false,
+      preferenceLearningEnabled: false, companionshipLearningEnabled: false },
     autoStart: false,
   })
   try {
@@ -1325,6 +1334,7 @@ test('wires the domain library on its own switch and imports a local file', asyn
       ...config,
       reminderSchedulerEnabled: false,
       domainLibraryEnabled: true,
+      sessionDigestEnabled: false,
       domainDocumentDirectory: documents,
       domainIndexPath: join(directory, 'domain-index.json'),
     },
@@ -1437,6 +1447,8 @@ test('wires session digests and the summariser on their own switch', async () =>
     config: {
       ...config,
       reminderSchedulerEnabled: false,
+      preferenceLearningEnabled: false,
+      companionshipLearningEnabled: false,
       memoryAutoEnabled: true,
       memoryApiKey: 'test-key',
       sessionDigestEnabled: true,

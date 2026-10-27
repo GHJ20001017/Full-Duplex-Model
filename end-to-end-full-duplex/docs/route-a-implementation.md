@@ -1,4 +1,6 @@
-# Route A：按 Moshi 训练流程构建 Qwen3 全双工模型
+# 历史方案：Route A — 按 Moshi 训练流程构建 Qwen3 全双工模型
+
+> 此路线已被直接采用预训练 Qwen2.5-Omni 的方案替代，不再作为项目的训练或执行要求。以下仅保留旧方案的设计记录；文中“当前”“本项目”“必须”等表述仅适用于旧方案，相关代码与命令不保证仍存在。当前路线见 [项目 README](../README.md)。
 
 ## 目标与边界
 
@@ -45,7 +47,7 @@
 | Moshi PyTorch loader 与 delay 工具 | Mimi 加载、流式状态、延迟/反延迟                 | 复用并适配     |
 
 
-当前仓库的下载脚本以 ModelScope 为入口，模型来源和实际文件名以 `scripts/download_models.py` 为准。训练运行前要保存：模型仓库 revision、文件 SHA、Python/PyTorch/Moshi 版本、Mimi `num_codebooks`、采样率和帧率。
+旧方案曾使用 ModelScope 下载入口准备资产；当时的脚本路径与资产清单不再作为当前使用说明。当前 `script/download_models.py` 仅下载 Qwen2.5-Omni，不能用于准备本历史路线的 Qwen3/Mimi 资产。若复查旧实验，需要单独核对模型仓库 revision、文件 SHA、Python/PyTorch/Moshi 版本、Mimi `num_codebooks`、采样率和帧率。
 
 ### 0.2 只做三项验收
 

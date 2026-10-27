@@ -1,6 +1,8 @@
-# 适用于 Nano Banana 的 Qwen3-Moshi 中文框架图提示词
+# 历史方案：Qwen3-Moshi 中文框架图提示词
 
-> 用途：生成当前 Step3 的科研架构图。以下内容可以整体复制给 Nano Banana。图中文字以中文为主，只有模型名、标准技术名词、张量符号和必要的英文术语保留英文。
+> 本文只描述旧版 Qwen3-Moshi 方案，不是当前 Qwen2.5-Omni 的架构或实现说明；文中实现状态仅为旧方案记录，不代表当前代码能力。当前路线见 [项目 README](../README.md)。
+
+> 用途：生成旧方案 Step3 的科研架构图。以下内容可以整体复制给 Nano Banana。图中文字以中文为主，只有模型名、标准技术名词、张量符号和必要的英文术语保留英文。
 
 ## 可直接复制给 Nano Banana 的提示词
 
@@ -738,7 +740,7 @@ Text Head 连接：
 
 用一条清晰的实线大边框圈出以下模块：
 
-**已实现的 Token-Level Qwen3-Moshi Model**
+**旧方案 Token-Level Qwen3-Moshi Model（历史实现记录）**
 
 边界内包括：
 
@@ -761,7 +763,7 @@ Mimi Encoder、Mimi Decoder、麦克风、扬声器放在边界外，但通过 t
 
 底部加一句：
 
-**当前实现是 token-level architecture；实时 codec/playback orchestration 不属于本框架图的已实现范围。**
+**旧方案记录的是 token-level architecture；实时 codec/playback orchestration 不属于该历史框架图的实现范围，也不表示当前 Qwen2.5-Omni 路线已实现。**
 
 不要宣称：
 

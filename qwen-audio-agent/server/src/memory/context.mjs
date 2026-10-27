@@ -1,4 +1,5 @@
 import { canonicalScope, isDirectiveScope } from './scopes.mjs'
+import { COMPANIONSHIP_POLICY, companionshipFieldsInText } from './learning/companionship-preferences.mjs'
 
 // These existing document notices carry context semantics, not template facts.
 // Preserve their exact legacy wording without adding rules to the system prompt.
@@ -37,6 +38,7 @@ function userPreferencesSection(memories = []) {
   return [
     opening,
     content,
+    ...(companionshipFieldsInText(content).length ? [COMPANIONSHIP_POLICY] : []),
     '</user_preferences>',
   ].join('\n')
 }

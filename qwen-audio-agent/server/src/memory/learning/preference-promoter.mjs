@@ -20,6 +20,7 @@
 // instructions 必须在音频进来之前就位，会话中途改对已转写的音频无效。
 
 import { isSameFieldLabel, renderLabel } from './preference-candidates.mjs'
+import { COMPANIONSHIP_FIELDS, companionshipFieldsInText } from './companionship-preferences.mjs'
 
 const EXPLICIT_HEADING = '## 用户明确要求'
 const OBSERVED_HEADING = '## 观察推断'
@@ -91,8 +92,9 @@ export class PreferencePromoter {
   }
 
   currentUserDocument(ownerId) {
-    const documents = this.memoryService.list(ownerId, { scope: 'user' })
-    return documents[0] || null
+    const documents = this.memoryService.listForLearning?.(ownerId)
+      || this.memoryService.list(ownerId, { scope: 'user' })
+    return documents.find(document => document.scope === 'user') || null
   }
 
   // 离线扫描入口。返回本次晋升的条目，便于审计与测试。
@@ -138,12 +140,20 @@ export class PreferencePromoter {
     // 写入前重新校验：黑名单可能在扫描后被更新，明说区里可能已有等价表述。
     // 对标 OpenClaw Deep 阶段「写入前重新载入片段，跳过陈旧或已删除的」。
     const explicitText = before.toLocaleLowerCase()
+    const explicitCompanionship = new Set(companionshipFieldsInText(`${before}\n${after}`))
     let kept = [...items]
     const accepted = []
     for (const slot of promotable) {
       if (accepted.length >= this.maxPerRun) break
       const label = slot.label.trim()
       const key = label.toLocaleLowerCase()
+      // A standing instruction owns its entire companionship dimension, even
+      // when its wording differs from the inferred enum's fixed label.
+      if (COMPANIONSHIP_FIELDS[slot.field] && explicitCompanionship.has(slot.field)) {
+        this.audit?.record({ op: 'skip', ownerId, reason: 'companionship_already_explicit',
+          scope: 'user', detail: { field: slot.field } })
+        continue
+      }
       if (kept.some(item => item.trim().toLocaleLowerCase() === key)) {
         this.candidatePool.markPromoted(ownerId, slot)
         continue

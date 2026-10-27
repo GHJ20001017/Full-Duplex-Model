@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +18,34 @@ import {
 } from '../../shared/realtime-provider-catalog.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+
+for (const [value, expected] of [[undefined, true], ['', true], ['on', true], ['off', false], ['OFF', false]]) {
+  test(`Gateway companionship learning setting ${JSON.stringify(value)} resolves to ${expected}`, t => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'companion-config-'))
+    t.after(() => rmSync(directory, { recursive: true, force: true }))
+    // Load the real startup config without the user's files or credentials.
+    const env = {
+      PATH: process.env.PATH,
+      HOME: directory,
+      QWEN_AUDIO_AGENT_RUNTIME_ROOT: directory,
+      QWAUDIO_CONFIG_DIR: resolve(directory, 'config'),
+      QWAUDIO_DATA_DIR: resolve(directory, 'data'),
+      QWAUDIO_STATE_DIR: resolve(directory, 'state'),
+      QWAUDIO_CACHE_DIR: resolve(directory, 'cache'),
+      ...(value === undefined ? {} : {
+        QWEN_AUDIO_COMPANIONSHIP_LEARNING: value,
+        QWEN_AUDIO_SESSION_DIGEST: value,
+        QWEN_AUDIO_MEMORY_COMPACTION: value,
+      }),
+    }
+    const moduleUrl = new URL('../src/core/config.mjs', import.meta.url).href
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e',
+      `const { config } = await import(${JSON.stringify(moduleUrl)}); process.stdout.write(JSON.stringify({ companionship: config.companionshipLearningEnabled, profile: config.preferenceLearningEnabled, digests: config.sessionDigestEnabled, compaction: config.memoryCompactionEnabled, userThreshold: config.userCompactionThresholdChars, memoryThreshold: config.memoryCompactionThresholdChars }));`,
+    ], { env, encoding: 'utf8' })
+    assert.deepEqual(JSON.parse(output), { companionship: expected, profile: false,
+      digests: expected, compaction: expected, userThreshold: 4500, memoryThreshold: 6000 })
+  })
+}
 
 test('treats missing and blank numeric settings as unset', () => {
   for (const value of [null, undefined, '', '   ', '\t\n']) {

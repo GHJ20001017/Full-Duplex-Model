@@ -98,6 +98,18 @@ test('never returns raw transcript or session internals', async () => {
   )
 })
 
+test('returns only relevant experience details through the recall tool', async () => {
+  const { handler, lastOutput } = harness({ sessionDigests: digestPool([
+    { session: 'interview', at: NOW - DAY, topics: ['面试'], gist: '约好复试',
+      summary: '用户约好周三复试，计划先准备项目介绍。' },
+    { session: 'dinner', at: NOW, topics: ['晚餐'], gist: '讨论了晚餐' },
+  ]) })
+  await handler.handle(call({ query: '复试' }))
+  assert.equal(lastOutput().sessions.length, 1)
+  assert.match(lastOutput().sessions[0].summary, /周三复试/)
+  assert.equal(lastOutput().sessions[0].session, undefined)
+})
+
 test('reports not_found when the topic was never discussed', async () => {
   const { handler, lastOutput } = harness({
     sessionDigests: digestPool([

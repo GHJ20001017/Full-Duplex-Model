@@ -404,3 +404,25 @@ test('reads back a digest written before the work field existed', () => {
     assert.deepEqual(restored.work, [])
   })
 })
+
+test('stores bounded experience details and retrieves natural-query overlap', () => {
+  const digests = pool()
+  digests.record({ ownerId: OWNER, sessionId: 'interview', topics: ['职业发展'], gist: '准备下一轮',
+    summary: '用户的项目面试约在周三，计划周末练习项目介绍。' })
+  digests.record({ ownerId: OWNER, sessionId: 'other', topics: ['晚饭'], gist: '讨论了菜谱' })
+  const found = digests.search({ ownerId: OWNER, keyword: '之前那个项目面试准备怎么样了' })
+  assert.deepEqual(found.map(item => item.session), ['interview'])
+  assert.match(found[0].summary, /周三/)
+  assert.deepEqual(digests.search({ ownerId: 'different-owner', keyword: '项目面试' }), [])
+})
+
+test('bounds and persists experience summaries without changing legacy entries', () => withFile(filePath => {
+  const digests = pool({ filePath })
+  const summary = '面试相关经历。'.repeat(100)
+  const saved = digests.record({ ownerId: OWNER, sessionId: 'new', topics: [], gist: '', summary })
+  assert.equal([...saved.summary].length, SESSION_DIGEST_LIMITS.MAX_SUMMARY_CHARS)
+  const restored = pool({ filePath }).get({ ownerId: OWNER, sessionId: 'new' })
+  assert.equal(restored.summary, saved.summary)
+  assert.equal(digests.record({ ownerId: OWNER, sessionId: 'unsafe', topics: ['经历'],
+    gist: '普通要点', summary: '用户的密码是测试内容' }), null)
+}))

@@ -1,0 +1,5254 @@
+{
+  "started_at": 1792663254.527805,
+  "model_dir": "/gpu3/guhj/Full-Duplex_Model/end-to-end-full-duplex/model/Qwen2.5-Omni-3B",
+  "versions": {
+    "torch": "2.12.0",
+    "transformers": "5.6.0",
+    "numpy": "2.5.3",
+    "scipy": "1.17.1"
+  },
+  "cuda_visible_devices": "5",
+  "samples": [
+    {
+      "case_id": "0000000003",
+      "utterance_index": 10,
+      "speaker_idx": 0,
+      "reference": "I just want to be able to spend as much time there as possible. It's, like, one of my favorite places!",
+      "seconds": 6.664126984126984,
+      "original_time_range": [
+        46.087755102040816,
+        52.751882086167804
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "I'm glad you like it so much. What's your favorite place?",
+          "word_edits": 19,
+          "reference_words": 21,
+          "wer": 0.9047619047619048,
+          "tokens": 167,
+          "encode_ms": 94.71427276730537
+        },
+        "independent_100ms": {
+          "transcript": "Well, you could start by making a list of all the places you want to visit. Then, you can look for the cheapest flights or accommodations for each place. You might also consider using travel apps that can help you find deals. Another thing is to check if there are any local events or discounts that could save you money. Oh, and don't forget to book in advance, especially for popular places. So, what do you think? Have you started making your list yet?",
+          "word_edits": 80,
+          "reference_words": 21,
+          "wer": 3.8095238095238093,
+          "tokens": 134,
+          "encode_ms": {
+            "count": 67,
+            "mean": 68.78815413410985,
+            "median": 67.81753152608871,
+            "p95": 85.19765734672546,
+            "max": 88.15356343984604
+          },
+          "encoding_total_ms": 4608.806326985359,
+          "rtf": 0.6915844097753373,
+          "token_count_difference_from_baseline": -33
+        },
+        "independent_200ms": {
+          "transcript": "Well, that's great! But you know, there are some things to consider. For example, you might want to make sure you're not spending too much time there that it's affecting your other responsibilities or relationships. Also, you should think about how you can make the most of your time there, like trying new things or meeting new people. So, what do you think you'll do to make the most of your time there?",
+          "word_edits": 66,
+          "reference_words": 21,
+          "wer": 3.142857142857143,
+          "tokens": 167,
+          "encode_ms": {
+            "count": 34,
+            "mean": 70.07484269492767,
+            "median": 71.08526304364204,
+            "p95": 84.67018231749535,
+            "max": 86.66013926267624
+          },
+          "encoding_total_ms": 2382.5446516275406,
+          "rtf": 0.3575178950374787,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_500ms": {
+          "transcript": "Well, that's great. You should really make time for it. Maybe you could plan some regular visits, like once a week or something. It'll be even more enjoyable. So, what's this place? It sounds like a really nice place for you.",
+          "word_edits": 40,
+          "reference_words": 21,
+          "wer": 1.9047619047619047,
+          "tokens": 160,
+          "encode_ms": {
+            "count": 14,
+            "mean": 74.40509194774287,
+            "median": 72.86956906318665,
+            "p95": 84.44787189364433,
+            "max": 84.44787189364433
+          },
+          "encoding_total_ms": 1041.6712872684002,
+          "rtf": 0.15631023984829748,
+          "token_count_difference_from_baseline": -7
+        },
+        "independent_1000ms": {
+          "transcript": "I see. Well, if you really love that place, you could try to plan your days around it. Maybe set aside specific days just for being there. Or, you could look into getting a local job or a part - time gig there. That way, you can spend more time there while still having a work - life balance. What do you think?",
+          "word_edits": 57,
+          "reference_words": 21,
+          "wer": 2.7142857142857144,
+          "tokens": 167,
+          "encode_ms": {
+            "count": 7,
+            "mean": 75.92223318559783,
+            "median": 73.01335409283638,
+            "p95": 86.58672869205475,
+            "max": 86.58672869205475
+          },
+          "encoding_total_ms": 531.4556322991848,
+          "rtf": 0.07974872531166312,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "I'm glad you like it so much. What's your favorite place?",
+          "word_edits": 19,
+          "reference_words": 21,
+          "wer": 0.9047619047619048,
+          "tokens": 167,
+          "encode_ms": {
+            "count": 4,
+            "mean": 76.5692526474595,
+            "median": 75.12337900698185,
+            "p95": 84.14287492632866,
+            "max": 84.14287492632866
+          },
+          "encoding_total_ms": 306.277010589838,
+          "rtf": 0.04595905980173351,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "Well, that's a great goal. You could start by making a schedule. Maybe set aside specific times each day just for that place. You know, like an hour or two. And try to stick to it. Also, you could plan your routes in advance so you don't waste time looking for the best way to get there. Oh, and don't forget to bring your favorite things to do there, like a book or a camera. So, what do you think? Do you have any ideas on how to make this happen?",
+          "word_edits": 86,
+          "reference_words": 21,
+          "wer": 4.095238095238095,
+          "tokens": 167,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 167,
+            "mean_cosine": 0.3830510675907135,
+            "relative_l2": 1.1158228688136513
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "Well, that's great. What's your favorite place? Maybe I can suggest some other places that you might like too.",
+          "word_edits": 21,
+          "reference_words": 21,
+          "wer": 1.0,
+          "tokens": 167,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 167,
+            "mean_cosine": 0.7537321448326111,
+            "relative_l2": 0.7510776523818297
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "I see. Well, that's great. What's your favorite place? Maybe we can talk more about it.",
+          "word_edits": 20,
+          "reference_words": 21,
+          "wer": 0.9523809523809523,
+          "tokens": 167,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 167,
+            "mean_cosine": 0.8986040353775024,
+            "relative_l2": 0.5084303641434942
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "I'm glad you like it so much. What's your favorite place?",
+          "word_edits": 19,
+          "reference_words": 21,
+          "wer": 0.9047619047619048,
+          "tokens": 167,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 167,
+            "mean_cosine": 0.9992584586143494,
+            "relative_l2": 0.04445833760481853
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 76.01859793066978
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 72.23046571016312
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 80.57641237974167
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 77.69425585865974
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 68.03379580378532
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 74.6985711157322
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 77.07763463258743
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 68.46312433481216
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 74.7353658080101
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 75.0044398009777
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 76.88184827566147
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 76.23366266489029
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 76.68431103229523
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 77.74914428591728
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 77.99583673477173
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 78.11128720641136
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 91.02573245763779
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 70.80178335309029
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 78.21021974086761
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 86.70162782073021
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 60.36991626024246
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 71.69978693127632
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 63.4244903922081
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 61.795834451913834
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 61.4045225083828
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 63.52974846959114
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 67.14651361107826
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 68.9496174454689
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 69.94299218058586
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 75.57499408721924
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 74.09673929214478
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 62.35070154070854
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 70.30976191163063
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 66.49273633956909
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 68.96074488759041
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 63.880935311317444
+        },
+        {
+          "arrived_seconds": 3.7,
+          "tokens": 92,
+          "compute_ms": 76.2968547642231
+        },
+        {
+          "arrived_seconds": 3.8,
+          "tokens": 95,
+          "compute_ms": 71.52054831385612
+        },
+        {
+          "arrived_seconds": 3.9,
+          "tokens": 97,
+          "compute_ms": 62.64389306306839
+        },
+        {
+          "arrived_seconds": 4.0,
+          "tokens": 100,
+          "compute_ms": 71.53063267469406
+        },
+        {
+          "arrived_seconds": 4.1,
+          "tokens": 102,
+          "compute_ms": 92.82013028860092
+        },
+        {
+          "arrived_seconds": 4.2,
+          "tokens": 105,
+          "compute_ms": 79.66465875506401
+        },
+        {
+          "arrived_seconds": 4.3,
+          "tokens": 107,
+          "compute_ms": 85.55714786052704
+        },
+        {
+          "arrived_seconds": 4.4,
+          "tokens": 110,
+          "compute_ms": 85.93348041176796
+        },
+        {
+          "arrived_seconds": 4.5,
+          "tokens": 112,
+          "compute_ms": 83.22225883603096
+        },
+        {
+          "arrived_seconds": 4.6,
+          "tokens": 115,
+          "compute_ms": 73.66310060024261
+        },
+        {
+          "arrived_seconds": 4.7,
+          "tokens": 117,
+          "compute_ms": 62.39117681980133
+        },
+        {
+          "arrived_seconds": 4.8,
+          "tokens": 120,
+          "compute_ms": 67.26830452680588
+        },
+        {
+          "arrived_seconds": 4.9,
+          "tokens": 122,
+          "compute_ms": 62.77097016572952
+        },
+        {
+          "arrived_seconds": 5.0,
+          "tokens": 125,
+          "compute_ms": 68.58561560511589
+        },
+        {
+          "arrived_seconds": 5.1,
+          "tokens": 127,
+          "compute_ms": 68.89690458774567
+        },
+        {
+          "arrived_seconds": 5.2,
+          "tokens": 130,
+          "compute_ms": 73.40290397405624
+        },
+        {
+          "arrived_seconds": 5.3,
+          "tokens": 132,
+          "compute_ms": 72.97540828585625
+        },
+        {
+          "arrived_seconds": 5.4,
+          "tokens": 135,
+          "compute_ms": 71.27529755234718
+        },
+        {
+          "arrived_seconds": 5.5,
+          "tokens": 137,
+          "compute_ms": 63.40865045785904
+        },
+        {
+          "arrived_seconds": 5.6,
+          "tokens": 140,
+          "compute_ms": 62.592361122369766
+        },
+        {
+          "arrived_seconds": 5.7,
+          "tokens": 142,
+          "compute_ms": 64.22707810997963
+        },
+        {
+          "arrived_seconds": 5.8,
+          "tokens": 145,
+          "compute_ms": 67.12429597973824
+        },
+        {
+          "arrived_seconds": 5.9,
+          "tokens": 147,
+          "compute_ms": 71.43550738692284
+        },
+        {
+          "arrived_seconds": 6.0,
+          "tokens": 150,
+          "compute_ms": 65.94497337937355
+        },
+        {
+          "arrived_seconds": 6.1,
+          "tokens": 152,
+          "compute_ms": 67.47642531991005
+        },
+        {
+          "arrived_seconds": 6.2,
+          "tokens": 155,
+          "compute_ms": 73.32834601402283
+        },
+        {
+          "arrived_seconds": 6.3,
+          "tokens": 157,
+          "compute_ms": 64.10380080342293
+        },
+        {
+          "arrived_seconds": 6.4,
+          "tokens": 160,
+          "compute_ms": 64.19603154063225
+        },
+        {
+          "arrived_seconds": 6.5,
+          "tokens": 162,
+          "compute_ms": 69.59571689367294
+        },
+        {
+          "arrived_seconds": 6.6,
+          "tokens": 165,
+          "compute_ms": 72.63404503464699
+        },
+        {
+          "arrived_seconds": 6.664126984126984,
+          "tokens": 167,
+          "compute_ms": 67.94774159789085
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 66,
+            "mean": 0.9485132211085522,
+            "median": 0.9758719801902771,
+            "p95": 0.9944254755973816,
+            "max": 0.9995548725128174
+          },
+          "relative_l2": {
+            "count": 66,
+            "mean": 0.2627239512249508,
+            "median": 0.20854896235842987,
+            "p95": 0.7233775490226219,
+            "max": 1.2621740711162763
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 65,
+            "mean": 0.9671819155032818,
+            "median": 0.9895069599151611,
+            "p95": 0.9991248250007629,
+            "max": 0.999557375907898
+          },
+          "relative_l2": {
+            "count": 65,
+            "mean": 0.19780217664351857,
+            "median": 0.15037837742499577,
+            "p95": 0.6402791732421241,
+            "max": 1.341471964155631
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 64,
+            "mean": 0.9716922929510474,
+            "median": 0.9919916987419128,
+            "p95": 0.9996445775032043,
+            "max": 0.9997104406356812
+          },
+          "relative_l2": {
+            "count": 64,
+            "mean": 0.17571476875746936,
+            "median": 0.1328497087500129,
+            "p95": 0.4925486239415582,
+            "max": 1.3868538220067483
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 61,
+            "mean": 0.9844576760393674,
+            "median": 0.997072696685791,
+            "p95": 0.9997165203094482,
+            "max": 0.9997562170028687
+          },
+          "relative_l2": {
+            "count": 61,
+            "mean": 0.11500614221283456,
+            "median": 0.07796199794832141,
+            "p95": 0.23794984428309615,
+            "max": 1.2951793058050118
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 56,
+            "mean": 0.9972164567027774,
+            "median": 0.9990220367908478,
+            "p95": 0.9997876286506653,
+            "max": 0.9997967481613159
+          },
+          "relative_l2": {
+            "count": 56,
+            "mean": 0.06564904375557087,
+            "median": 0.0512007317837528,
+            "p95": 0.15853564627955657,
+            "max": 0.19726990170861056
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 46,
+            "mean": 0.9994880310867144,
+            "median": 0.9996183812618256,
+            "p95": 0.9998207688331604,
+            "max": 0.9998874664306641
+          },
+          "relative_l2": {
+            "count": 46,
+            "mean": 0.032461473023768145,
+            "median": 0.030198853862960638,
+            "p95": 0.0632255482136701,
+            "max": 0.07064650848868093
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 67,
+        "mean": 71.78048378051217,
+        "median": 71.43550738692284,
+        "p95": 85.93348041176796,
+        "max": 92.82013028860092
+      },
+      "prefix_compute_total_ms": 4809.292413294315,
+      "prefix_rtf": 0.721668783435456,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "I'm not sure what you're referring to. Could you please provide more context or clarify what you want me to transcribe?"
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "I just want."
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "I just want to be able to."
+        },
+        {
+          "arrived_seconds": 4.0,
+          "transcript": "I'm not sure what \"there\" refers to. Can you be more specific? Maybe you can tell me what place you're referring to? This will help me understand better."
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 167,
+        "mean_cosine": 1.0,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000005",
+      "utterance_index": 0,
+      "speaker_idx": 0,
+      "reference": "Hi, Brion. It’s surprising we’ve never met before.",
+      "seconds": 4.609160997732427,
+      "original_time_range": [
+        0.0,
+        4.609160997732427
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 115,
+          "encode_ms": 68.35486367344856
+        },
+        "independent_100ms": {
+          "transcript": "I'm just here to help you. If you have any questions or need advice, feel free to ask. So, what's on your mind?",
+          "word_edits": 23,
+          "reference_words": 8,
+          "wer": 2.875,
+          "tokens": 93,
+          "encode_ms": {
+            "count": 47,
+            "mean": 64.50168447608644,
+            "median": 63.624851405620575,
+            "p95": 69.76088508963585,
+            "max": 77.71627977490425
+          },
+          "encoding_total_ms": 3031.5791703760624,
+          "rtf": 0.6577290686672718,
+          "token_count_difference_from_baseline": -22
+        },
+        "independent_200ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 116,
+          "encode_ms": {
+            "count": 24,
+            "mean": 69.95477108284831,
+            "median": 69.46916878223419,
+            "p95": 76.2636810541153,
+            "max": 79.75690439343452
+          },
+          "encoding_total_ms": 1678.9145059883595,
+          "rtf": 0.3642559908005679,
+          "token_count_difference_from_baseline": 1
+        },
+        "independent_500ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 111,
+          "encode_ms": {
+            "count": 10,
+            "mean": 64.45240639150143,
+            "median": 63.778992742300034,
+            "p95": 70.1165720820427,
+            "max": 70.1165720820427
+          },
+          "encoding_total_ms": 644.5240639150143,
+          "rtf": 0.13983544168496204,
+          "token_count_difference_from_baseline": -4
+        },
+        "independent_1000ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 115,
+          "encode_ms": {
+            "count": 5,
+            "mean": 64.79646936058998,
+            "median": 63.24416399002075,
+            "p95": 72.22659885883331,
+            "max": 72.22659885883331
+          },
+          "encoding_total_ms": 323.9823468029499,
+          "rtf": 0.0702909590188626,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 115,
+          "encode_ms": {
+            "count": 3,
+            "mean": 64.30497765541077,
+            "median": 64.05675783753395,
+            "p95": 65.13689458370209,
+            "max": 65.13689458370209
+          },
+          "encoding_total_ms": 192.9149329662323,
+          "rtf": 0.04185467443231877,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "Hi! It's surprising we don't know each other.",
+          "word_edits": 6,
+          "reference_words": 8,
+          "wer": 0.75,
+          "tokens": 115,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 115,
+            "mean_cosine": 0.3798152506351471,
+            "relative_l2": 1.1897501380494198
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 115,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 115,
+            "mean_cosine": 0.761107861995697,
+            "relative_l2": 0.7438003319014018
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 115,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 115,
+            "mean_cosine": 0.8641901612281799,
+            "relative_l2": 0.5859837693478094
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "Hi! It's surprising we've never met before.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 115,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 115,
+            "mean_cosine": 0.9856115579605103,
+            "relative_l2": 0.13548868123315522
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 75.11939853429794
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 49.671720713377
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 49.111269414424896
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 50.0740185379982
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 49.09491911530495
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 64.85382840037346
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 66.61622226238251
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 65.08714705705643
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 69.77608427405357
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 63.21041285991669
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 58.009035885334015
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 58.27806144952774
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 65.22458419203758
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 62.94085085391998
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 62.62682378292084
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 69.864671677351
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 72.06810265779495
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 71.63545116782188
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 70.85924223065376
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 72.5521668791771
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 60.16076356172562
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 64.31730836629868
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 68.99688392877579
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 86.49901300668716
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 88.60400691628456
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 82.89388567209244
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 69.13991272449493
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 73.24841618537903
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 68.8561238348484
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 90.11019393801689
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 69.25545260310173
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 72.76611402630806
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 71.52719423174858
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 70.77496498823166
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 63.171472400426865
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 69.3153366446495
+        },
+        {
+          "arrived_seconds": 3.7,
+          "tokens": 92,
+          "compute_ms": 68.19470971822739
+        },
+        {
+          "arrived_seconds": 3.8,
+          "tokens": 95,
+          "compute_ms": 68.51273402571678
+        },
+        {
+          "arrived_seconds": 3.9,
+          "tokens": 97,
+          "compute_ms": 73.14696162939072
+        },
+        {
+          "arrived_seconds": 4.0,
+          "tokens": 100,
+          "compute_ms": 69.85188648104668
+        },
+        {
+          "arrived_seconds": 4.1,
+          "tokens": 102,
+          "compute_ms": 77.17063650488853
+        },
+        {
+          "arrived_seconds": 4.2,
+          "tokens": 105,
+          "compute_ms": 77.93160527944565
+        },
+        {
+          "arrived_seconds": 4.3,
+          "tokens": 107,
+          "compute_ms": 75.03294944763184
+        },
+        {
+          "arrived_seconds": 4.4,
+          "tokens": 110,
+          "compute_ms": 67.7993893623352
+        },
+        {
+          "arrived_seconds": 4.5,
+          "tokens": 112,
+          "compute_ms": 79.37021553516388
+        },
+        {
+          "arrived_seconds": 4.6,
+          "tokens": 115,
+          "compute_ms": 77.70279422402382
+        },
+        {
+          "arrived_seconds": 4.609160997732427,
+          "tokens": 115,
+          "compute_ms": 75.73606818914413
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 46,
+            "mean": 0.9179266846698263,
+            "median": 0.9635895490646362,
+            "p95": 0.9887385964393616,
+            "max": 0.9997631907463074
+          },
+          "relative_l2": {
+            "count": 46,
+            "mean": 0.35327628063076805,
+            "median": 0.26699499856963954,
+            "p95": 0.7460628668051958,
+            "max": 0.8672944450009531
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 45,
+            "mean": 0.9473993380864462,
+            "median": 0.9753633737564087,
+            "p95": 0.9985372424125671,
+            "max": 0.9997631907463074
+          },
+          "relative_l2": {
+            "count": 45,
+            "mean": 0.27019780400408794,
+            "median": 0.20329509928654987,
+            "p95": 0.6347268445386574,
+            "max": 0.7646251256834601
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 44,
+            "mean": 0.9569586989554492,
+            "median": 0.9786729514598846,
+            "p95": 0.9997586011886597,
+            "max": 0.999775230884552
+          },
+          "relative_l2": {
+            "count": 44,
+            "mean": 0.23620189248732879,
+            "median": 0.18925630765214008,
+            "p95": 0.591884242990659,
+            "max": 0.7795784018742817
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 41,
+            "mean": 0.9639397379828663,
+            "median": 0.9836377501487732,
+            "p95": 0.9997727870941162,
+            "max": 0.9997771978378296
+          },
+          "relative_l2": {
+            "count": 41,
+            "mean": 0.20473854548796064,
+            "median": 0.1814598101908727,
+            "p95": 0.6202805542427113,
+            "max": 0.6890921071455403
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 36,
+            "mean": 0.9802041517363654,
+            "median": 0.9910818636417389,
+            "p95": 0.9997797012329102,
+            "max": 0.9997845888137817
+          },
+          "relative_l2": {
+            "count": 36,
+            "mean": 0.140568278511196,
+            "median": 0.13686629302775044,
+            "p95": 0.30365847683440284,
+            "max": 0.4456013461565945
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 26,
+            "mean": 0.9926749261525961,
+            "median": 0.9969392418861389,
+            "p95": 0.9997140169143677,
+            "max": 0.9997637271881104
+          },
+          "relative_l2": {
+            "count": 26,
+            "mean": 0.0883180315189023,
+            "median": 0.07764046582399683,
+            "p95": 0.17521053179022197,
+            "max": 0.17753381758670098
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 47,
+        "mean": 69.08002139088956,
+        "median": 69.3153366446495,
+        "p95": 86.49901300668716,
+        "max": 90.11019393801689
+      },
+      "prefix_compute_total_ms": 3246.761005371809,
+      "prefix_rtf": 0.7044147529168803,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "I'm not sure what you're referring to. Can you please provide more context or clarify what you want me to transcribe?"
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "Hi! How can I assist you today?"
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "Hi! How can I assist you today?"
+        },
+        {
+          "arrived_seconds": 4.0,
+          "transcript": "Hi! It's surprising we've never met before. What made you say that?"
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 115,
+        "mean_cosine": 0.9999999403953552,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000008",
+      "utterance_index": 0,
+      "speaker_idx": 0,
+      "reference": "It's strange, you know, just, like, how empty the room feels now that everyone has left. It's almost as if... well, I don't know, uh, like I'm the last person in the whole world.",
+      "seconds": 11.6215873015873,
+      "original_time_range": [
+        0.0,
+        11.6215873015873
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know, ah, like I'm the last person in the whole world.",
+          "word_edits": 1,
+          "reference_words": 34,
+          "wer": 0.029411764705882353,
+          "tokens": 291,
+          "encode_ms": 75.11936873197556
+        },
+        "independent_100ms": {
+          "transcript": "It's just like how a person feels now that everyone has left. It's almost as if. I don't know. I can't believe the last person in the hall.",
+          "word_edits": 12,
+          "reference_words": 34,
+          "wer": 0.35294117647058826,
+          "tokens": 233,
+          "encode_ms": {
+            "count": 117,
+            "mean": 69.16294896449799,
+            "median": 69.07294690608978,
+            "p95": 71.99948281049728,
+            "max": 99.15389493107796
+          },
+          "encoding_total_ms": 8092.065028846264,
+          "rtf": 0.6962960238435788,
+          "token_count_difference_from_baseline": -58
+        },
+        "independent_200ms": {
+          "transcript": "Well, it's strange. You know, just like how empty the room feels now that everyone has left. It's almost deserted. I don't know. I've gone the last person in the whole world.",
+          "word_edits": 7,
+          "reference_words": 34,
+          "wer": 0.20588235294117646,
+          "tokens": 291,
+          "encode_ms": {
+            "count": 59,
+            "mean": 69.64793365638135,
+            "median": 68.80125403404236,
+            "p95": 79.73483204841614,
+            "max": 81.74758031964302
+          },
+          "encoding_total_ms": 4109.2280857265,
+          "rtf": 0.3535857864411734,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_500ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know. Oh, like on the last person in the whole world.",
+          "word_edits": 2,
+          "reference_words": 34,
+          "wer": 0.058823529411764705,
+          "tokens": 279,
+          "encode_ms": {
+            "count": 24,
+            "mean": 70.33227663487196,
+            "median": 69.75466012954712,
+            "p95": 73.80127906799316,
+            "max": 76.40888541936874
+          },
+          "encoding_total_ms": 1687.974639236927,
+          "rtf": 0.1452447583478016,
+          "token_count_difference_from_baseline": -12
+        },
+        "independent_1000ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know. Ah, like I'm the last person in the whole world.",
+          "word_edits": 1,
+          "reference_words": 34,
+          "wer": 0.029411764705882353,
+          "tokens": 291,
+          "encode_ms": {
+            "count": 12,
+            "mean": 69.0658191839854,
+            "median": 68.55400651693344,
+            "p95": 73.37711751461029,
+            "max": 73.37711751461029
+          },
+          "encoding_total_ms": 828.7898302078247,
+          "rtf": 0.07131468436283457,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know, ah, like I'm the last person in the whole world.",
+          "word_edits": 1,
+          "reference_words": 34,
+          "wer": 0.029411764705882353,
+          "tokens": 291,
+          "encode_ms": {
+            "count": 6,
+            "mean": 69.8351338505745,
+            "median": 69.70156729221344,
+            "p95": 73.21523129940033,
+            "max": 73.21523129940033
+          },
+          "encoding_total_ms": 419.01080310344696,
+          "rtf": 0.03605452441476885,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if. well, I don't know. I'm the last person in the whole world.",
+          "word_edits": 2,
+          "reference_words": 34,
+          "wer": 0.058823529411764705,
+          "tokens": 291,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 291,
+            "mean_cosine": 0.4213602840900421,
+            "relative_l2": 1.080269250501123
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know. Ah, like I'm the last person in the whole world.",
+          "word_edits": 1,
+          "reference_words": 34,
+          "wer": 0.029411764705882353,
+          "tokens": 291,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 291,
+            "mean_cosine": 0.8243716359138489,
+            "relative_l2": 0.5814458335935552
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know, ah, like I'm the last person in the whole world.",
+          "word_edits": 1,
+          "reference_words": 34,
+          "wer": 0.029411764705882353,
+          "tokens": 291,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 291,
+            "mean_cosine": 0.9207382202148438,
+            "relative_l2": 0.4140500703953633
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "It's strange, you know? Just like how empty the room feels now that everyone has left. It's almost as if, well, I don't know, ah, like I'm the last person in the whole world.",
+          "word_edits": 1,
+          "reference_words": 34,
+          "wer": 0.029411764705882353,
+          "tokens": 291,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 291,
+            "mean_cosine": 0.9986535906791687,
+            "relative_l2": 0.060981854907128596
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 61.46832928061485
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 47.35025763511658
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 50.695788115262985
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 49.015749245882034
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 51.343973726034164
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 50.56046321988106
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 51.01696401834488
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 50.7362000644207
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 52.10590362548828
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 50.688356161117554
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 53.36172878742218
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 51.4439195394516
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 55.644821375608444
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 50.984617322683334
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 50.80948397517204
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 51.12338811159134
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 52.05541104078293
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 50.8306547999382
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 50.382550805807114
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 59.28703397512436
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 59.71881002187729
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 60.1339265704155
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 58.70848521590233
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 57.05159530043602
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 50.693582743406296
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 58.01945552229881
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 49.91958662867546
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 57.75327980518341
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 50.53764581680298
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 59.34927985072136
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 61.88816577196121
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 66.98661670088768
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 62.205348163843155
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 70.7283727824688
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 70.20679488778114
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 71.69654592871666
+        },
+        {
+          "arrived_seconds": 3.7,
+          "tokens": 92,
+          "compute_ms": 74.63211566209793
+        },
+        {
+          "arrived_seconds": 3.8,
+          "tokens": 95,
+          "compute_ms": 70.92862203717232
+        },
+        {
+          "arrived_seconds": 3.9,
+          "tokens": 97,
+          "compute_ms": 78.83189991116524
+        },
+        {
+          "arrived_seconds": 4.0,
+          "tokens": 100,
+          "compute_ms": 63.57160955667496
+        },
+        {
+          "arrived_seconds": 4.1,
+          "tokens": 102,
+          "compute_ms": 69.91969048976898
+        },
+        {
+          "arrived_seconds": 4.2,
+          "tokens": 105,
+          "compute_ms": 63.383713364601135
+        },
+        {
+          "arrived_seconds": 4.3,
+          "tokens": 107,
+          "compute_ms": 71.18916884064674
+        },
+        {
+          "arrived_seconds": 4.4,
+          "tokens": 110,
+          "compute_ms": 81.92364871501923
+        },
+        {
+          "arrived_seconds": 4.5,
+          "tokens": 112,
+          "compute_ms": 80.0013393163681
+        },
+        {
+          "arrived_seconds": 4.6,
+          "tokens": 115,
+          "compute_ms": 74.29760321974754
+        },
+        {
+          "arrived_seconds": 4.7,
+          "tokens": 117,
+          "compute_ms": 71.16388529539108
+        },
+        {
+          "arrived_seconds": 4.8,
+          "tokens": 120,
+          "compute_ms": 71.94429263472557
+        },
+        {
+          "arrived_seconds": 4.9,
+          "tokens": 122,
+          "compute_ms": 64.28459659218788
+        },
+        {
+          "arrived_seconds": 5.0,
+          "tokens": 125,
+          "compute_ms": 64.23234567046165
+        },
+        {
+          "arrived_seconds": 5.1,
+          "tokens": 127,
+          "compute_ms": 65.17644599080086
+        },
+        {
+          "arrived_seconds": 5.2,
+          "tokens": 130,
+          "compute_ms": 70.47581300139427
+        },
+        {
+          "arrived_seconds": 5.3,
+          "tokens": 132,
+          "compute_ms": 71.53768092393875
+        },
+        {
+          "arrived_seconds": 5.4,
+          "tokens": 135,
+          "compute_ms": 78.59402522444725
+        },
+        {
+          "arrived_seconds": 5.5,
+          "tokens": 137,
+          "compute_ms": 77.09678262472153
+        },
+        {
+          "arrived_seconds": 5.6,
+          "tokens": 140,
+          "compute_ms": 71.51801511645317
+        },
+        {
+          "arrived_seconds": 5.7,
+          "tokens": 142,
+          "compute_ms": 71.0662342607975
+        },
+        {
+          "arrived_seconds": 5.8,
+          "tokens": 145,
+          "compute_ms": 72.41466268897057
+        },
+        {
+          "arrived_seconds": 5.9,
+          "tokens": 147,
+          "compute_ms": 65.12176990509033
+        },
+        {
+          "arrived_seconds": 6.0,
+          "tokens": 150,
+          "compute_ms": 66.76461547613144
+        },
+        {
+          "arrived_seconds": 6.1,
+          "tokens": 152,
+          "compute_ms": 73.14334064722061
+        },
+        {
+          "arrived_seconds": 6.2,
+          "tokens": 155,
+          "compute_ms": 76.76618546247482
+        },
+        {
+          "arrived_seconds": 6.3,
+          "tokens": 157,
+          "compute_ms": 73.42539355158806
+        },
+        {
+          "arrived_seconds": 6.4,
+          "tokens": 160,
+          "compute_ms": 68.9111091196537
+        },
+        {
+          "arrived_seconds": 6.5,
+          "tokens": 162,
+          "compute_ms": 65.50563871860504
+        },
+        {
+          "arrived_seconds": 6.6,
+          "tokens": 165,
+          "compute_ms": 64.4383393228054
+        },
+        {
+          "arrived_seconds": 6.7,
+          "tokens": 167,
+          "compute_ms": 65.36583974957466
+        },
+        {
+          "arrived_seconds": 6.8,
+          "tokens": 170,
+          "compute_ms": 71.33180275559425
+        },
+        {
+          "arrived_seconds": 6.9,
+          "tokens": 172,
+          "compute_ms": 64.74396958947182
+        },
+        {
+          "arrived_seconds": 7.0,
+          "tokens": 175,
+          "compute_ms": 65.55690243840218
+        },
+        {
+          "arrived_seconds": 7.1,
+          "tokens": 177,
+          "compute_ms": 65.44019654393196
+        },
+        {
+          "arrived_seconds": 7.2,
+          "tokens": 180,
+          "compute_ms": 64.83777612447739
+        },
+        {
+          "arrived_seconds": 7.3,
+          "tokens": 182,
+          "compute_ms": 66.19247049093246
+        },
+        {
+          "arrived_seconds": 7.4,
+          "tokens": 185,
+          "compute_ms": 67.17825308442116
+        },
+        {
+          "arrived_seconds": 7.5,
+          "tokens": 187,
+          "compute_ms": 64.4342377781868
+        },
+        {
+          "arrived_seconds": 7.6,
+          "tokens": 190,
+          "compute_ms": 71.6530941426754
+        },
+        {
+          "arrived_seconds": 7.7,
+          "tokens": 192,
+          "compute_ms": 75.7644772529602
+        },
+        {
+          "arrived_seconds": 7.8,
+          "tokens": 195,
+          "compute_ms": 72.34309986233711
+        },
+        {
+          "arrived_seconds": 7.9,
+          "tokens": 197,
+          "compute_ms": 70.74731588363647
+        },
+        {
+          "arrived_seconds": 8.0,
+          "tokens": 200,
+          "compute_ms": 65.72318449616432
+        },
+        {
+          "arrived_seconds": 8.1,
+          "tokens": 202,
+          "compute_ms": 67.85917282104492
+        },
+        {
+          "arrived_seconds": 8.2,
+          "tokens": 205,
+          "compute_ms": 70.47378644347191
+        },
+        {
+          "arrived_seconds": 8.3,
+          "tokens": 207,
+          "compute_ms": 74.55760985612869
+        },
+        {
+          "arrived_seconds": 8.4,
+          "tokens": 210,
+          "compute_ms": 65.21696597337723
+        },
+        {
+          "arrived_seconds": 8.5,
+          "tokens": 212,
+          "compute_ms": 65.27959555387497
+        },
+        {
+          "arrived_seconds": 8.6,
+          "tokens": 215,
+          "compute_ms": 65.42367115616798
+        },
+        {
+          "arrived_seconds": 8.7,
+          "tokens": 217,
+          "compute_ms": 66.85998663306236
+        },
+        {
+          "arrived_seconds": 8.8,
+          "tokens": 220,
+          "compute_ms": 67.98956543207169
+        },
+        {
+          "arrived_seconds": 8.9,
+          "tokens": 222,
+          "compute_ms": 68.36951524019241
+        },
+        {
+          "arrived_seconds": 9.0,
+          "tokens": 225,
+          "compute_ms": 66.96860119700432
+        },
+        {
+          "arrived_seconds": 9.1,
+          "tokens": 227,
+          "compute_ms": 72.60720804333687
+        },
+        {
+          "arrived_seconds": 9.2,
+          "tokens": 230,
+          "compute_ms": 75.76106861233711
+        },
+        {
+          "arrived_seconds": 9.3,
+          "tokens": 232,
+          "compute_ms": 67.37110391259193
+        },
+        {
+          "arrived_seconds": 9.4,
+          "tokens": 235,
+          "compute_ms": 80.8279998600483
+        },
+        {
+          "arrived_seconds": 9.5,
+          "tokens": 237,
+          "compute_ms": 69.78777050971985
+        },
+        {
+          "arrived_seconds": 9.6,
+          "tokens": 240,
+          "compute_ms": 69.23475489020348
+        },
+        {
+          "arrived_seconds": 9.7,
+          "tokens": 242,
+          "compute_ms": 66.67105481028557
+        },
+        {
+          "arrived_seconds": 9.8,
+          "tokens": 245,
+          "compute_ms": 66.50410592556
+        },
+        {
+          "arrived_seconds": 9.9,
+          "tokens": 247,
+          "compute_ms": 73.63609597086906
+        },
+        {
+          "arrived_seconds": 10.0,
+          "tokens": 250,
+          "compute_ms": 68.89315322041512
+        },
+        {
+          "arrived_seconds": 10.1,
+          "tokens": 252,
+          "compute_ms": 67.9713785648346
+        },
+        {
+          "arrived_seconds": 10.2,
+          "tokens": 255,
+          "compute_ms": 67.6337294280529
+        },
+        {
+          "arrived_seconds": 10.3,
+          "tokens": 257,
+          "compute_ms": 74.294313788414
+        },
+        {
+          "arrived_seconds": 10.4,
+          "tokens": 260,
+          "compute_ms": 75.23062825202942
+        },
+        {
+          "arrived_seconds": 10.5,
+          "tokens": 262,
+          "compute_ms": 73.26056063175201
+        },
+        {
+          "arrived_seconds": 10.6,
+          "tokens": 265,
+          "compute_ms": 72.86138460040092
+        },
+        {
+          "arrived_seconds": 10.7,
+          "tokens": 267,
+          "compute_ms": 76.6439363360405
+        },
+        {
+          "arrived_seconds": 10.8,
+          "tokens": 270,
+          "compute_ms": 76.77704840898514
+        },
+        {
+          "arrived_seconds": 10.9,
+          "tokens": 272,
+          "compute_ms": 68.38937848806381
+        },
+        {
+          "arrived_seconds": 11.0,
+          "tokens": 275,
+          "compute_ms": 67.68345087766647
+        },
+        {
+          "arrived_seconds": 11.1,
+          "tokens": 277,
+          "compute_ms": 68.02443042397499
+        },
+        {
+          "arrived_seconds": 11.2,
+          "tokens": 280,
+          "compute_ms": 67.11989641189575
+        },
+        {
+          "arrived_seconds": 11.3,
+          "tokens": 282,
+          "compute_ms": 74.60785657167435
+        },
+        {
+          "arrived_seconds": 11.4,
+          "tokens": 285,
+          "compute_ms": 74.6932365000248
+        },
+        {
+          "arrived_seconds": 11.5,
+          "tokens": 287,
+          "compute_ms": 76.0122574865818
+        },
+        {
+          "arrived_seconds": 11.6,
+          "tokens": 290,
+          "compute_ms": 76.33892074227333
+        },
+        {
+          "arrived_seconds": 11.6215873015873,
+          "tokens": 291,
+          "compute_ms": 79.24734055995941
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 116,
+            "mean": 0.9669350185270967,
+            "median": 0.9855547249317169,
+            "p95": 0.9964778423309326,
+            "max": 0.9994937181472778
+          },
+          "relative_l2": {
+            "count": 116,
+            "mean": 0.22454506392024204,
+            "median": 0.17633261991357496,
+            "p95": 0.5954156080306207,
+            "max": 0.9109620690413556
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 115,
+            "mean": 0.9776205047317174,
+            "median": 0.992068350315094,
+            "p95": 0.9994074106216431,
+            "max": 0.9995785355567932
+          },
+          "relative_l2": {
+            "count": 115,
+            "mean": 0.17414797954768735,
+            "median": 0.12763093397589972,
+            "p95": 0.4554498545082614,
+            "max": 0.9393166380110225
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 114,
+            "mean": 0.9837024013201395,
+            "median": 0.9946517050266266,
+            "p95": 0.9995036721229553,
+            "max": 0.9997531771659851
+          },
+          "relative_l2": {
+            "count": 114,
+            "mean": 0.1497019447050433,
+            "median": 0.10555945456759755,
+            "p95": 0.4033858322330162,
+            "max": 0.9797895369506866
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 111,
+            "mean": 0.9901492756766241,
+            "median": 0.9972213506698608,
+            "p95": 0.9996945261955261,
+            "max": 0.9997490644454956
+          },
+          "relative_l2": {
+            "count": 111,
+            "mean": 0.1119993817385883,
+            "median": 0.07589885462268092,
+            "p95": 0.36969643829547655,
+            "max": 0.5826576184660701
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 106,
+            "mean": 0.9938902258872986,
+            "median": 0.9990638196468353,
+            "p95": 0.9997036457061768,
+            "max": 0.999802827835083
+          },
+          "relative_l2": {
+            "count": 106,
+            "mean": 0.07933368138037786,
+            "median": 0.04696317620480078,
+            "p95": 0.2839992968525499,
+            "max": 0.6320517891096231
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 96,
+            "mean": 0.9992743525654078,
+            "median": 0.9993981420993805,
+            "p95": 0.999743640422821,
+            "max": 0.9998180270195007
+          },
+          "relative_l2": {
+            "count": 96,
+            "mean": 0.040802363948969626,
+            "median": 0.039231242379659,
+            "p95": 0.06695039278408606,
+            "max": 0.1142226393028592
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 117,
+        "mean": 65.95862242910597,
+        "median": 67.17825308442116,
+        "p95": 78.59402522444725,
+        "max": 81.92364871501923
+      },
+      "prefix_compute_total_ms": 7717.158824205399,
+      "prefix_rtf": 0.6640365574805236,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "Sure, go ahead and transcribe the speech."
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "It's strange."
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "It's strange, you know."
+        },
+        {
+          "arrived_seconds": 4.0,
+          "transcript": "It's strange, you know, just like how empty the room feels now."
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 291,
+        "mean_cosine": 1.0,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000010",
+      "utterance_index": 0,
+      "speaker_idx": 0,
+      "reference": "Wow, Anisah, I have to say, your house is, uh, really impressive. I mean, it's both spacious and incredibly tidy.",
+      "seconds": 8.742312925170069,
+      "original_time_range": [
+        0.0,
+        8.742312925170069
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "Wow, Anissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 219,
+          "encode_ms": 74.13243502378464
+        },
+        "independent_100ms": {
+          "transcript": "Well, I'm just a computer program. I don't have feelings or emotions. I'm here to assist you with your questions and tasks. So, what can I help you with today?",
+          "word_edits": 27,
+          "reference_words": 20,
+          "wer": 1.35,
+          "tokens": 175,
+          "encode_ms": {
+            "count": 88,
+            "mean": 68.82442749867386,
+            "median": 68.30176524817944,
+            "p95": 71.63968682289124,
+            "max": 81.00685477256775
+          },
+          "encoding_total_ms": 6056.549619883299,
+          "rtf": 0.6927857274984787,
+          "token_count_difference_from_baseline": -44
+        },
+        "independent_200ms": {
+          "transcript": "Well, I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy. So, what else do you want to talk about?",
+          "word_edits": 12,
+          "reference_words": 20,
+          "wer": 0.6,
+          "tokens": 219,
+          "encode_ms": {
+            "count": 44,
+            "mean": 69.20683485540476,
+            "median": 68.16298887133598,
+            "p95": 80.00554516911507,
+            "max": 81.89285174012184
+          },
+          "encoding_total_ms": 3045.1007336378098,
+          "rtf": 0.3483175173094793,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_500ms": {
+          "transcript": "Wow, Nissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 210,
+          "encode_ms": {
+            "count": 18,
+            "mean": 72.23884264628093,
+            "median": 71.27266377210617,
+            "p95": 84.17553827166557,
+            "max": 84.17553827166557
+          },
+          "encoding_total_ms": 1300.2991676330566,
+          "rtf": 0.14873628738332553,
+          "token_count_difference_from_baseline": -9
+        },
+        "independent_1000ms": {
+          "transcript": "Wow, Anissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 219,
+          "encode_ms": {
+            "count": 9,
+            "mean": 70.23198447293706,
+            "median": 68.45290958881378,
+            "p95": 78.6825530230999,
+            "max": 78.6825530230999
+          },
+          "encoding_total_ms": 632.0878602564335,
+          "rtf": 0.07230213167462628,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "Wow, Anissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 219,
+          "encode_ms": {
+            "count": 5,
+            "mean": 81.2725119292736,
+            "median": 77.07460224628448,
+            "p95": 89.13712203502655,
+            "max": 89.13712203502655
+          },
+          "encoding_total_ms": 406.362559646368,
+          "rtf": 0.04648227112488802,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "I'm really impressed with your house too. It's both spacious and incredibly tidy. What do you like most about it?",
+          "word_edits": 19,
+          "reference_words": 20,
+          "wer": 0.95,
+          "tokens": 219,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 219,
+            "mean_cosine": 0.3945685923099518,
+            "relative_l2": 1.129697694720768
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "Wow, Anissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 219,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 219,
+            "mean_cosine": 0.8267214894294739,
+            "relative_l2": 0.6106146565000713
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "Wow, Anissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 219,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 219,
+            "mean_cosine": 0.9275591969490051,
+            "relative_l2": 0.41414239965005745
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "Wow, Anissa! I have to say, your house is really impressive. I mean, it's both spacious and incredibly tidy.",
+          "word_edits": 2,
+          "reference_words": 20,
+          "wer": 0.1,
+          "tokens": 219,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 219,
+            "mean_cosine": 0.9988058805465698,
+            "relative_l2": 0.06263378478346139
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 67.77643412351608
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 49.66661334037781
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 51.76202580332756
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 50.619713962078094
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 50.83126574754715
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 58.729276061058044
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 51.30786448717117
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 53.52097004652023
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 50.68472772836685
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 53.90549823641777
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 50.23742467164993
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 51.236335188150406
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 51.22842267155647
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 51.482465118169785
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 50.59355869889259
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 50.17341673374176
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 50.09513348340988
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 51.28759518265724
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 50.061844289302826
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 51.60007253289223
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 50.86351931095123
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 51.96072161197662
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 56.88148736953735
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 50.99954456090927
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 51.30288004875183
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 53.63553762435913
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 51.444511860609055
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 50.92494562268257
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 51.39424651861191
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 51.02987214922905
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 52.57025361061096
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 50.58816820383072
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 51.31225660443306
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 51.087550818920135
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 51.3242669403553
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 51.77120491862297
+        },
+        {
+          "arrived_seconds": 3.7,
+          "tokens": 92,
+          "compute_ms": 51.25695839524269
+        },
+        {
+          "arrived_seconds": 3.8,
+          "tokens": 95,
+          "compute_ms": 51.54705047607422
+        },
+        {
+          "arrived_seconds": 3.9,
+          "tokens": 97,
+          "compute_ms": 57.076405733823776
+        },
+        {
+          "arrived_seconds": 4.0,
+          "tokens": 100,
+          "compute_ms": 57.94509872794151
+        },
+        {
+          "arrived_seconds": 4.1,
+          "tokens": 102,
+          "compute_ms": 50.48922076821327
+        },
+        {
+          "arrived_seconds": 4.2,
+          "tokens": 105,
+          "compute_ms": 52.88475751876831
+        },
+        {
+          "arrived_seconds": 4.3,
+          "tokens": 107,
+          "compute_ms": 52.15410888195038
+        },
+        {
+          "arrived_seconds": 4.4,
+          "tokens": 110,
+          "compute_ms": 52.31405422091484
+        },
+        {
+          "arrived_seconds": 4.5,
+          "tokens": 112,
+          "compute_ms": 52.91673168540001
+        },
+        {
+          "arrived_seconds": 4.6,
+          "tokens": 115,
+          "compute_ms": 53.10140922665596
+        },
+        {
+          "arrived_seconds": 4.7,
+          "tokens": 117,
+          "compute_ms": 52.925676107406616
+        },
+        {
+          "arrived_seconds": 4.8,
+          "tokens": 120,
+          "compute_ms": 54.37059700489044
+        },
+        {
+          "arrived_seconds": 4.9,
+          "tokens": 122,
+          "compute_ms": 53.153883665800095
+        },
+        {
+          "arrived_seconds": 5.0,
+          "tokens": 125,
+          "compute_ms": 52.52065509557724
+        },
+        {
+          "arrived_seconds": 5.1,
+          "tokens": 127,
+          "compute_ms": 52.741847932338715
+        },
+        {
+          "arrived_seconds": 5.2,
+          "tokens": 130,
+          "compute_ms": 52.72819846868515
+        },
+        {
+          "arrived_seconds": 5.3,
+          "tokens": 132,
+          "compute_ms": 51.80513113737106
+        },
+        {
+          "arrived_seconds": 5.4,
+          "tokens": 135,
+          "compute_ms": 52.55977436900139
+        },
+        {
+          "arrived_seconds": 5.5,
+          "tokens": 137,
+          "compute_ms": 52.98849940299988
+        },
+        {
+          "arrived_seconds": 5.6,
+          "tokens": 140,
+          "compute_ms": 57.05186724662781
+        },
+        {
+          "arrived_seconds": 5.7,
+          "tokens": 142,
+          "compute_ms": 54.293062537908554
+        },
+        {
+          "arrived_seconds": 5.8,
+          "tokens": 145,
+          "compute_ms": 53.58189344406128
+        },
+        {
+          "arrived_seconds": 5.9,
+          "tokens": 147,
+          "compute_ms": 53.083501756191254
+        },
+        {
+          "arrived_seconds": 6.0,
+          "tokens": 150,
+          "compute_ms": 52.18316242098808
+        },
+        {
+          "arrived_seconds": 6.1,
+          "tokens": 152,
+          "compute_ms": 52.21632122993469
+        },
+        {
+          "arrived_seconds": 6.2,
+          "tokens": 155,
+          "compute_ms": 51.798637956380844
+        },
+        {
+          "arrived_seconds": 6.3,
+          "tokens": 157,
+          "compute_ms": 52.18308046460152
+        },
+        {
+          "arrived_seconds": 6.4,
+          "tokens": 160,
+          "compute_ms": 52.07616835832596
+        },
+        {
+          "arrived_seconds": 6.5,
+          "tokens": 162,
+          "compute_ms": 52.868615835905075
+        },
+        {
+          "arrived_seconds": 6.6,
+          "tokens": 165,
+          "compute_ms": 52.40444839000702
+        },
+        {
+          "arrived_seconds": 6.7,
+          "tokens": 167,
+          "compute_ms": 52.67321690917015
+        },
+        {
+          "arrived_seconds": 6.8,
+          "tokens": 170,
+          "compute_ms": 52.91789397597313
+        },
+        {
+          "arrived_seconds": 6.9,
+          "tokens": 172,
+          "compute_ms": 53.526755422353745
+        },
+        {
+          "arrived_seconds": 7.0,
+          "tokens": 175,
+          "compute_ms": 53.12048643827438
+        },
+        {
+          "arrived_seconds": 7.1,
+          "tokens": 177,
+          "compute_ms": 53.545501083135605
+        },
+        {
+          "arrived_seconds": 7.2,
+          "tokens": 180,
+          "compute_ms": 52.625883370637894
+        },
+        {
+          "arrived_seconds": 7.3,
+          "tokens": 182,
+          "compute_ms": 52.463553845882416
+        },
+        {
+          "arrived_seconds": 7.4,
+          "tokens": 185,
+          "compute_ms": 57.809993624687195
+        },
+        {
+          "arrived_seconds": 7.5,
+          "tokens": 187,
+          "compute_ms": 55.55720627307892
+        },
+        {
+          "arrived_seconds": 7.6,
+          "tokens": 190,
+          "compute_ms": 53.1010627746582
+        },
+        {
+          "arrived_seconds": 7.7,
+          "tokens": 192,
+          "compute_ms": 53.09472978115082
+        },
+        {
+          "arrived_seconds": 7.8,
+          "tokens": 195,
+          "compute_ms": 53.92923206090927
+        },
+        {
+          "arrived_seconds": 7.9,
+          "tokens": 197,
+          "compute_ms": 54.70458045601845
+        },
+        {
+          "arrived_seconds": 8.0,
+          "tokens": 200,
+          "compute_ms": 53.57189103960991
+        },
+        {
+          "arrived_seconds": 8.1,
+          "tokens": 202,
+          "compute_ms": 53.16448584198952
+        },
+        {
+          "arrived_seconds": 8.2,
+          "tokens": 205,
+          "compute_ms": 53.05595323443413
+        },
+        {
+          "arrived_seconds": 8.3,
+          "tokens": 207,
+          "compute_ms": 60.05162373185158
+        },
+        {
+          "arrived_seconds": 8.4,
+          "tokens": 210,
+          "compute_ms": 59.25276130437851
+        },
+        {
+          "arrived_seconds": 8.5,
+          "tokens": 212,
+          "compute_ms": 64.74724411964417
+        },
+        {
+          "arrived_seconds": 8.6,
+          "tokens": 215,
+          "compute_ms": 65.1014931499958
+        },
+        {
+          "arrived_seconds": 8.7,
+          "tokens": 217,
+          "compute_ms": 66.63956865668297
+        },
+        {
+          "arrived_seconds": 8.742312925170069,
+          "tokens": 219,
+          "compute_ms": 69.0937265753746
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 87,
+            "mean": 0.9584250450134277,
+            "median": 0.9824254512786865,
+            "p95": 0.9965218901634216,
+            "max": 0.9996415376663208
+          },
+          "relative_l2": {
+            "count": 87,
+            "mean": 0.24300024132343154,
+            "median": 0.18782457663741406,
+            "p95": 0.6127299787234542,
+            "max": 0.9704109681494636
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 86,
+            "mean": 0.9766075174475826,
+            "median": 0.9920799434185028,
+            "p95": 0.9990221858024597,
+            "max": 0.9996605515480042
+          },
+          "relative_l2": {
+            "count": 86,
+            "mean": 0.17725177101749712,
+            "median": 0.12823614785853588,
+            "p95": 0.4320699094410317,
+            "max": 0.875084309322156
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 85,
+            "mean": 0.9800320723477531,
+            "median": 0.9940681457519531,
+            "p95": 0.9992987513542175,
+            "max": 0.9996510148048401
+          },
+          "relative_l2": {
+            "count": 85,
+            "mean": 0.16113888471222013,
+            "median": 0.11262117335385555,
+            "p95": 0.4564683833302582,
+            "max": 0.9329597769907909
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 82,
+            "mean": 0.9879564570217598,
+            "median": 0.9962570369243622,
+            "p95": 0.9995198845863342,
+            "max": 0.9996517300605774
+          },
+          "relative_l2": {
+            "count": 82,
+            "mean": 0.12752200910685624,
+            "median": 0.09259755698434205,
+            "p95": 0.3908927285998466,
+            "max": 0.54779444565704
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 77,
+            "mean": 0.9932528788393195,
+            "median": 0.9984060525894165,
+            "p95": 0.9995855093002319,
+            "max": 0.9997154474258423
+          },
+          "relative_l2": {
+            "count": 77,
+            "mean": 0.09391901053793283,
+            "median": 0.06660853991816869,
+            "p95": 0.2484650846581183,
+            "max": 0.5714650682350433
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 67,
+            "mean": 0.9981275307598398,
+            "median": 0.9988452196121216,
+            "p95": 0.9996284246444702,
+            "max": 0.9997984766960144
+          },
+          "relative_l2": {
+            "count": 67,
+            "mean": 0.06500808129500993,
+            "median": 0.05836961740416987,
+            "p95": 0.12282365497651118,
+            "max": 0.16500011751567797
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 88,
+        "mean": 53.53251463648948,
+        "median": 52.565013989806175,
+        "p95": 64.74724411964417,
+        "max": 69.0937265753746
+      },
+      "prefix_compute_total_ms": 4710.861288011074,
+      "prefix_rtf": 0.5388575458615754,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "Well, I'm not sure what you're referring to. Could you be more specific? Maybe you can tell me what you're talking about? I'm here to help, so let's figure this out together."
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "Wow, Anissa! What's up?"
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "Wow, Anissa, I have to say."
+        },
+        {
+          "arrived_seconds": 4.0,
+          "transcript": "Wow, Anissa, I have to say your house is."
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 219,
+        "mean_cosine": 0.9999999403953552,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000011",
+      "utterance_index": 1,
+      "speaker_idx": 1,
+      "reference": "Oh, I totally understand, Karima. A supportive team makes all the difference.",
+      "seconds": 4.394512471655329,
+      "original_time_range": [
+        9.770385487528344,
+        14.164897959183673
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "Oh, I totally understand. A supported team makes all the difference.",
+          "word_edits": 2,
+          "reference_words": 12,
+          "wer": 0.16666666666666666,
+          "tokens": 110,
+          "encode_ms": 61.782971024513245
+        },
+        "independent_100ms": {
+          "transcript": "Well, you know, a supportive team can really make a difference. They can offer encouragement when you're feeling down. They can also give you advice and help you come up with solutions. For example, if you're having trouble with a project, a supportive team might suggest different approaches. And they can also be there to celebrate your successes. It's like having a group of people who believe in you and want to see you succeed. So, you should definitely look for a supportive team. What kind of team are you thinking about?",
+          "word_edits": 89,
+          "reference_words": 12,
+          "wer": 7.416666666666667,
+          "tokens": 88,
+          "encode_ms": {
+            "count": 44,
+            "mean": 56.79333743385293,
+            "median": 56.27663619816303,
+            "p95": 61.07735633850098,
+            "max": 62.32810020446777
+          },
+          "encoding_total_ms": 2498.906847089529,
+          "rtf": 0.5686425657470574,
+          "token_count_difference_from_baseline": -22
+        },
+        "independent_200ms": {
+          "transcript": "I totally understand. A supported team makes all the difference. So, what do you think about it?",
+          "word_edits": 10,
+          "reference_words": 12,
+          "wer": 0.8333333333333334,
+          "tokens": 110,
+          "encode_ms": {
+            "count": 22,
+            "mean": 57.69326876510274,
+            "median": 56.11521750688553,
+            "p95": 65.67735224962234,
+            "max": 67.37826019525528
+          },
+          "encoding_total_ms": 1269.2519128322601,
+          "rtf": 0.28882655835407317,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_500ms": {
+          "transcript": "I totally understand. A supported team makes all the difference.",
+          "word_edits": 3,
+          "reference_words": 12,
+          "wer": 0.25,
+          "tokens": 106,
+          "encode_ms": {
+            "count": 9,
+            "mean": 56.87430997689565,
+            "median": 57.00565502047539,
+            "p95": 57.7436089515686,
+            "max": 57.7436089515686
+          },
+          "encoding_total_ms": 511.86878979206085,
+          "rtf": 0.11647908456139837,
+          "token_count_difference_from_baseline": -4
+        },
+        "independent_1000ms": {
+          "transcript": "I'm glad you think so. So, what's next on your mind?",
+          "word_edits": 12,
+          "reference_words": 12,
+          "wer": 1.0,
+          "tokens": 110,
+          "encode_ms": {
+            "count": 5,
+            "mean": 57.43897706270218,
+            "median": 57.7625036239624,
+            "p95": 57.93825164437294,
+            "max": 57.93825164437294
+          },
+          "encoding_total_ms": 287.1948853135109,
+          "rtf": 0.06535307094152587,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "Oh, I totally understand. A supported team makes all the difference.",
+          "word_edits": 2,
+          "reference_words": 12,
+          "wer": 0.16666666666666666,
+          "tokens": 110,
+          "encode_ms": {
+            "count": 3,
+            "mean": 58.40361242492994,
+            "median": 58.554381132125854,
+            "p95": 58.70179459452629,
+            "max": 58.70179459452629
+          },
+          "encoding_total_ms": 175.2108372747898,
+          "rtf": 0.03987036978615997,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "Yeah, that's right. A supportive team can really boost a person's confidence and motivation. It's like having a group of people who believe in you and are there to cheer you on. So, what do you think about having a supportive team?",
+          "word_edits": 41,
+          "reference_words": 12,
+          "wer": 3.4166666666666665,
+          "tokens": 110,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 110,
+            "mean_cosine": 0.39126938581466675,
+            "relative_l2": 1.1806511896367726
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "I totally understand. A supported team makes all the difference.",
+          "word_edits": 3,
+          "reference_words": 12,
+          "wer": 0.25,
+          "tokens": 110,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 110,
+            "mean_cosine": 0.779881477355957,
+            "relative_l2": 0.6852684932270843
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "I totally understand. A supported team makes all the difference.",
+          "word_edits": 3,
+          "reference_words": 12,
+          "wer": 0.25,
+          "tokens": 110,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 110,
+            "mean_cosine": 0.8586080074310303,
+            "relative_l2": 0.5843609229561189
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "Oh, I totally understand. A supported team makes all the difference.",
+          "word_edits": 2,
+          "reference_words": 12,
+          "wer": 0.16666666666666666,
+          "tokens": 110,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 110,
+            "mean_cosine": 0.993738055229187,
+            "relative_l2": 0.12299007975765076
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 59.416528791189194
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 52.696432918310165
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 49.81807991862297
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 54.97480556368828
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 50.28071254491806
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 52.48556658625603
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 52.75821313261986
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 51.51786655187607
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 50.6570003926754
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 51.30581185221672
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 50.64937844872475
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 52.452944219112396
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 53.25356870889664
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 51.88171565532684
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 51.72456055879593
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 50.71420967578888
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 49.888040870428085
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 53.12848836183548
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 52.184704691171646
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 49.79318380355835
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 49.780089408159256
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 51.62954330444336
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 55.374450981616974
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 57.63525515794754
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 59.94615703821182
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 62.60261684656143
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 53.989771753549576
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 53.1206838786602
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 51.46878957748413
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 49.49365183711052
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 50.326209515333176
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 49.54634979367256
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 50.657160580158234
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 50.550203770399094
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 53.951554000377655
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 51.592182368040085
+        },
+        {
+          "arrived_seconds": 3.7,
+          "tokens": 92,
+          "compute_ms": 50.66828057169914
+        },
+        {
+          "arrived_seconds": 3.8,
+          "tokens": 95,
+          "compute_ms": 51.36381834745407
+        },
+        {
+          "arrived_seconds": 3.9,
+          "tokens": 97,
+          "compute_ms": 50.41816458106041
+        },
+        {
+          "arrived_seconds": 4.0,
+          "tokens": 100,
+          "compute_ms": 53.118716925382614
+        },
+        {
+          "arrived_seconds": 4.1,
+          "tokens": 102,
+          "compute_ms": 51.35032162070274
+        },
+        {
+          "arrived_seconds": 4.2,
+          "tokens": 105,
+          "compute_ms": 52.90311574935913
+        },
+        {
+          "arrived_seconds": 4.3,
+          "tokens": 107,
+          "compute_ms": 52.49843746423721
+        },
+        {
+          "arrived_seconds": 4.394512471655329,
+          "tokens": 110,
+          "compute_ms": 53.538426756858826
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 43,
+            "mean": 0.9284103568210158,
+            "median": 0.9612153172492981,
+            "p95": 0.9908371567726135,
+            "max": 0.9998397827148438
+          },
+          "relative_l2": {
+            "count": 43,
+            "mean": 0.3486472710186281,
+            "median": 0.28517566678262196,
+            "p95": 0.7615819184365311,
+            "max": 0.8031727795832895
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 42,
+            "mean": 0.9587233435539972,
+            "median": 0.977647066116333,
+            "p95": 0.9996722340583801,
+            "max": 0.9998494982719421
+          },
+          "relative_l2": {
+            "count": 42,
+            "mean": 0.25784992443864097,
+            "median": 0.22577731830670894,
+            "p95": 0.5683675924160816,
+            "max": 0.7797205451202751
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 41,
+            "mean": 0.9675278445569481,
+            "median": 0.9815004467964172,
+            "p95": 0.9996997117996216,
+            "max": 0.9998553991317749
+          },
+          "relative_l2": {
+            "count": 41,
+            "mean": 0.2280441607989094,
+            "median": 0.1946827533795834,
+            "p95": 0.5281593988462654,
+            "max": 0.9165933807658792
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 38,
+            "mean": 0.9782549942794599,
+            "median": 0.9897289872169495,
+            "p95": 0.9998536109924316,
+            "max": 0.9998571276664734
+          },
+          "relative_l2": {
+            "count": 38,
+            "mean": 0.1858080991498191,
+            "median": 0.16597826576890376,
+            "p95": 0.49868017090417854,
+            "max": 0.5610130155732554
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 33,
+            "mean": 0.9854870257955609,
+            "median": 0.9961034059524536,
+            "p95": 0.9998394846916199,
+            "max": 0.9998419284820557
+          },
+          "relative_l2": {
+            "count": 33,
+            "mean": 0.13679055881825816,
+            "median": 0.1100804291440031,
+            "p95": 0.36672406208906566,
+            "max": 0.6213099814835713
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 23,
+            "mean": 0.9978519444880278,
+            "median": 0.9997503757476807,
+            "p95": 0.9998707175254822,
+            "max": 0.9998733997344971
+          },
+          "relative_l2": {
+            "count": 23,
+            "mean": 0.03841852934981388,
+            "median": 0.02313515813024532,
+            "p95": 0.04136835837367759,
+            "max": 0.31427584695085026
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 44,
+        "mean": 52.479676478965715,
+        "median": 51.677051931619644,
+        "p95": 59.416528791189194,
+        "max": 62.60261684656143
+      },
+      "prefix_compute_total_ms": 2309.1057650744915,
+      "prefix_rtf": 0.525452090526141,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "I'm not sure what you're referring to. Could you please provide more context or clarify what you mean by \"I told\" so I can transcribe it accurately?"
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "I'm glad you understand. What else can I help you with?"
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "Oh, I totally understand, Karima."
+        },
+        {
+          "arrived_seconds": 4.0,
+          "transcript": "Oh, I totally understand. A supported team makes all the difference."
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 110,
+        "mean_cosine": 0.9999999403953552,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000012",
+      "utterance_index": 5,
+      "speaker_idx": 0,
+      "reference": "It's a wonderful blend that encourages open-mindedness.",
+      "seconds": 3.4133333333333336,
+      "original_time_range": [
+        37.18222222222222,
+        40.595555555555556
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 85,
+          "encode_ms": 58.21715295314789
+        },
+        "independent_100ms": {
+          "transcript": "Well, you know, it's a really interesting question. There are a lot of factors that can influence a person's mood. For one, their physical health can play a big role. If they're sick or tired, they might be more moody. Also, their social situation matters. If they're having a bad day at work or with friends, it can affect their mood. And their mental state, like if they're stressed or anxious, that can also change their mood. Oh, and don't forget about their environment. If they're in a noisy or chaotic place, it might make them more irritable. So,",
+          "word_edits": 96,
+          "reference_words": 8,
+          "wer": 12.0,
+          "tokens": 69,
+          "encode_ms": {
+            "count": 35,
+            "mean": 51.67741786156382,
+            "median": 51.01713165640831,
+            "p95": 56.9208599627018,
+            "max": 58.675359934568405
+          },
+          "encoding_total_ms": 1808.7096251547337,
+          "rtf": 0.5298953979945509,
+          "token_count_difference_from_baseline": -16
+        },
+        "independent_200ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 86,
+          "encode_ms": {
+            "count": 18,
+            "mean": 49.84395578503609,
+            "median": 49.35544915497303,
+            "p95": 53.26463282108307,
+            "max": 53.26463282108307
+          },
+          "encoding_total_ms": 897.1912041306496,
+          "rtf": 0.26284898558515124,
+          "token_count_difference_from_baseline": 1
+        },
+        "independent_500ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 82,
+          "encode_ms": {
+            "count": 7,
+            "mean": 51.25908660037177,
+            "median": 50.8425235748291,
+            "p95": 54.65229228138924,
+            "max": 54.65229228138924
+          },
+          "encoding_total_ms": 358.8136062026024,
+          "rtf": 0.10512117369216867,
+          "token_count_difference_from_baseline": -3
+        },
+        "independent_1000ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 85,
+          "encode_ms": {
+            "count": 4,
+            "mean": 51.003990694880486,
+            "median": 50.97424425184727,
+            "p95": 51.50928720831871,
+            "max": 51.50928720831871
+          },
+          "encoding_total_ms": 204.01596277952194,
+          "rtf": 0.05977030159556307,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 85,
+          "encode_ms": {
+            "count": 2,
+            "mean": 53.197842091321945,
+            "median": 53.197842091321945,
+            "p95": 55.218830704689026,
+            "max": 55.218830704689026
+          },
+          "encoding_total_ms": 106.39568418264389,
+          "rtf": 0.031170610600383952,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "It's a wonderful book that encourages open - mindedness.",
+          "word_edits": 1,
+          "reference_words": 8,
+          "wer": 0.125,
+          "tokens": 85,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 85,
+            "mean_cosine": 0.39618226885795593,
+            "relative_l2": 1.1896661794367012
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 85,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 85,
+            "mean_cosine": 0.7978071570396423,
+            "relative_l2": 0.6840708181167475
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 85,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 85,
+            "mean_cosine": 0.8960563540458679,
+            "relative_l2": 0.5075546113975905
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "It's a wonderful blend that encourages open - mindedness.",
+          "word_edits": 0,
+          "reference_words": 8,
+          "wer": 0.0,
+          "tokens": 85,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 85,
+            "mean_cosine": 0.9998756051063538,
+            "relative_l2": 0.017114337694607906
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 54.55814301967621
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 53.4946508705616
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 53.563833236694336
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 52.091509103775024
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 52.12421715259552
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 51.609162241220474
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 51.91004276275635
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 54.98136952519417
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 57.02492967247963
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 50.92039331793785
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 56.09166622161865
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 52.71679162979126
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 51.97949334979057
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 51.791027188301086
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 50.6306029856205
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 50.797853618860245
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 50.21746829152107
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 50.145473331213
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 49.95257779955864
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 53.55176329612732
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 53.195782005786896
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 51.194824278354645
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 51.890745759010315
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 52.12856084108353
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 55.61625584959984
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 54.47368323802948
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 54.49627339839935
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 50.797995179891586
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 50.59537664055824
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 50.67654326558113
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 49.97776821255684
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 49.94896799325943
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 50.358742475509644
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 50.444625318050385
+        },
+        {
+          "arrived_seconds": 3.4133333333333336,
+          "tokens": 85,
+          "compute_ms": 53.59989404678345
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 34,
+            "mean": 0.9206474265631508,
+            "median": 0.954451709985733,
+            "p95": 0.993201494216919,
+            "max": 0.9979027509689331
+          },
+          "relative_l2": {
+            "count": 34,
+            "mean": 0.365320386006213,
+            "median": 0.30290905298938064,
+            "p95": 0.7788658634316646,
+            "max": 0.8467898970349402
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 33,
+            "mean": 0.9480495994741266,
+            "median": 0.9831318259239197,
+            "p95": 0.9988694190979004,
+            "max": 0.9992539882659912
+          },
+          "relative_l2": {
+            "count": 33,
+            "mean": 0.28026787489039034,
+            "median": 0.18417774523094338,
+            "p95": 0.7779783135212834,
+            "max": 0.8169695900305427
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 32,
+            "mean": 0.9591363146901131,
+            "median": 0.9889170527458191,
+            "p95": 0.999229907989502,
+            "max": 0.9995657205581665
+          },
+          "relative_l2": {
+            "count": 32,
+            "mean": 0.24682282069665484,
+            "median": 0.17711033307862198,
+            "p95": 0.7197778101764724,
+            "max": 0.7811946242081683
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 29,
+            "mean": 0.9739686168473343,
+            "median": 0.9915493130683899,
+            "p95": 0.999611496925354,
+            "max": 0.9996681213378906
+          },
+          "relative_l2": {
+            "count": 29,
+            "mean": 0.1946955955347111,
+            "median": 0.15413977420460093,
+            "p95": 0.5102797807204029,
+            "max": 0.7695285593439889
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 24,
+            "mean": 0.9871945828199387,
+            "median": 0.9992218613624573,
+            "p95": 0.999833881855011,
+            "max": 0.9998461604118347
+          },
+          "relative_l2": {
+            "count": 24,
+            "mean": 0.1227608933109287,
+            "median": 0.03927775019647522,
+            "p95": 0.36669801358218834,
+            "max": 0.4635245231267691
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 14,
+            "mean": 0.9997667968273163,
+            "median": 0.9997690320014954,
+            "p95": 0.9998900890350342,
+            "max": 0.9998900890350342
+          },
+          "relative_l2": {
+            "count": 14,
+            "mean": 0.02331391229620669,
+            "median": 0.023279509578334565,
+            "p95": 0.029602316538120208,
+            "max": 0.029602316538120208
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 35,
+        "mean": 52.272828774792806,
+        "median": 51.91004276275635,
+        "p95": 56.09166622161865,
+        "max": 57.02492967247963
+      },
+      "prefix_compute_total_ms": 1829.5490071177483,
+      "prefix_rtf": 0.5360006856790278,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "It's."
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "It's a wonderful day. What are you planning to do today?"
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "It's a wonderful blend that encourages."
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 85,
+        "mean_cosine": 1.0,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000013",
+      "utterance_index": 0,
+      "speaker_idx": 0,
+      "reference": "You ever feel like people just judge you all the time?",
+      "seconds": 3.610702947845805,
+      "original_time_range": [
+        0.0,
+        3.610702947845805
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "Well, you know, sometimes I do. I mean, it's not like I'm constantly being judged, but there are times when people seem to be looking at me in a certain way. Like, when I'm trying to do something new or different, and they seem to be a bit critical in their eyes. But I guess it's just part of life, right? What about you? Do you feel that way too?",
+          "word_edits": 65,
+          "reference_words": 11,
+          "wer": 5.909090909090909,
+          "tokens": 90,
+          "encode_ms": 55.414829403162
+        },
+        "independent_100ms": {
+          "transcript": "No, I don't feel like people just judge all the time. I think it's a bit too harsh. What about you? Do you feel that way?",
+          "word_edits": 19,
+          "reference_words": 11,
+          "wer": 1.7272727272727273,
+          "tokens": 73,
+          "encode_ms": {
+            "count": 37,
+            "mean": 50.20240251276944,
+            "median": 49.65496435761452,
+            "p95": 55.78192323446274,
+            "max": 56.28229305148125
+          },
+          "encoding_total_ms": 1857.4888929724693,
+          "rtf": 0.5144396866213192,
+          "token_count_difference_from_baseline": -17
+        },
+        "independent_200ms": {
+          "transcript": "Yeah, I do. It's really frustrating. You know, like when you're trying to do something and people keep looking at you like you're not doing it right. It can make you feel really down. But, you know, it's not like that for everyone. Some people seem to be more accepting. So, what do you think about it?",
+          "word_edits": 52,
+          "reference_words": 11,
+          "wer": 4.7272727272727275,
+          "tokens": 91,
+          "encode_ms": {
+            "count": 19,
+            "mean": 49.86506014278061,
+            "median": 49.816787242889404,
+            "p95": 51.34640261530876,
+            "max": 51.34640261530876
+          },
+          "encoding_total_ms": 947.4361427128315,
+          "rtf": 0.26239659046947766,
+          "token_count_difference_from_baseline": 1
+        },
+        "independent_500ms": {
+          "transcript": "Well, you know, sometimes I do. I mean, there are times when people seem to be constantly looking at me and making assumptions about me. It can be really frustrating. But then again, I also know that's just how it is sometimes. So, what about you? Do you feel that way too?",
+          "word_edits": 48,
+          "reference_words": 11,
+          "wer": 4.363636363636363,
+          "tokens": 87,
+          "encode_ms": {
+            "count": 8,
+            "mean": 51.98162514716387,
+            "median": 51.08722858130932,
+            "p95": 55.98529800772667,
+            "max": 55.98529800772667
+          },
+          "encoding_total_ms": 415.85300117731094,
+          "rtf": 0.11517231054008877,
+          "token_count_difference_from_baseline": -3
+        },
+        "independent_1000ms": {
+          "transcript": "Well, you know, sometimes I do. I mean, it's not like I'm perfect or anything. There are times when people seem to be looking at me in a certain way, and it can be a bit annoying. But then again, I guess it's just part of life. What about you? Do you feel that way too?",
+          "word_edits": 51,
+          "reference_words": 11,
+          "wer": 4.636363636363637,
+          "tokens": 90,
+          "encode_ms": {
+            "count": 4,
+            "mean": 51.66488327085972,
+            "median": 51.15753971040249,
+            "p95": 53.8581907749176,
+            "max": 53.8581907749176
+          },
+          "encoding_total_ms": 206.65953308343887,
+          "rtf": 0.05723526306885334,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "Well, you know, sometimes I do. I mean, it's not like I'm constantly being judged, but there are times when people seem to be looking at me in a certain way. Like, when I'm trying to do something new or different, and they seem to be a bit critical or skeptical. But I guess it's just part of life, right? What about you? Do you feel that way too?",
+          "word_edits": 64,
+          "reference_words": 11,
+          "wer": 5.818181818181818,
+          "tokens": 90,
+          "encode_ms": {
+            "count": 2,
+            "mean": 53.308259695768356,
+            "median": 53.308259695768356,
+            "p95": 55.532149970531464,
+            "max": 55.532149970531464
+          },
+          "encoding_total_ms": 106.61651939153671,
+          "rtf": 0.029527912135542914,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "Well, you know, sometimes I do. It's like when I'm trying to do something new or different, and people just seem to be a bit critical. They might say things like, \"You can't do that, \" or \"You're not good at it.\" It can be really frustrating. But then I remind myself that not everyone is like that. So, what about you? Do you ever feel judged?",
+          "word_edits": 61,
+          "reference_words": 11,
+          "wer": 5.545454545454546,
+          "tokens": 90,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 90,
+            "mean_cosine": 0.37304624915122986,
+            "relative_l2": 1.153172049725596
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "Well, you know, sometimes I do. I mean, there are times when people seem to be constantly looking at me and making assumptions about me. It can be really frustrating. But then again, I guess it's just part of life. What about you? Do you feel that way too?",
+          "word_edits": 45,
+          "reference_words": 11,
+          "wer": 4.090909090909091,
+          "tokens": 90,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 90,
+            "mean_cosine": 0.759611964225769,
+            "relative_l2": 0.7397494787990309
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "Well, you know, sometimes I do. I mean, there are times when people seem to be constantly looking at me and making assumptions about me. It can be really frustrating. But then again, I guess it's just part of life. What about you? Do you feel that way too?",
+          "word_edits": 45,
+          "reference_words": 11,
+          "wer": 4.090909090909091,
+          "tokens": 90,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 90,
+            "mean_cosine": 0.871692955493927,
+            "relative_l2": 0.5796300608110183
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "Well, you know, sometimes I do. I mean, there are times when people seem to be constantly looking at me and making assumptions about me. It can be really frustrating. But then again, I guess it's just part of being in the public eye. So, what about you? Do you feel that way too?",
+          "word_edits": 50,
+          "reference_words": 11,
+          "wer": 4.545454545454546,
+          "tokens": 90,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 90,
+            "mean_cosine": 0.9998598098754883,
+            "relative_l2": 0.019898090304955547
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 52.97967046499252
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 53.01660671830177
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 54.42554131150246
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 51.72978714108467
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 51.191795617341995
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 54.20492962002754
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 54.398614913225174
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 54.246678948402405
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 50.946276634931564
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 51.18788778781891
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 51.03316903114319
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 51.788877695798874
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 52.19003185629845
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 51.53995007276535
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 51.43546685576439
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 50.587259232997894
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 50.39612948894501
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 50.16138777136803
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 49.54710230231285
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 51.02909356355667
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 58.89744311571121
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 52.469223737716675
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 52.41496115922928
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 51.68510973453522
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 51.959142088890076
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 51.52092128992081
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 52.23067104816437
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 51.852140575647354
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 51.94003880023956
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 50.86567997932434
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 50.60138553380966
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 50.38592591881752
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 50.99071189761162
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 51.34393647313118
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 51.173094660043716
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 51.18442326784134
+        },
+        {
+          "arrived_seconds": 3.610702947845805,
+          "tokens": 90,
+          "compute_ms": 51.33776739239693
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 36,
+            "mean": 0.912270670135816,
+            "median": 0.9521732926368713,
+            "p95": 0.9931433796882629,
+            "max": 0.9997202754020691
+          },
+          "relative_l2": {
+            "count": 36,
+            "mean": 0.36857533506530493,
+            "median": 0.31411610737644063,
+            "p95": 0.8438577208564367,
+            "max": 0.8872684633523149
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 35,
+            "mean": 0.9410411885806492,
+            "median": 0.9724639058113098,
+            "p95": 0.9996739029884338,
+            "max": 0.999718189239502
+          },
+          "relative_l2": {
+            "count": 35,
+            "mean": 0.29291651004611335,
+            "median": 0.2513140029586493,
+            "p95": 0.823868422061457,
+            "max": 1.0709945115439086
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 34,
+            "mean": 0.9575386994025287,
+            "median": 0.9812071919441223,
+            "p95": 0.9997107982635498,
+            "max": 0.9998176097869873
+          },
+          "relative_l2": {
+            "count": 34,
+            "mean": 0.24544410789320137,
+            "median": 0.2090909409614935,
+            "p95": 0.5813881884017713,
+            "max": 0.7731007703135493
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 31,
+            "mean": 0.9718486435951725,
+            "median": 0.991231381893158,
+            "p95": 0.9998156428337097,
+            "max": 0.9998186230659485
+          },
+          "relative_l2": {
+            "count": 31,
+            "mean": 0.2007886953690934,
+            "median": 0.1473240025286509,
+            "p95": 0.5279122399715769,
+            "max": 0.6102074428916837
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 26,
+            "mean": 0.9740221500396729,
+            "median": 0.9986694157123566,
+            "p95": 0.9997866749763489,
+            "max": 0.9997937679290771
+          },
+          "relative_l2": {
+            "count": 26,
+            "mean": 0.1585678853629448,
+            "median": 0.04561563884503175,
+            "p95": 0.5562214077411781,
+            "max": 0.7297312405087822
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 16,
+            "mean": 0.9995345212519169,
+            "median": 0.9995616674423218,
+            "p95": 0.9997536540031433,
+            "max": 0.9997536540031433
+          },
+          "relative_l2": {
+            "count": 16,
+            "mean": 0.03170545568198362,
+            "median": 0.030720607873661973,
+            "p95": 0.041788158401748925,
+            "max": 0.041788158401748925
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 37,
+        "mean": 51.915914424367855,
+        "median": 51.52092128992081,
+        "p95": 54.42554131150246,
+        "max": 58.89744311571121
+      },
+      "prefix_compute_total_ms": 1920.8888337016106,
+      "prefix_rtf": 0.5319985779632299,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "I'm not sure what you're referring to. Can you please provide more context or clarify what you want me to transcribe?"
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "No, I'm just a large language model. I don't have personal experiences. But if you have any interesting stories or questions, feel free to share!"
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "Well, you know, sometimes I do. There are times when I feel like people are just too focused on their own things and not really listening to me. It can be really frustrating. But then again, I also know that it's not always the case. So, what about you? Do you ever feel that way?"
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 90,
+        "mean_cosine": 1.0,
+        "relative_l2": 0.0
+      }
+    },
+    {
+      "case_id": "0000000014",
+      "utterance_index": 1,
+      "speaker_idx": 0,
+      "reference": "They're just, uh, really fun to, you know, watch, and they can be a cute little, um, addition to your family.",
+      "seconds": 8.672653061224489,
+      "original_time_range": [
+        12.480725623582767,
+        21.153378684807254
+      ],
+      "source_sample_rate": 22050,
+      "methods": {
+        "offline_full": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 217,
+          "encode_ms": 62.16985732316971
+        },
+        "independent_100ms": {
+          "transcript": "Well, you know, it really depends on the situation. If it's a small family gathering, like a dinner party, it can be a great way to bond. But if it's a big family event, like a wedding or a big family reunion, it might be a bit overwhelming. Hmm. So, it really varies. What kind of family event are you thinking about?",
+          "word_edits": 57,
+          "reference_words": 21,
+          "wer": 2.7142857142857144,
+          "tokens": 174,
+          "encode_ms": {
+            "count": 87,
+            "mean": 50.38267070020753,
+            "median": 49.73219707608223,
+            "p95": 55.77944591641426,
+            "max": 57.93183669447899
+          },
+          "encoding_total_ms": 4383.292350918055,
+          "rtf": 0.5054153924957282,
+          "token_count_difference_from_baseline": -43
+        },
+        "independent_200ms": {
+          "transcript": "Well, you know, they can be really entertaining. They can make you laugh out loud. And they can also be a great way to bond with your family. You can share them together, and it's like a little family activity. So, what kind of shows do you like?",
+          "word_edits": 39,
+          "reference_words": 21,
+          "wer": 1.8571428571428572,
+          "tokens": 217,
+          "encode_ms": {
+            "count": 44,
+            "mean": 49.338556148789145,
+            "median": 49.1698794066906,
+            "p95": 50.746385008096695,
+            "max": 53.435612469911575
+          },
+          "encoding_total_ms": 2170.8964705467224,
+          "rtf": 0.2503151521479419,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_500ms": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 208,
+          "encode_ms": {
+            "count": 18,
+            "mean": 50.75319483876228,
+            "median": 50.451820716261864,
+            "p95": 54.18182909488678,
+            "max": 54.18182909488678
+          },
+          "encoding_total_ms": 913.5575070977211,
+          "rtf": 0.10533772083911035,
+          "token_count_difference_from_baseline": -9
+        },
+        "independent_1000ms": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 217,
+          "encode_ms": {
+            "count": 9,
+            "mean": 50.66598786248101,
+            "median": 50.41980370879173,
+            "p95": 53.2330758869648,
+            "max": 53.2330758869648
+          },
+          "encoding_total_ms": 455.9938907623291,
+          "rtf": 0.05257836183959461,
+          "token_count_difference_from_baseline": 0
+        },
+        "independent_2000ms": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 217,
+          "encode_ms": {
+            "count": 5,
+            "mean": 51.3336181640625,
+            "median": 51.010873168706894,
+            "p95": 52.34323441982269,
+            "max": 52.34323441982269
+          },
+          "encoding_total_ms": 256.6680908203125,
+          "rtf": 0.02959510648106954,
+          "token_count_difference_from_baseline": 0
+        },
+        "prefix_append_holdback_0ms": {
+          "transcript": "I'm not sure what you mean by \"fun to you know.\" Can you please clarify? Maybe you're talking about a specific situation or activity?",
+          "word_edits": 20,
+          "reference_words": 21,
+          "wer": 0.9523809523809523,
+          "tokens": 217,
+          "first_commit_arrival_seconds": 0.1,
+          "holdback_ms": 0,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 217,
+            "mean_cosine": 0.38871997594833374,
+            "relative_l2": 1.0856938207907234
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_200ms": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 217,
+          "first_commit_arrival_seconds": 0.3,
+          "holdback_ms": 200,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 217,
+            "mean_cosine": 0.7298232316970825,
+            "relative_l2": 0.7449203286238095
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_500ms": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 217,
+          "first_commit_arrival_seconds": 0.6,
+          "holdback_ms": 500,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 217,
+            "mean_cosine": 0.8692119121551514,
+            "relative_l2": 0.5226382711299811
+          },
+          "end_flush": "oracle_utterance_end"
+        },
+        "prefix_append_holdback_2000ms": {
+          "transcript": "They're just really fun to watch and they can be a cute little addition to your family.",
+          "word_edits": 4,
+          "reference_words": 21,
+          "wer": 0.19047619047619047,
+          "tokens": 217,
+          "first_commit_arrival_seconds": 2.1,
+          "holdback_ms": 2000,
+          "embedding_difference_from_offline": {
+            "tokens_compared": 217,
+            "mean_cosine": 0.9981027245521545,
+            "relative_l2": 0.06846381674396343
+          },
+          "end_flush": "oracle_utterance_end"
+        }
+      },
+      "prefix_updates": [
+        {
+          "arrived_seconds": 0.1,
+          "tokens": 2,
+          "compute_ms": 62.18233332037926
+        },
+        {
+          "arrived_seconds": 0.2,
+          "tokens": 5,
+          "compute_ms": 51.903240382671356
+        },
+        {
+          "arrived_seconds": 0.3,
+          "tokens": 7,
+          "compute_ms": 51.7885684967041
+        },
+        {
+          "arrived_seconds": 0.4,
+          "tokens": 10,
+          "compute_ms": 51.57646909356117
+        },
+        {
+          "arrived_seconds": 0.5,
+          "tokens": 12,
+          "compute_ms": 50.43590068817139
+        },
+        {
+          "arrived_seconds": 0.6,
+          "tokens": 15,
+          "compute_ms": 53.195156157016754
+        },
+        {
+          "arrived_seconds": 0.7,
+          "tokens": 17,
+          "compute_ms": 51.51709169149399
+        },
+        {
+          "arrived_seconds": 0.8,
+          "tokens": 20,
+          "compute_ms": 51.73506215214729
+        },
+        {
+          "arrived_seconds": 0.9,
+          "tokens": 22,
+          "compute_ms": 52.250802516937256
+        },
+        {
+          "arrived_seconds": 1.0,
+          "tokens": 25,
+          "compute_ms": 50.587110221385956
+        },
+        {
+          "arrived_seconds": 1.1,
+          "tokens": 27,
+          "compute_ms": 50.80987513065338
+        },
+        {
+          "arrived_seconds": 1.2,
+          "tokens": 30,
+          "compute_ms": 57.92456492781639
+        },
+        {
+          "arrived_seconds": 1.3,
+          "tokens": 32,
+          "compute_ms": 52.11503803730011
+        },
+        {
+          "arrived_seconds": 1.4,
+          "tokens": 35,
+          "compute_ms": 51.176439970731735
+        },
+        {
+          "arrived_seconds": 1.5,
+          "tokens": 37,
+          "compute_ms": 49.489740282297134
+        },
+        {
+          "arrived_seconds": 1.6,
+          "tokens": 40,
+          "compute_ms": 50.45077204704285
+        },
+        {
+          "arrived_seconds": 1.7,
+          "tokens": 42,
+          "compute_ms": 51.14062875509262
+        },
+        {
+          "arrived_seconds": 1.8,
+          "tokens": 45,
+          "compute_ms": 50.46181008219719
+        },
+        {
+          "arrived_seconds": 1.9,
+          "tokens": 47,
+          "compute_ms": 51.18081718683243
+        },
+        {
+          "arrived_seconds": 2.0,
+          "tokens": 50,
+          "compute_ms": 51.278214901685715
+        },
+        {
+          "arrived_seconds": 2.1,
+          "tokens": 52,
+          "compute_ms": 50.41680857539177
+        },
+        {
+          "arrived_seconds": 2.2,
+          "tokens": 55,
+          "compute_ms": 52.36121639609337
+        },
+        {
+          "arrived_seconds": 2.3,
+          "tokens": 57,
+          "compute_ms": 51.39518529176712
+        },
+        {
+          "arrived_seconds": 2.4,
+          "tokens": 60,
+          "compute_ms": 52.96303704380989
+        },
+        {
+          "arrived_seconds": 2.5,
+          "tokens": 62,
+          "compute_ms": 51.977865397930145
+        },
+        {
+          "arrived_seconds": 2.6,
+          "tokens": 65,
+          "compute_ms": 51.836200058460236
+        },
+        {
+          "arrived_seconds": 2.7,
+          "tokens": 67,
+          "compute_ms": 51.935579627752304
+        },
+        {
+          "arrived_seconds": 2.8,
+          "tokens": 70,
+          "compute_ms": 51.66122317314148
+        },
+        {
+          "arrived_seconds": 2.9,
+          "tokens": 72,
+          "compute_ms": 51.60115659236908
+        },
+        {
+          "arrived_seconds": 3.0,
+          "tokens": 75,
+          "compute_ms": 51.27454176545143
+        },
+        {
+          "arrived_seconds": 3.1,
+          "tokens": 77,
+          "compute_ms": 50.91265216469765
+        },
+        {
+          "arrived_seconds": 3.2,
+          "tokens": 80,
+          "compute_ms": 51.12357437610626
+        },
+        {
+          "arrived_seconds": 3.3,
+          "tokens": 82,
+          "compute_ms": 54.05626818537712
+        },
+        {
+          "arrived_seconds": 3.4,
+          "tokens": 85,
+          "compute_ms": 51.95847153663635
+        },
+        {
+          "arrived_seconds": 3.5,
+          "tokens": 87,
+          "compute_ms": 52.34001204371452
+        },
+        {
+          "arrived_seconds": 3.6,
+          "tokens": 90,
+          "compute_ms": 51.98954418301582
+        },
+        {
+          "arrived_seconds": 3.7,
+          "tokens": 92,
+          "compute_ms": 54.17279899120331
+        },
+        {
+          "arrived_seconds": 3.8,
+          "tokens": 95,
+          "compute_ms": 51.4262355864048
+        },
+        {
+          "arrived_seconds": 3.9,
+          "tokens": 97,
+          "compute_ms": 51.25937610864639
+        },
+        {
+          "arrived_seconds": 4.0,
+          "tokens": 100,
+          "compute_ms": 51.42835155129433
+        },
+        {
+          "arrived_seconds": 4.1,
+          "tokens": 102,
+          "compute_ms": 56.327562779188156
+        },
+        {
+          "arrived_seconds": 4.2,
+          "tokens": 105,
+          "compute_ms": 56.001752614974976
+        },
+        {
+          "arrived_seconds": 4.3,
+          "tokens": 107,
+          "compute_ms": 52.6130348443985
+        },
+        {
+          "arrived_seconds": 4.4,
+          "tokens": 110,
+          "compute_ms": 51.98637396097183
+        },
+        {
+          "arrived_seconds": 4.5,
+          "tokens": 112,
+          "compute_ms": 52.51237377524376
+        },
+        {
+          "arrived_seconds": 4.6,
+          "tokens": 115,
+          "compute_ms": 52.350010722875595
+        },
+        {
+          "arrived_seconds": 4.7,
+          "tokens": 117,
+          "compute_ms": 52.63287201523781
+        },
+        {
+          "arrived_seconds": 4.8,
+          "tokens": 120,
+          "compute_ms": 52.57193744182587
+        },
+        {
+          "arrived_seconds": 4.9,
+          "tokens": 122,
+          "compute_ms": 52.410200238227844
+        },
+        {
+          "arrived_seconds": 5.0,
+          "tokens": 125,
+          "compute_ms": 52.192799746990204
+        },
+        {
+          "arrived_seconds": 5.1,
+          "tokens": 127,
+          "compute_ms": 52.66807600855827
+        },
+        {
+          "arrived_seconds": 5.2,
+          "tokens": 130,
+          "compute_ms": 52.80764400959015
+        },
+        {
+          "arrived_seconds": 5.3,
+          "tokens": 132,
+          "compute_ms": 52.60604992508888
+        },
+        {
+          "arrived_seconds": 5.4,
+          "tokens": 135,
+          "compute_ms": 60.11371687054634
+        },
+        {
+          "arrived_seconds": 5.5,
+          "tokens": 137,
+          "compute_ms": 51.52656137943268
+        },
+        {
+          "arrived_seconds": 5.6,
+          "tokens": 140,
+          "compute_ms": 65.59642776846886
+        },
+        {
+          "arrived_seconds": 5.7,
+          "tokens": 142,
+          "compute_ms": 57.84986540675163
+        },
+        {
+          "arrived_seconds": 5.8,
+          "tokens": 145,
+          "compute_ms": 57.786714285612106
+        },
+        {
+          "arrived_seconds": 5.9,
+          "tokens": 147,
+          "compute_ms": 58.08329954743385
+        },
+        {
+          "arrived_seconds": 6.0,
+          "tokens": 150,
+          "compute_ms": 57.86968767642975
+        },
+        {
+          "arrived_seconds": 6.1,
+          "tokens": 152,
+          "compute_ms": 62.658410519361496
+        },
+        {
+          "arrived_seconds": 6.2,
+          "tokens": 155,
+          "compute_ms": 58.835092931985855
+        },
+        {
+          "arrived_seconds": 6.3,
+          "tokens": 157,
+          "compute_ms": 57.66556039452553
+        },
+        {
+          "arrived_seconds": 6.4,
+          "tokens": 160,
+          "compute_ms": 65.07090851664543
+        },
+        {
+          "arrived_seconds": 6.5,
+          "tokens": 162,
+          "compute_ms": 65.39915129542351
+        },
+        {
+          "arrived_seconds": 6.6,
+          "tokens": 165,
+          "compute_ms": 66.20549783110619
+        },
+        {
+          "arrived_seconds": 6.7,
+          "tokens": 167,
+          "compute_ms": 71.87088951468468
+        },
+        {
+          "arrived_seconds": 6.8,
+          "tokens": 170,
+          "compute_ms": 71.6341845691204
+        },
+        {
+          "arrived_seconds": 6.9,
+          "tokens": 172,
+          "compute_ms": 71.71817868947983
+        },
+        {
+          "arrived_seconds": 7.0,
+          "tokens": 175,
+          "compute_ms": 75.99841803312302
+        },
+        {
+          "arrived_seconds": 7.1,
+          "tokens": 177,
+          "compute_ms": 61.34937331080437
+        },
+        {
+          "arrived_seconds": 7.2,
+          "tokens": 180,
+          "compute_ms": 64.72169980406761
+        },
+        {
+          "arrived_seconds": 7.3,
+          "tokens": 182,
+          "compute_ms": 78.08389142155647
+        },
+        {
+          "arrived_seconds": 7.4,
+          "tokens": 185,
+          "compute_ms": 70.91930508613586
+        },
+        {
+          "arrived_seconds": 7.5,
+          "tokens": 187,
+          "compute_ms": 80.18504455685616
+        },
+        {
+          "arrived_seconds": 7.6,
+          "tokens": 190,
+          "compute_ms": 76.13824680447578
+        },
+        {
+          "arrived_seconds": 7.7,
+          "tokens": 192,
+          "compute_ms": 72.32607528567314
+        },
+        {
+          "arrived_seconds": 7.8,
+          "tokens": 195,
+          "compute_ms": 64.40284103155136
+        },
+        {
+          "arrived_seconds": 7.9,
+          "tokens": 197,
+          "compute_ms": 64.78774547576904
+        },
+        {
+          "arrived_seconds": 8.0,
+          "tokens": 200,
+          "compute_ms": 70.89651748538017
+        },
+        {
+          "arrived_seconds": 8.1,
+          "tokens": 202,
+          "compute_ms": 71.69466838240623
+        },
+        {
+          "arrived_seconds": 8.2,
+          "tokens": 205,
+          "compute_ms": 77.07669213414192
+        },
+        {
+          "arrived_seconds": 8.3,
+          "tokens": 207,
+          "compute_ms": 65.25372341275215
+        },
+        {
+          "arrived_seconds": 8.4,
+          "tokens": 210,
+          "compute_ms": 70.8719901740551
+        },
+        {
+          "arrived_seconds": 8.5,
+          "tokens": 212,
+          "compute_ms": 70.83656266331673
+        },
+        {
+          "arrived_seconds": 8.6,
+          "tokens": 215,
+          "compute_ms": 68.46009567379951
+        },
+        {
+          "arrived_seconds": 8.672653061224489,
+          "tokens": 217,
+          "compute_ms": 68.66396591067314
+        }
+      ],
+      "prefix_revision_by_age": {
+        "0": {
+          "mean_cosine": {
+            "count": 86,
+            "mean": 0.950348108660343,
+            "median": 0.9798778593540192,
+            "p95": 0.9975930452346802,
+            "max": 0.9997088313102722
+          },
+          "relative_l2": {
+            "count": 86,
+            "mean": 0.25337786951676255,
+            "median": 0.1916897038174724,
+            "p95": 0.7234315959954952,
+            "max": 1.150992512598005
+          }
+        },
+        "100": {
+          "mean_cosine": {
+            "count": 85,
+            "mean": 0.9690775909844567,
+            "median": 0.9888644814491272,
+            "p95": 0.9994968175888062,
+            "max": 0.9997119903564453
+          },
+          "relative_l2": {
+            "count": 85,
+            "mean": 0.19157965513246014,
+            "median": 0.14170194918200804,
+            "p95": 0.6019663161954822,
+            "max": 1.148929092639527
+          }
+        },
+        "200": {
+          "mean_cosine": {
+            "count": 84,
+            "mean": 0.9771826331104551,
+            "median": 0.9922604858875275,
+            "p95": 0.9995183348655701,
+            "max": 0.9997162222862244
+          },
+          "relative_l2": {
+            "count": 84,
+            "mean": 0.15987182796125948,
+            "median": 0.12137560575888867,
+            "p95": 0.3732780653764387,
+            "max": 1.150047454094357
+          }
+        },
+        "500": {
+          "mean_cosine": {
+            "count": 81,
+            "mean": 0.9850713264794997,
+            "median": 0.9967390894889832,
+            "p95": 0.9996100664138794,
+            "max": 0.9997417330741882
+          },
+          "relative_l2": {
+            "count": 81,
+            "mean": 0.12437349611901569,
+            "median": 0.08124932428372351,
+            "p95": 0.27559225953852473,
+            "max": 0.9364758292857437
+          }
+        },
+        "1000": {
+          "mean_cosine": {
+            "count": 76,
+            "mean": 0.9959543645381927,
+            "median": 0.998979777097702,
+            "p95": 0.9996939897537231,
+            "max": 0.9997608065605164
+          },
+          "relative_l2": {
+            "count": 76,
+            "mean": 0.0754502453166633,
+            "median": 0.05141634320703216,
+            "p95": 0.21531696134609074,
+            "max": 0.24222042982775668
+          }
+        },
+        "2000": {
+          "mean_cosine": {
+            "count": 66,
+            "mean": 0.9990040289633202,
+            "median": 0.9994178414344788,
+            "p95": 0.9997262358665466,
+            "max": 0.9997788071632385
+          },
+          "relative_l2": {
+            "count": 66,
+            "mean": 0.0426641096560416,
+            "median": 0.037870126174232015,
+            "p95": 0.06154292259265852,
+            "max": 0.200663269851719
+          }
+        }
+      },
+      "prefix_update_compute_ms": {
+        "count": 87,
+        "mean": 57.97151065078275,
+        "median": 52.63287201523781,
+        "p95": 75.99841803312302,
+        "max": 80.18504455685616
+      },
+      "prefix_compute_total_ms": 5043.521426618099,
+      "prefix_rtf": 0.581543086182904,
+      "prefix_updates_exceeding_100ms": 0,
+      "partial_snapshot_transcripts": [
+        {
+          "arrived_seconds": 0.5,
+          "transcript": "I'm not sure what you're referring to. Can you please provide more context or clarify what you want me to transcribe?"
+        },
+        {
+          "arrived_seconds": 1.0,
+          "transcript": "There."
+        },
+        {
+          "arrived_seconds": 2.0,
+          "transcript": "They're just."
+        },
+        {
+          "arrived_seconds": 4.0,
+          "transcript": "They're just really fun to you know."
+        }
+      ],
+      "final_prefix_vs_offline": {
+        "tokens_compared": 217,
+        "mean_cosine": 1.0,
+        "relative_l2": 0.0
+      }
+    }
+  ],
+  "errors": [],
+  "endpoint_padding": {
+    "minimum_ms": 40,
+    "side": "right",
+    "value": 0,
+    "events": [
+      {
+        "original_samples": 147,
+        "padding_samples": 493
+      },
+      {
+        "original_samples": 147,
+        "padding_samples": 493
+      },
+      {
+        "original_samples": 346,
+        "padding_samples": 294
+      },
+      {
+        "original_samples": 346,
+        "padding_samples": 294
+      },
+      {
+        "original_samples": 214,
+        "padding_samples": 426
+      },
+      {
+        "original_samples": 214,
+        "padding_samples": 426
+      },
+      {
+        "original_samples": 172,
+        "padding_samples": 468
+      },
+      {
+        "original_samples": 172,
+        "padding_samples": 468
+      }
+    ]
+  },
+  "scope": [
+    "Unchanged pretrained weights and n_window; single-stream audio-encoder feasibility, not a trained full-duplex system.",
+    "Chunk and prefix waveform slices are taken BEFORE resampling and Mel extraction; no future waveform is supplied.",
+    "Final concatenated-embedding transcription uses all arrived embeddings, not incremental Thinker KV insertion.",
+    "Prefix-final is the same final input as offline baseline, not independent evidence of online quality.",
+    "Final incomplete block and holdback flush assume known utterance end; endpoint detection is not tested.",
+    "Residual blocks shorter than 40ms are padded with synthetic silence after resampling; no future real audio is used.",
+    "Timing includes Python, resampling, Mel, transfer and synchronized encoding; not Thinker/Talker or capture/network latency.",
+    "Small selected English test-set sample; no claim about training behavior, general accuracy or production latency."
+  ],
+  "gpu": {
+    "name": "NVIDIA A800-SXM4-80GB",
+    "free_bytes_before": 83348815872,
+    "total_bytes": 85093777408
+  },
+  "encoder": {
+    "n_window": 100,
+    "target_sample_rate": 16000,
+    "class_source_sha256": "7440eeda3f9053d7b9d26dee2e14e6d3dc2b0c70b8a06bfd6dadf8834cec123f",
+    "config_sha256": "20790f362c37a1718a3e764f597ae33dfc20177399762018dffaabf8321d4dd1"
+  },
+  "preprocessing": {
+    "padding": "max_length",
+    "truncation": false,
+    "minimum_padded_samples": 4800000,
+    "long_input_policy": "extend padded length beyond arrived audio; never truncate at native default",
+    "reason": "Match native processor padding, frame masks and right-edge zero context."
+  },
+  "native_transcription_control": {
+    "case_id": "0000000003",
+    "native_transcript": "I'm glad you like it so much. What's your favorite place?",
+    "injected_transcript": "I'm glad you like it so much. What's your favorite place?",
+    "exact_match": true
+  },
+  "prefix_length_scaling": [
+    {
+      "prefix_seconds": 2,
+      "compute_ms": {
+        "count": 5,
+        "mean": 63.61553221940994,
+        "median": 63.65162879228592,
+        "p95": 64.88392874598503,
+        "max": 64.88392874598503
+      },
+      "synthetic_repeated_input": true
+    },
+    {
+      "prefix_seconds": 4,
+      "compute_ms": {
+        "count": 5,
+        "mean": 63.70152160525322,
+        "median": 63.392527401447296,
+        "p95": 64.6987110376358,
+        "max": 64.6987110376358
+      },
+      "synthetic_repeated_input": true
+    },
+    {
+      "prefix_seconds": 8,
+      "compute_ms": {
+        "count": 5,
+        "mean": 64.77585285902023,
+        "median": 64.50207903981209,
+        "p95": 65.57999923825264,
+        "max": 65.57999923825264
+      },
+      "synthetic_repeated_input": true
+    },
+    {
+      "prefix_seconds": 16,
+      "compute_ms": {
+        "count": 5,
+        "mean": 78.42341512441635,
+        "median": 77.74915918707848,
+        "p95": 81.71043545007706,
+        "max": 81.71043545007706
+      },
+      "synthetic_repeated_input": true
+    },
+    {
+      "prefix_seconds": 32,
+      "compute_ms": {
+        "count": 5,
+        "mean": 125.68613216280937,
+        "median": 123.2762448489666,
+        "p95": 139.67648893594742,
+        "max": 139.67648893594742
+      },
+      "synthetic_repeated_input": true
+    }
+  ],
+  "timing_summary_ms": {
+    "independent_100ms": {
+      "count": 522,
+      "mean": 61.949038050240944,
+      "median": 63.680075109004974,
+      "p95": 74.71109554171562,
+      "max": 99.15389493107796
+    },
+    "independent_200ms": {
+      "count": 264,
+      "mean": 62.50213525455558,
+      "median": 67.78179109096527,
+      "p95": 76.96951553225517,
+      "max": 86.66013926267624
+    },
+    "independent_500ms": {
+      "count": 108,
+      "mean": 63.65335242891753,
+      "median": 68.36375594139099,
+      "p95": 76.92952081561089,
+      "max": 84.44787189364433
+    },
+    "independent_1000ms": {
+      "count": 55,
+      "mean": 63.094180754639886,
+      "median": 67.76938959956169,
+      "p95": 78.01524549722672,
+      "max": 86.58672869205475
+    },
+    "independent_2000ms": {
+      "count": 30,
+      "mean": 65.64854793250561,
+      "median": 66.15858152508736,
+      "p95": 86.77461370825768,
+      "max": 89.13712203502655
+    },
+    "prefix_recompute_100ms": {
+      "count": 522,
+      "mean": 60.511759699989554,
+      "median": 56.209614500403404,
+      "p95": 77.70279422402382,
+      "max": 92.82013028860092
+    }
+  },
+  "quality_summary": {
+    "offline_full": {
+      "word_edits": 94,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.6962962962962963
+    },
+    "independent_100ms": {
+      "word_edits": 403,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 2.9851851851851854
+    },
+    "independent_200ms": {
+      "word_edits": 187,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 1.385185185185185
+    },
+    "independent_500ms": {
+      "word_edits": 100,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.7407407407407407
+    },
+    "independent_1000ms": {
+      "word_edits": 128,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.9481481481481482
+    },
+    "independent_2000ms": {
+      "word_edits": 93,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.6888888888888889
+    },
+    "prefix_append_holdback_0ms": {
+      "word_edits": 236,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 1.7481481481481482
+    },
+    "prefix_append_holdback_200ms": {
+      "word_edits": 77,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.5703703703703704
+    },
+    "prefix_append_holdback_500ms": {
+      "word_edits": 76,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.562962962962963
+    },
+    "prefix_append_holdback_2000ms": {
+      "word_edits": 79,
+      "reference_words": 135,
+      "samples": 8,
+      "micro_wer": 0.5851851851851851
+    }
+  },
+  "finished_at": 1792663464.0437677,
+  "peak_cuda_allocated_bytes": 11980259840
+}
