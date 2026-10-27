@@ -6,6 +6,7 @@ import { PreferenceCandidatePool } from './learning/preference-candidates.mjs'
 import { PreferencePromoter } from './learning/preference-promoter.mjs'
 import { ProfileObserver } from './learning/profile-observer.mjs'
 import { MemorySessionObserver } from './session-observer.mjs'
+import { MemoryCompactor } from './learning/compactor.mjs'
 
 export function createMemoryModule({ config, logger, conversationSync, textModelCall,
   audit, memoryProvider, frontendMemory } = {}) {
@@ -39,11 +40,23 @@ export function createMemoryModule({ config, logger, conversationSync, textModel
   // 攒够后由晋升器写入 USER.md 的观察推断段。槽位池必须落盘，否则重启即清零、
   // 跨会话确认永远攒不满。观察器需要模型，没有 API key 时它为 null，
   // 链路退化成「只有明说路径」——槽位池与晋升器照常空转，不报错。
+  const memoryCompactor = config.memoryCompactionEnabled !== false && !providerOwnsSessionObservation
+    ? new MemoryCompactor({
+        memoryService: frontendMemoryRuntime, llmCall: textModelCall, audit, logger,
+        thresholds: {
+          user: config.userCompactionThresholdChars ?? 4500,
+          memory: config.memoryCompactionThresholdChars ?? 6000,
+        },
+      })
+    : null
   let preferenceCandidates = null
   let preferencePromoter = null
   let profileObserver = null
-  if (config.preferenceLearningEnabled && !providerOwnsSessionObservation) {
+  if ((config.preferenceLearningEnabled || config.companionshipLearningEnabled)
+    && !providerOwnsSessionObservation) {
     preferenceCandidates = new PreferenceCandidatePool({
+      profileLearningEnabled: config.preferenceLearningEnabled === true,
+      companionshipEnabled: config.companionshipLearningEnabled === true,
       store: new PreferenceCandidateStore({
         filePath: config.preferenceCandidatePath,
         onWarning: warning => logger.warn('preference.persistence_warning', { warning }),
@@ -78,6 +91,7 @@ export function createMemoryModule({ config, logger, conversationSync, textModel
         if (!['gateway-memory-api', 'realtime-tool'].includes(event.source)) return
         conversationSync?.discardRecorded?.(event.ownerId)
         preferenceCandidates?.discardPending(event.ownerId)
+        return memoryCompactor?.maybeRun({ ownerId: event.ownerId })
       })
     : null
   return {
@@ -85,14 +99,15 @@ export function createMemoryModule({ config, logger, conversationSync, textModel
       frontendMemory: frontendMemoryRuntime,
       frontendMemoryService: memoryProviderRuntime,
       memoryProvider: memoryProviderRuntime,
-      preferenceCandidates, preferencePromoter, profileObserver,
+      preferenceCandidates, preferencePromoter, profileObserver, memoryCompactor,
     },
     sessionObservers: [new MemorySessionObserver({
       memoryService: frontendMemoryRuntime, memoryExtractor, preferencePromoter,
-      profileObserver, conversationSync,
+      profileObserver, conversationSync, memoryCompactor,
     })],
-    close: () => {
+    close: async () => {
       unsubscribeLearning?.()
+      await memoryCompactor?.drain()
       return frontendMemoryRuntime?.close?.()
     },
     mountRoutes(app) {

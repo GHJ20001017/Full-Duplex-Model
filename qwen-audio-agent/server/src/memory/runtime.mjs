@@ -87,6 +87,12 @@ export class FrontendMemoryRuntime {
     return normalizeDocuments(documents)
   }
 
+  listForLearning(ownerId) {
+    return typeof this.provider.listForLearning === 'function'
+      ? this.provider.listForLearning(ownerId)
+      : this.list(ownerId)
+  }
+
   subscribe(listener) {
     if (typeof listener !== 'function') throw new TypeError('listener must be a function')
     if (this.closePromise) return () => {}

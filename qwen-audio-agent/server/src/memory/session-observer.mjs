@@ -1,9 +1,9 @@
 // Learning and provider observation belong to memory, not the audio transport.
 export class MemorySessionObserver {
   constructor({ memoryService, memoryExtractor, preferencePromoter, profileObserver,
-    conversationSync } = {}) {
+    conversationSync, memoryCompactor } = {}) {
     Object.assign(this, { memoryService, memoryExtractor, preferencePromoter,
-      profileObserver, conversationSync })
+      profileObserver, conversationSync, memoryCompactor })
   }
 
   onAudio({ ownerId, sessionId, event, logger }) {
@@ -43,7 +43,10 @@ export class MemorySessionObserver {
         ))
       : undefined
     pending.push(observing?.then ? observing.then(promote) : promote())
-    return Promise.all(pending)
+    return Promise.all(pending).then(() => this.#run(logger, 'memory.compact_hook_failed', () => (
+      this.memoryCompactor?.maybeRun({ ownerId,
+        isCurrent: batch ? batch.isCurrent : () => true })
+    )))
   }
 
   #run(logger, code, operation) {

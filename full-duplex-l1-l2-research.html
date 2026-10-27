@@ -1,0 +1,995 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全双工语音对话 L1 / L2 架构调研</title>
+<meta name="description" content="基于综述 arXiv 2606.19453 的 L1/L2 全双工语音对话架构调研：模型结构、动作预测、数据与 Qwen2.5-Omni 改造方案。">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --panel-2:#fbfbfc; --ink:#17181c; --ink-2:#4a4e57;
+    --ink-3:#767b86; --line:#e3e5ea; --line-2:#eeeff3;
+    --l1:#0f6fbf; --l1-bg:#e8f2fc; --l2:#0e7f63; --l2-bg:#e6f5f0;
+    --nonfd:#8a6d1f; --nonfd-bg:#fbf3dd; --warn:#b3352b; --warn-bg:#fdeceb;
+    --infer:#6b4ec4; --infer-bg:#f0ecfd;
+    --code-bg:#f0f1f4; --shadow:0 1px 2px rgba(16,20,30,.05),0 8px 24px -16px rgba(16,20,30,.18);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    html[data-theme="auto"]{
+      --bg:#101114; --panel:#17191d; --panel-2:#1c1f24; --ink:#eceef2; --ink-2:#b6bac3;
+      --ink-3:#8b909b; --line:#282b31; --line-2:#22252a;
+      --l1:#6fb4f0; --l1-bg:#12293d; --l2:#5fd3b2; --l2-bg:#102e28;
+      --nonfd:#e0c06a; --nonfd-bg:#332a12; --warn:#f08b81; --warn-bg:#3a1d1a;
+      --infer:#b3a0f2; --infer-bg:#251f3d;
+      --code-bg:#22252b; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.6);
+    }
+  }
+  html[data-theme="dark"]{
+    --bg:#101114; --panel:#17191d; --panel-2:#1c1f24; --ink:#eceef2; --ink-2:#b6bac3;
+    --ink-3:#8b909b; --line:#282b31; --line-2:#22252a;
+    --l1:#6fb4f0; --l1-bg:#12293d; --l2:#5fd3b2; --l2-bg:#102e28;
+    --nonfd:#e0c06a; --nonfd-bg:#332a12; --warn:#f08b81; --warn-bg:#3a1d1a;
+    --infer:#b3a0f2; --infer-bg:#251f3d;
+    --code-bg:#22252b; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:24px}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--l1); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono); font-size:.86em; background:var(--code-bg); padding:.1em .38em; border-radius:4px; word-break:break-word}
+
+  .wrap{max-width:1180px; margin:0 auto; padding:0 20px 96px}
+  header.top{
+    border-bottom:1px solid var(--line); background:var(--panel);
+    padding:34px 0 26px; margin-bottom:26px;
+  }
+  header.top .wrap{padding-bottom:0}
+  .eyebrow{font-family:var(--mono); font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
+  h1{font-size:30px; line-height:1.3; margin:10px 0 10px; letter-spacing:-.01em}
+  .sub{color:var(--ink-2); max-width:78ch; font-size:14.5px}
+  .sub + .sub{margin-top:8px}
+  .topmeta{margin-top:18px; display:flex; flex-wrap:wrap; gap:8px}
+  .pill{font-family:var(--mono); font-size:11.5px; color:var(--ink-2); border:1px solid var(--line); border-radius:999px; padding:3px 10px; background:var(--panel-2)}
+
+  .layout{display:grid; grid-template-columns:236px minmax(0,1fr); gap:34px; align-items:start}
+  nav.toc{position:sticky; top:22px; font-size:13.5px}
+  nav.toc .toc-title{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); padding:0 10px 8px}
+  nav.toc ol{list-style:none; margin:0; padding:0; border-left:1px solid var(--line)}
+  nav.toc a{display:block; padding:5px 10px; color:var(--ink-2); border-left:2px solid transparent; margin-left:-1px}
+  nav.toc a:hover{color:var(--ink); text-decoration:none}
+  nav.toc a.active{color:var(--l1); border-left-color:var(--l1); font-weight:600}
+  .filterbar{margin-top:16px; display:flex; flex-wrap:wrap; gap:6px; padding:0 8px}
+  .filterbar button{
+    font:inherit; font-size:12px; cursor:pointer; border:1px solid var(--line); background:var(--panel);
+    color:var(--ink-2); border-radius:999px; padding:3px 10px;
+  }
+  .filterbar button[aria-pressed="true"]{background:var(--ink); color:var(--bg); border-color:var(--ink)}
+  .filterbar button:focus-visible{outline:2px solid var(--l1); outline-offset:2px}
+  .themetoggle{margin-top:14px; margin-left:8px; font:inherit; font-size:12px; cursor:pointer; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink-2); border-radius:6px; padding:4px 10px}
+
+  main{min-width:0}
+  section{margin-bottom:44px; scroll-margin-top:20px}
+  h2{font-size:21px; margin:0 0 6px; letter-spacing:-.005em; padding-top:6px}
+  h2 .num{font-family:var(--mono); font-size:13px; color:var(--ink-3); margin-right:9px; font-weight:400}
+  h3{font-size:16.5px; margin:24px 0 8px}
+  h4{font-size:14.5px; margin:18px 0 6px; color:var(--ink-2)}
+  .lead{color:var(--ink-2); margin:0 0 18px; max-width:82ch}
+  p{margin:0 0 12px; max-width:82ch}
+  ul,ol{margin:0 0 12px; padding-left:22px; max-width:82ch}
+  li{margin:5px 0}
+  li > ul,li > ol{margin:5px 0 5px}
+
+  .tag{display:inline-block; font-family:var(--mono); font-size:11px; line-height:1.6; padding:1px 7px; border-radius:999px; vertical-align:2px; white-space:nowrap}
+  .tag-l1{background:var(--l1-bg); color:var(--l1)}
+  .tag-l2{background:var(--l2-bg); color:var(--l2)}
+  .tag-nonfd{background:var(--nonfd-bg); color:var(--nonfd)}
+  .tag-lit{background:var(--panel-2); color:var(--ink-3); border:1px solid var(--line)}
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px 16px;
+    margin:0 0 16px; box-shadow:var(--shadow);
+  }
+  .card.hidden{display:none}
+  .card-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin-bottom:2px}
+  .card-head h3{margin:0; font-size:16.5px}
+  .card-head .ref{font-family:var(--mono); font-size:11.5px; margin-left:auto}
+  .meta{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:2px 20px; margin:12px 0 12px;
+    padding:12px 14px; background:var(--panel-2); border:1px solid var(--line-2); border-radius:8px}
+  .meta > div{display:flex; gap:8px; font-size:13.5px; line-height:1.65}
+  .meta dt{color:var(--ink-3); flex:0 0 58px; font-family:var(--mono); font-size:11.5px; padding-top:3px}
+  .meta dd{margin:0; color:var(--ink-2); flex:1 1 auto; min-width:0}
+  .points{margin:0; padding-left:20px}
+  .points > li{color:var(--ink-2)}
+  .points > li b, .points > li strong{color:var(--ink)}
+  .note{border-left:3px solid var(--line); padding:10px 14px; background:var(--panel-2); border-radius:0 8px 8px 0; margin:14px 0; font-size:14px; color:var(--ink-2)}
+  .note.disclosed{border-left-color:var(--l2); background:var(--l2-bg)}
+  .note.infer{border-left-color:var(--infer); background:var(--infer-bg)}
+  .note.warn{border-left-color:var(--warn); background:var(--warn-bg)}
+  .note .lbl{display:block; font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:3px; opacity:.85}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--panel); margin:16px 0}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:660px}
+  th,td{text-align:left; padding:9px 13px; border-bottom:1px solid var(--line-2); vertical-align:top}
+  thead th{background:var(--panel-2); font-weight:600; color:var(--ink); white-space:nowrap; position:sticky; top:0}
+  tbody tr:last-child td{border-bottom:none}
+  td code{font-size:12px}
+  td.c,th.c{text-align:center}
+
+  pre{background:var(--code-bg); border:1px solid var(--line-2); border-radius:9px; padding:13px 15px; overflow-x:auto; font-size:12.5px; line-height:1.7; margin:14px 0}
+  pre code{background:none; padding:0; font-size:12.5px}
+
+  .grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin:16px 0}
+  .box{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+  .box h4{margin-top:0}
+  .box p:last-child,.box ul:last-child{margin-bottom:0}
+
+  .reflist{list-style:none; padding:0; font-size:13.5px}
+  .reflist li{padding:7px 0; border-bottom:1px solid var(--line-2); display:flex; flex-wrap:wrap; gap:4px 10px}
+  .reflist li:last-child{border-bottom:none}
+  .reflist .rid{font-family:var(--mono); font-size:12px; color:var(--ink-3); flex:0 0 104px}
+
+  footer{border-top:1px solid var(--line); margin-top:10px; padding-top:18px; color:var(--ink-3); font-size:12.5px; max-width:82ch}
+
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr; gap:20px}
+    nav.toc{position:static; border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:14px 16px}
+    nav.toc ol{border-left:none; columns:2; column-gap:12px}
+    h1{font-size:24px}
+    .reflist .rid{flex-basis:100%}
+  }
+  @media print{
+    body{background:#fff} nav.toc,.filterbar,.themetoggle{display:none}
+    .layout{grid-template-columns:1fr} .card{break-inside:avoid; box-shadow:none}
+    section{break-inside:auto} h2,h3{break-after:avoid}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">Full-Duplex Spoken Dialogue · Literature Survey</div>
+    <h1>全双工语音对话：L1 / L2 架构调研</h1>
+    <p class="sub">围绕综述 <a href="https://arxiv.org/abs/2606.19453" target="_blank" rel="noopener">A Survey of Full-Duplex Spoken Dialogue Systems（arXiv 2606.19453）</a> 提出的 L0–L3 分级，逐篇核对 L1 与 L2 相关工作族：核心思想、模型结构、双流如何输入与融合、动作如何被预测、预测结果如何控制生成与播放，以及训练数据的来源、规模与标签构造方式。</p>
+    <p class="sub">同时补充综述之后出现的直接相关工作（Covo-Audio、Fun-Audio-Chat、DuplexSLA、Lychee-FD、BayLing-Duplex、PersonaPlex、F-Actor），并给出面向 Qwen2.5-Omni 的可用改造路径。全文区分三类信息：论文明确披露、综述的分类判断、以及本文的综合推断。</p>
+    <div class="topmeta">
+      <span class="pill">arXiv 2606.19453</span>
+      <span class="pill">L1 · 隐藏状态级控制</span>
+      <span class="pill">L2 · Token 级控制</span>
+      <span class="pill">动作预测机制</span>
+      <span class="pill">数据与标签构造</span>
+      <span class="pill">整理于 2026-10-21</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="layout">
+  <nav class="toc" id="toc">
+    <div class="toc-title">目录</div>
+    <ol>
+      <li><a href="#overview">0 · 范围与读法</a></li>
+      <li><a href="#levels">1 · L0–L3 分级判据</a></li>
+      <li><a href="#l1">2 · L1：隐藏状态级控制</a></li>
+      <li><a href="#l2">3 · L2：Token 级控制</a></li>
+      <li><a href="#extra">4 · 直接相关补充工作</a></li>
+      <li><a href="#action">5 · 动作预测：三类机制</a></li>
+      <li><a href="#pipeline">6 · 决策 → 生成 → 播放</a></li>
+      <li><a href="#data">7 · 数据与标签构造</a></li>
+      <li><a href="#matrix">8 · 覆盖矩阵</a></li>
+      <li><a href="#design">9 · 面向 Qwen2.5-Omni 的改造</a></li>
+      <li><a href="#refs">10 · 参考链接</a></li>
+    </ol>
+    <div class="filterbar" id="filterbar" role="group" aria-label="按分级筛选模型卡片">
+      <button type="button" data-filter="all" aria-pressed="true">全部</button>
+      <button type="button" data-filter="l1" aria-pressed="false">仅 L1</button>
+      <button type="button" data-filter="l2" aria-pressed="false">仅 L2</button>
+    </div>
+    <button type="button" class="themetoggle" id="themetoggle">切换深浅色</button>
+  </nav>
+
+  <main>
+    <section id="overview">
+      <h2><span class="num">00</span>范围与读法</h2>
+      <p class="lead">这份调研覆盖综述 §4.4 的 L1 与 §4.5 的 L2 主体工作，并补充若干综述之后出现、与“双流输入 + 动作控制”直接相关的系统。目标不是把论文摘要堆在一起，而是回答三个工程问题：<b>双轨音频在主干前如何组织</b>、<b>“该不该说/该不该停”由谁在什么粒度上输出</b>、<b>输出之后如何真正改变系统行为</b>。</p>
+      <div class="grid2">
+        <div class="box">
+          <h4>分级是“控制位置”，不是能力排行榜</h4>
+          <p>L2 的模型不一定比 L1 更会对话，也不一定延迟更低。一个 L1 分类器如果训练充分，可以比一个没有学好静音分布的 L2 模型更可靠。分级真正描述的是：交互控制发生在外部模块、隐藏状态预测头，还是自回归 token 序列里。</p>
+        </div>
+        <div class="box">
+          <h4>“全双工”至少拆成四件事</h4>
+          <ul>
+            <li><b>持续感知</b>：助手发声时仍接收用户音频。</li>
+            <li><b>并发建模</b>：同一时间片内同时表示双方音轨。</li>
+            <li><b>交互决策</b>：接话、等待、附和、夺话、让话。</li>
+            <li><b>并发输出</b>：生成、缓冲、播放与取消互不阻塞。</li>
+          </ul>
+          <p>很多论文只验证其中一两项，不能因为标题写了 full-duplex 就假定四项齐备。</p>
+        </div>
+      </div>
+      <div class="note infer">
+        <span class="lbl">阅读约定</span>
+        文中标注“<b>论文披露</b>”的是原文可核对的实现；“<b>综述判断</b>”只代表该综述的分类；“<b>综合推断</b>”是根据结构推得的工程结论，尤其涉及运行时播放队列与缓存处理时，许多论文并没有公开完整代码，不能当作已实现事实。
+      </div>
+    </section>
+
+    <section id="levels">
+      <h2><span class="num">01</span>L0–L3：控制发生在哪一层</h2>
+      <p class="lead">综述的关键贡献是把“全双工”从一句能力口号拆成可比较的架构层级，并把决策位置放在中心。下面的表用于快速判断一篇论文究竟属于哪一级，以及它能否直接满足“主干自己决定何时说”的目标。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th style="width:74px">级别</th><th>控制放在哪里</th><th>动作如何产生</th><th>主要优势</th><th>主要代价 / 风险</th><th>代表工作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>L0</b></td>
+              <td>LLM 外部：VAD、轮次控制器、独立策略模块</td>
+              <td>外部规则或分类器决定开始/停止，再调用 LLM 或 TTS</td>
+              <td>模块成熟、容易调试、可替换</td>
+              <td>误差累积；语义上下文进不了控制决策；回声和“相关打断”难处理</td>
+              <td>传统级联语音助手</td>
+            </tr>
+            <tr>
+              <td><b>L1</b></td>
+              <td>LLM 隐藏状态之后，增加动作预测分支</td>
+              <td><code>h_t → Predictor → action</code>，与内容生成分支并行或串行</td>
+              <td>动作能看到完整上下文；不改主干词表；训练目标清晰</td>
+              <td>动作与内容生成耦合较弱；分类边界、阈值和状态机仍要额外设计</td>
+              <td>MinMo、Freeze-Omni</td>
+            </tr>
+            <tr>
+              <td><b>L2</b></td>
+              <td>LLM 的 token 生成过程本身</td>
+              <td>生成状态 token，或直接生成语音/静音 token；动作进入后续上下文</td>
+              <td>单一自回归目标；动作与内容共享上下文；容易做联合训练</td>
+              <td>动作与声学生成纠缠；显式标签设计、时间对齐和生成预算更复杂</td>
+              <td>Moshi、OmniFlatten、SALMONN-omni、Covo-Audio-FD</td>
+            </tr>
+            <tr>
+              <td><b>L3</b></td>
+              <td>更深层的表示级整合（综述提出的研究方向）</td>
+              <td>不是简单的输出 token 或分类头，而是共享表示中的持续交互状态</td>
+              <td>理论上有机会统一感知、推理与发声</td>
+              <td>尚无成熟、可复现的统一范式；不能把 L3 当作“更强模型”现成选项</td>
+              <td>研究假说，而非成熟系统</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note warn">
+        <span class="lbl">关键澄清</span>
+        <b>“有 Linear/Softmax”不等于 L1，“生成 token”也不自动等于 L2。</b> 任何词表输出都需要投影。判断标准是：动作是否作为独立分支、是否脱离主干的下一 token 生成链、以及动作是否真正反馈进后续上下文。另一个常见误判是“文本和语音同时输出”＝全双工；实际上它可能只是半双工的多模态输出。
+      </div>
+      <h3>为什么 L2 内部还要再分型</h3>
+      <p>综述把 L2 统一归为 token 级控制，但在工程上至少有三种很不一样的实现。它们的差别直接决定了数据标注方式和你能否复用 Qwen2.5-Omni 的生成头。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>L2 子型</th><th>动作载体</th><th>典型模型</th><th>“不说话”时发生什么</th><th>标签从哪里来</th></tr></thead>
+          <tbody>
+            <tr><td><b>A. 隐式语音/静音</b></td><td>助手音轨的语音 token 或静音 token</td><td>Moshi、SyncLLM、部分 OmniFlatten 阶段</td><td>继续生成静音或低能量语音 token，模型分布体现时机</td><td>双轨录音、强制对齐；通常无需独立动作类标</td></tr>
+            <tr><td><b>B. 展平同步块</b></td><td>固定块内的多流 token 布局 + 特殊静音/说话标记</td><td>OmniFlatten、BayLing-Duplex</td><td>输出静音音频 token 与/或 <code>[SILENCE]</code> 类文本标记</td><td>对齐后的双流会话；块级时序自动派生</td></tr>
+            <tr><td><b>C. 显式状态 token</b></td><td><code>&lt;wait&gt;</code>、<code>&lt;shift&gt;</code>、<code>&lt;break&gt;</code> 等离散动作</td><td>SALMONN-omni、Covo-Audio-FD、DuplexSLA</td><td>输出等待/思考 token，不启动或暂停内容生成</td><td>事件边界、意图标注、合成对照数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>对“动作可解释、可审计、可单独加权”的研究目标，C 型最直接；对“尽量少改结构、复用现有语音生成”的工程目标，B 型更平滑；A 型最接近 Moshi 的联合序列建模，但动作语义最难从输出中分离。</p>
+    </section>
+
+    <section id="l1">
+      <h2><span class="num">02</span>L1：隐藏状态上的动作预测</h2>
+      <p class="lead">L1 的共同点是：主干仍然负责理解与内容生成，另有一个轻量预测器读取主干表示并决定交互动作。它不要求把动作写进主干词表，因此适合冻结或半冻结语言模型，但动作与后续 token 生成的闭环需要额外状态机来维持。</p>
+
+      <article class="card model-card" data-level="l1">
+        <div class="card-head">
+          <h3>MinMo</h3><span class="tag tag-l1">L1</span><span class="tag tag-lit">语音输入 / 语音输出</span>
+          <a class="ref" href="https://arxiv.org/abs/2501.06282" target="_blank" rel="noopener">arXiv 2501.06282 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>输入</dt><dd>流式语音；SenseVoice-Large 编码后经两层 Transformer + CNN 投影，约 2× 下采样</dd></div>
+          <div><dt>主干</dt><dd>Qwen2.5-7B-Instruct，LoRA 微调</dd></div>
+          <div><dt>输出</dt><dd>文本 + 语音：线性投影 → CosyVoice2 Voice Token LM → Token2wav</dd></div>
+          <div><dt>双工控制</dt><dd>Full Duplex Predictor：1 层 Transformer + Linear-Softmax，约 18M</dd></div>
+          <div><dt>时间粒度</dt><dd>流式 chunk；论文报告语音到文本约 100ms，但预测器并非固定 100ms 时钟</dd></div>
+          <div><dt>数据</dt><dd>约 120 万小时 S2T、17 万小时 TTS、1 万小时 S2S；双工约 4,000 小时</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>核心思想：</b>把“听懂、生成内容”和“决定何时说”拆成两个目标。主干提供语义与声学上下文，预测器只读取 hidden embeddings，输出是否回复/是否继续当前发言等控制决策。</li>
+          <li><b>结构：</b>编码器、投影层和 LLM 主体承担理解与文本生成；语音生成由独立声学路径完成；Full Duplex Predictor 随机初始化，在最后的双工对齐阶段单独训练。它不是主干词表中的一个动作 token，也不直接进入自回归内容生成。</li>
+          <li><b>动作预测与执行：</b>预测器读取当前主干表示后给出二分类式判断（如 respond / wait、是否在 barge-in 时停止），再由外层运行时决定启动或中断语音路径。论文没有完整披露类别编码、时间窗、阈值和所有状态转移，不能把它的“Speech-to-ControlToken”模块名误读为主干 LM 头直接生成动作 token。</li>
+          <li><b>数据构造：</b>约 4,000 小时双工数据由约 3,000 小时真实交互与 1,000 小时模拟交互组成，来源包括 Fisher、AliMeeting 与内部数据；边界、附和等标签以启发式方法生成。它并非一个可公开直接下载的 4k 小时完整双工集。</li>
+          <li><b>工程边界：</b>仍依赖外部 VAD/AEC；论文报告理论约 600ms、实际约 800ms 的响应延迟。运行时未完整开源，因此“不回复时是否持续生成静音”不能仅凭论文断言，最合理理解是不启动新的回复生成。</li>
+          <li><b>对你的意义：</b>如果坚持“不额外设计动作模块”，MinMo 不是最终形态；但它给出了一个强 baseline：在强 Omni 主干上先接轻量动作头，验证双工数据与标签，再决定是否把动作并入主干 token 流。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l1">
+        <div class="card-head">
+          <h3>Freeze-Omni</h3><span class="tag tag-l1">L1</span><span class="tag tag-lit">语音输入 / 语音输出</span>
+          <a class="ref" href="https://arxiv.org/abs/2411.00774" target="_blank" rel="noopener">arXiv 2411.00774 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>思路</dt><dd>冻结 Qwen2-7B-Instruct，只训练语音编码、适配和语音生成侧</dd></div>
+          <div><dt>状态</dt><dd>三个明确状态：继续接收 / 输入结束且打断 / 输入结束但不打断</dd></div>
+          <div><dt>决策位置</dt><dd>每个 chunk 最后一帧的主干隐藏状态后接分类层</dd></div>
+          <div><dt>运行时</dt><dd>model-as-a-server，多实例调度，分离各会话缓存</dd></div>
+          <div><dt>训练</dt><dd>ASR、TTS、双工多任务；约 8 张 GPU 的实验规模</dd></div>
+          <div><dt>数据</dt><dd>约 11 万小时内部 ASR、3,000 小时合成 TTS、60k 条 MOSS 多轮 QA</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>核心思想：</b>不重训语言能力，冻结 LLM，把语音输入/输出作为可训练的适配层，并在 LLM 表示上增加一个轻量双工状态分类器。这样可以低成本验证“语言模型已经会推理，只缺语音接口和轮次控制”。</li>
+          <li><b>动作预测：</b>流式输入按 chunk 推进；每个 chunk 取最后一帧的 LLM hidden state，分类为三种状态。状态 1 表示用户输入结束且需要打断当前助手，状态 2 表示用户输入结束但无须打断；随后由服务层调用相应生成/停止路径。分类交叉熵和语言建模目标联合训练。</li>
+          <li><b>“模型即服务器”：</b>它不是单个自回归序列天然同时听说，而是用多个模型实例和会话缓存调度来构造并发体验。理解这一点很重要：论文的 L1 分类器只负责决策，真正的并发来自系统层。</li>
+          <li><b>数据：</b>大规模内部 ASR 提供语音—文本对齐，TTS 合成提供语音输出监督，MOSS 多轮 QA 提供对话内容；双工阶段再用带打断/轮次边界的数据训练状态分类。</li>
+          <li><b>局限：</b>冻结主干意味着交互策略被限制在“在已有表示上分类”，动作无法反过来改变语言模型的内部生成分布；多实例调度也带来显存和会话管理成本。</li>
+        </ul>
+      </article>
+
+      <div class="note warn">
+        <span class="lbl">不要把邻近架构算成 L1 全双工模型</span>
+        <b>Qwen2.5-Omni 的 Thinker–Talker</b> 是“文本推理主干 + 读取表示生成语音”的并行输出架构，适合作为你的初始化模型，但综述把它列为 <b>non-FD、L1-shaped</b> 参考：Talker 读 hidden state 并不等于存在一个双工动作预测器。<b>Step-Audio 的相关双脑设计</b>同理。原始 Step-Audio-R1（2511.15848）是音频推理训练工作，不应与后续 R1.1 或综述里的双脑条目混为一谈。
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>模型</th><th>为什么容易被误归为全双工</th><th>实际缺什么</th><th>能否作为你的起点</th></tr></thead>
+          <tbody>
+            <tr><td>Qwen2.5-Omni</td><td>Thinker 与 Talker 并行，文本/语音可同时输出</td><td>没有持续接收用户轨并据此做接话/让话的显式机制；语音输出是回复生成，不是交互时钟</td><td>可以。复用其听说能力，但需新增双流布局与动作控制</td></tr>
+            <tr><td>Step-Audio / Step-Audio 2</td><td>双脑、语音理解与生成能力强</td><td>原生不是面向持续双轨交互的控制架构</td><td>可作声学/语义 backbone 参考，不能直接当 FD 成品</td></tr>
+            <tr><td>GLM-4-Voice</td><td>端到端语音对话、低延迟</td><td>半双工轮次式；无并发用户轨控制</td><td>可参考其 tokenizer 与流式合成，需重做交互层</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section id="l2">
+      <h2><span class="num">03</span>L2：把交互动作纳入 token 生成</h2>
+      <p class="lead">L2 的共同点是：控制不再只发生在一个独立分支里，而是进入语言模型的生成序列。差别在于动作是“显式的状态 token”，还是“用助手语音/静音 token 隐式表达”。这直接决定了模型输出能否被解释为 wait / respond / backchannel。</p>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>dGSLM</h3><span class="tag tag-l2">L2 前身</span><span class="tag tag-lit">双音轨 / 非指令助手</span>
+          <a class="ref" href="https://arxiv.org/abs/2203.16502" target="_blank" rel="noopener">arXiv 2203.16502 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>结构</dt><dd>带交叉注意力的双塔 Transformer，建模双方离散语音单元</dd></div>
+          <div><dt>输入</dt><dd>双通道语音，按时间对齐；不依赖文本</dd></div>
+          <div><dt>输出</dt><dd>双方语音单元；不是现代意义上的助手回答</dd></div>
+          <div><dt>动作</dt><dd>无显式动作标签，轮替/重叠/笑声从联合语音分布中学习</dd></div>
+          <div><dt>数据</dt><dd>约 2,000 小时 Fisher 双通道电话语音</dd></div>
+          <div><dt>地位</dt><dd>证明双轨联合建模可以承载交互节奏，但不是知识型语音助手</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>不先判断“谁说”，而是让模型同时预测两条音轨的下一个语音单元。谁在什么时候出声，成为联合序列分布的一部分。</li>
+          <li><b>为什么重要：</b>它说明“全双工”的根问题不是加一个 VAD，而是让模型对双方时间重叠的音频建立联合表示。后续 Moshi 与双流大模型都继承了这一视角。</li>
+          <li><b>局限：</b>没有文本指令、知识问答和现代对话能力；将它作为产品基线会严重低估任务难度。它也不是你直接微调 Qwen 的现成目标结构。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>LSLM</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">说话中监听 / 打断</span>
+          <a class="ref" href="https://arxiv.org/abs/2408.02622" target="_blank" rel="noopener">arXiv 2408.02622 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>结构</dt><dd>约 106M 的 decoder-only 语音生成模型 + 流式 vq-wav2vec 监听通道</dd></div>
+          <div><dt>融合</dt><dd>在特定 Transformer 层把监听 embedding 注入生成路径；论文比较不同融合位置</dd></div>
+          <div><dt>动作</dt><dd>输出词表加入 <code>IRQ</code>；生成后提前结束当前发声</dd></div>
+          <div><dt>数据</dt><dd>约 585 小时 LibriTTS，叠加 MUSAN 噪声与合成打断语音</dd></div>
+          <div><dt>验证</dt><dd>关键词触发与陌生说话人语音触发两类打断</dd></div>
+          <div><dt>边界</dt><dd>不是完全对称的双码流；主要验证“边说边停”，非完整语义附和</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>保留一条正在说话的生成通道，同时让另一条流式编码器持续接收环境声音；把监听表示注入生成器，使模型在说话过程中仍能感知外界。</li>
+          <li><b>动作预测：</b>不是外接分类器，而是在语音 token 词表中加入打断 token。模型正常自回归生成时若产生 <code>IRQ</code>，解码循环立即终止当前话语。这是一个很干净的“动作 token 直接改变控制流”的例子。</li>
+          <li><b>数据：</b>LibriTTS 提供干净语音，MUSAN 提供噪声，打断语音由合成或拼接得到；标签主要是“是否发生打断/何时发生”，不是丰富的对话意图标签。</li>
+          <li><b>对你的意义：</b>如果你想把“停止发声”做成一个显式 token，LSLM 是最小可行原型；但它没有解决“用户是在附和、纠错还是单纯插话”的语义区分，也没有历史文本条件。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>Moshi</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">双音轨 / 语音到语音</span>
+          <a class="ref" href="https://arxiv.org/abs/2410.00037" target="_blank" rel="noopener">arXiv 2410.00037 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>主干</dt><dd>Helium 7B</dd></div>
+          <div><dt>音频</dt><dd>Mimi：12.5Hz（80ms/帧），每路 8 个码本</dd></div>
+          <div><dt>流</dt><dd>用户音频 8 轨 + 助手音频 8 轨 + 助手文本 1 轨，共 17 条流</dd></div>
+          <div><dt>建模</dt><dd>Temporal Transformer 处理时间；Depth Transformer 处理同帧码本依赖</dd></div>
+          <div><dt>动作</dt><dd>无显式动作类标；助手语音/静音分布隐式体现时机</dd></div>
+          <div><dt>数据</dt><dd>约 700 万小时音频预训练 + Fisher 2,000 小时 + 合成指令/双流数据</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>把用户和助手都变成连续的离散音频 token 流，用同一个自回归模型预测下一时间帧；助手文本作为“inner monologue”先于语音，帮助语义组织。</li>
+          <li><b>双流输入：</b>每一帧的用户 8 个码本、助手 8 个码本和助手文本分别查 embedding，按流/码本区分后在同一隐藏维度组合，送入时间 Transformer。不是把两段长音频首尾拼起来，而是按同一时间片做对齐建模。</li>
+          <li><b>动作怎么产生：</b>没有单独的“respond/backchannel”分类头。模型对助手音频码本的下一 token 分布进行采样；如果它生成静音码本，听起来就是没说话。所谓“动作”是生成分布的副产物，不保证内部存在可读的意图变量。</li>
+          <li><b>预测与观测的边界：</b>训练时联合预测双方下一帧，学习的是联合动力学；部署时用户轨仍输入真实麦克风观测，不能用模型对用户的预测替代真实输入。否则会把“预测用户会说什么”误当成“听见用户说了什么”。</li>
+          <li><b>延迟：</b>论文报告理论约 160ms、实际约 200ms；这是其 80ms 帧、声学缓冲和硬件条件共同决定的，不能与别家的端到端数字直接横比。</li>
+          <li><b>对你的意义：</b>Moshi 证明了双音轨 + 单主干的可行性，但它的动作不可解释，而且需要大规模音频预训练。你不必复制它的全部 codec 训练，只需借鉴“同一时间片、双流类型 embedding、因果对齐”三点。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>OmniFlatten</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">标准 GPT 解码器 / 多流展平</span>
+          <a class="ref" href="https://arxiv.org/abs/2410.17799" target="_blank" rel="noopener">arXiv 2410.17799 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>主干</dt><dd>Qwen2-0.5B 量级</dd></div>
+          <div><dt>语音 token</dt><dd>CosyVoice 单码本语音 token</dd></div>
+          <div><dt>布局</dt><dd>把用户/助手的语音与文本四流按块展平为一条序列</dd></div>
+          <div><dt>训练</dt><dd>四流半双工 → 三流双工 → 两路纯语音的课程式训练</dd></div>
+          <div><dt>动作</dt><dd><code>silent_text_token</code>、<code>silent_speech_token</code>；文本块先于语音块</dd></div>
+          <div><dt>数据</dt><dd>大规模模态对齐数据 + 约 2,000 小时双流对话；内容来自 Alpaca、MOSS、BelleCN、UltraChat 等</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>不新增双工预测器，也不要求特殊的双塔结构；把多条流按时间块“压平”为一个普通因果 Transformer 序列，让标准的下一 token 预测同时学到内容和时机。</li>
+          <li><b>块内顺序：</b>三流阶段按“输入语音 → 输出文本 → 输出语音”排列，文本块与语音块长度不同；文本先于语音，给声学生成提供语义条件。通过静音专用 token 表示当前没有内容输出。</li>
+          <li><b>动作预测：</b>模型学习在应当等待时输出静音文本/静音语音 token，在应当回答时输出正常 token。它没有明确的“附和/夺话”类别，动作语义由数据分布和块位置间接决定。</li>
+          <li><b>优点：</b>几乎不需要改主干结构，适合从普通 LLM 迁移；课程训练避免了直接从纯文本跳到复杂双流序列的优化困难。</li>
+          <li><b>风险：</b>“无需改结构”不等于低成本。序列被多流 token 拉长，推理吞吐下降；固定块内模型看不到尚未到达的用户音频，块边界会限制打断反应；静音 token 的比率过高也会主导损失。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>SyncLLM</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">墙钟同步 / 双人语音</span>
+          <a class="ref" href="https://arxiv.org/abs/2409.15594" target="_blank" rel="noopener">arXiv 2409.15594 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>主干</dt><dd>Llama3-8B 量级</dd></div>
+          <div><dt>语音</dt><dd>HuBERT，25Hz，约 501 词表；去重后插值恢复时长</dd></div>
+          <div><dt>同步</dt><dd>固定时长语音块，研究 160 / 200 / 240ms 三种粒度</dd></div>
+          <div><dt>标记</dt><dd><code>[S0]</code>、<code>[S1]</code> 是说话人/同步锚点，不是动作类别</dd></div>
+          <div><dt>特殊机制</dt><dd>先预测尚未完整收到的用户块以补偿延迟，随后用真实块替换</dd></div>
+          <div><dt>数据</dt><dd>约 21.2 万小时合成语音对话 + 约 2,000 小时 Fisher</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>全双工的关键不是“两路都生成”，而是让双方的 token 在墙钟时间上严格对齐。模型按固定块交替看到双方内容，并用说话人标记区分流。</li>
+          <li><b>预测机制：</b>当要生成助手当前块时，用户当前块可能还没收全。SyncLLM 先用已有音频预测该用户块，借此提前生成助手响应；真实音频到达后再替换预测。这降低了“必须等完整块”的延迟，但引入了预测误差与块内不可回退的问题。</li>
+          <li><b>动作：</b>没有独立的 start/stop 分类器，时机体现在每一块的语音 token 内容里。<code>[S0]/[S1]</code> 只帮助模型知道当前块属于谁，不能把它们当作动作标签。</li>
+          <li><b>数据与标签：</b>合成对话提供内容，Fisher 提供真实双人节奏；块级标签由对齐自动产生。语音单元去重会改变时长，必须用插值恢复，否则墙钟同步会被破坏。</li>
+          <li><b>边界：</b>固定块边界意味着模型不能在同一块内根据刚到达的半个音节立即改变决定；如果你要 100ms 级打断，块长、前视和取消机制必须重新设计。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>Mini-Omni / Mini-Omni2</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">并行说话 / 命令式打断</span>
+          <a class="ref" href="https://arxiv.org/abs/2410.11190" target="_blank" rel="noopener">arXiv 2410.11190 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>基础</dt><dd>Qwen2-0.5B 量级 + 语音编码器 + 多路音频输出</dd></div>
+          <div><dt>v1</dt><dd>文本与语音并行生成，解决“边想边说”的输出侧问题</dd></div>
+          <div><dt>v2</dt><dd>增加视觉与打断；监听时生成 <code>irq</code> / <code>n-irq</code></dd></div>
+          <div><dt>触发</dt><dd>训练/测试使用 “Stop Omni” 等命令词及噪声条件</dd></div>
+          <div><dt>动作</dt><dd>生成 <code>irq</code> 后停止当前生成并转入监听</dd></div>
+          <div><dt>边界</dt><dd>命令级打断，不等于上下文相关的夺话/纠错</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>v1 的重点是输出侧并行，让文本和语音不必严格串行；v2 在此基础上加入“说话时仍监听”的打断 token，使模型可以在检测到特定触发后让出话权。</li>
+          <li><b>动作预测：</b>监听流持续产生 <code>n-irq</code> 或 <code>irq</code>。后者作为控制信号终止当前生成。训练时在触发词前标 <code>n-irq</code>、触发后标 <code>irq</code>，从而给模型逐时刻的监督。</li>
+          <li><b>数据：</b>主要是合成命令与噪声拼接，标签来自触发词位置；“Stop Omni” 的数据构造很直接，但不能自动迁移到“用户说错了一个事实，助手应不应插话”这种语义决策。</li>
+          <li><b>对你的意义：</b>它给出了动作 token 的最小监督范式，也提醒你要把“声学打断检测”和“对话策略打断”分开评估。</li>
+        </ul>
+      </article>
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>Fun-Audio-Chat-Duplex</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">双分辨率 / 并发输入</span>
+          <a class="ref" href="https://arxiv.org/abs/2512.20156" target="_blank" rel="noopener">arXiv 2512.20156 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>表示</dt><dd>25Hz 语音 token 每 5 个分组，共享主干按 5Hz 处理</dd></div>
+          <div><dt>生成</dt><dd>Speech Refined Head 恢复 25Hz 语音输出</dd></div>
+          <div><dt>主干</dt><dd>Qwen3-30B-A3B 或 Qwen3-VL-8B 初始化（论文给出不同版本）</dd></div>
+          <div><dt>双工版</dt><dd>并行输入，使助手生成时仍接收用户语音</dd></div>
+          <div><dt>数据</dt><dd>百万小时级总体语音训练；Duplex 交互数据配比未完整公开</dd></div>
+          <div><dt>注意</dt><dd>SRH 是声学生成头，不能误判为 L1 动作预测器</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>核心思想：</b>用较低的主干帧率降低长语音序列成本，再用专门的细化头恢复高帧率声学细节；Duplex 版在同一主干上增加“生成时继续听”的并行输入。</li>
+          <li><b>结构判断：</b>这是一个语音理解/生成能力很强的基座，但综述与论文都要求区分普通 Chat 版和 Duplex 版。不能仅因为它能语音输出、且有 SRH 头，就把它归为带双工动作预测的结构。</li>
+          <li><b>数据披露：</b>总体语料达到百万小时级，适合复用其声学与语义能力；但 Duplex 动作词表、逐块控制标签和精确配比在公开材料中不够完整，复现时应把这些列为缺口。</li>
+          <li><b>对你的意义：</b>可作为 Qwen 系强声学基线的参照，尤其关注“低帧率主干 + 高帧率声学头”如何影响交互延迟。但不要用它的总体预训练小时数替代双工策略数据。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>Covo-Audio-FD</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">显式状态 token / 160ms 块</span>
+          <a class="ref" href="https://arxiv.org/abs/2602.09823" target="_blank" rel="noopener">arXiv 2602.09823 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>主干</dt><dd>约 7B 级语音语言模型</dd></div>
+          <div><dt>输入</dt><dd>Whisper-large-v3 特征经适配器降至 6.25Hz</dd></div>
+          <div><dt>输出</dt><dd>25Hz 语音 token；每 160ms 块对应 1 路输入特征与 4 个输出语音 token</dd></div>
+          <div><dt>状态</dt><dd><code>THINK</code> 听/等待；<code>SHIFT</code> 转入说话；<code>BREAK</code> 结束发声/让出话权</dd></div>
+          <div><dt>训练</dt><dd>半双工对话改造成双通道，再加入打断与附和</dd></div>
+          <div><dt>规模</dt><dd>总体约 800 万小时音频 + 3T 文本；不是双工数据规模</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>把“听/说”状态直接做成语言模型要生成的离散 token，并让每个状态都绑定固定长度的时间块。模型不只是预测内容，还要在块边界持续决定当前处于哪个交互阶段。</li>
+          <li><b>动作预测：</b><code>THINK</code> 表示继续听并等待；<code>SHIFT</code> 表示从听转入说；<code>BREAK</code> 表示结束当前发声并回到监听。正常说完和被打断都可能产生 BREAK。这个设计比 Moshi 的隐式静音更可解释，也比纯分类头更深度地进入生成链。</li>
+          <li><b>时间布局：</b>160ms 是一个显式折中：足够让声学 token 有内容，又不至于让打断反应过慢。每块 4 个语音 token，意味着控制粒度与声学粒度必须一起设计，不能只在外面加一个 100ms 分类器。</li>
+          <li><b>数据：</b>把现有的半双工语音对话改造成双通道，再通过插入打断、附和等交互构造监督；总体音频/文本规模很大，但双工策略数据占比与详细配比需要以论文原文为准。</li>
+          <li><b>注意：</b>公开的 Covo-Audio Chat 版不应自动视为已公开 Full-Duplex 版。若要复现，必须确认权重、数据与推理代码是否对应 FD 配置。</li>
+          <li><b>对你的意义：</b>这是与你“主干直接生成动作 token”目标最接近的结构之一。它证明了动作 token 可以与正常文本/语音 token 共用一个自回归接口，而不必单独加一个分类头。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>DuplexMamba</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">动作 token / 文本输出</span>
+          <a class="ref" href="https://arxiv.org/abs/2502.11123" target="_blank" rel="noopener">arXiv 2502.11123 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>结构</dt><dd>ConMamba 语音编码器 + 适配器 + 2.8B Mamba 主干</dd></div>
+          <div><dt>输入</dt><dd>流式用户语音</dd></div>
+          <div><dt>输出</dt><dd>文本答案；不直接生成助手音频</dd></div>
+          <div><dt>动作</dt><dd><code>&lt;response&gt;</code> 需回复；<code>&lt;incomplete&gt;</code> 话未说完；<code>&lt;ignore&gt;</code> 无须响应</dd></div>
+          <div><dt>训练</dt><dd>完整 QA、随机截断 QA、从 GigaSpeech 筛出的非交互语音；后期约 1 万/5 千/5 千样本</dd></div>
+          <div><dt>定位</dt><dd>控制机制可借鉴，但不是完整双轨 S2S 系统</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>用状态 token 解决“用户可能还没说完”和“这段语音不需要回应”两个问题，把传统 VAD/轮次判断变成语言模型输出的一部分。</li>
+          <li><b>动作预测：</b>模型在生成答案前先输出 <code>&lt;response&gt;</code>、<code>&lt;incomplete&gt;</code> 或 <code>&lt;ignore&gt;</code>，三类 token 与文本答案联合监督。它证明了动作 token 不依赖 Transformer，Mamba 也能维护流式状态。</li>
+          <li><b>数据：</b>完整 QA 提供应答监督，截断 QA 提供“未说完”监督，非交互语音提供“忽略”监督。这个构造非常值得借鉴，因为三类负样本可以通过数据变换得到，而不必全部人工标注。</li>
+          <li><b>边界：</b>没有助手音轨、没有并发播放、也没有真正的语音生成。它适合做“何时该回答”的消融实验，不适合直接作为端到端语音产品架构。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head">
+          <h3>SALMONN-omni</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">双流 embedding / 动态思考</span>
+          <a class="ref" href="https://arxiv.org/abs/2505.17060" target="_blank" rel="noopener">arXiv 2505.17060 ↗</a>
+        </div>
+        <div class="meta">
+          <div><dt>结构</dt><dd>流式 Mamba 语音编码器 + Llama-3-8B-Instruct + 流式 CosyVoice2 合成器</dd></div>
+          <div><dt>输入</dt><dd>环境音频（用户、噪声、助手回声）embedding + 历史助手音频 embedding + 文本</dd></div>
+          <div><dt>输出</dt><dd>文本回复与语音；合成器内部仍使用语音 token</dd></div>
+          <div><dt>时间</dt><dd>80ms 时间块；合成端积累 4 个文本 token 后生成 12 个语音 token</dd></div>
+          <div><dt>控制</dt><dd>显式 <code>&lt;think&gt;</code>、<code>&lt;shift&gt;</code> 等状态；也可有隐式策略</dd></div>
+          <div><dt>训练</dt><dd>ASR 预训练、QA/多轮、交互数据，最后用 DPO 优化时机</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>核心思想：</b>不让主干词表装 codec，而是把流式编码器输出、历史助手音频的表示和文本表示按时间块交错送入 LLM，由 LLM 生成文本与状态；声学合成交给流式合成器。</li>
+          <li><b>双流如何拼接：</b>在同一时间块内交错环境 embedding（<code>[ENV]</code>）、助手音频 embedding（<code>[SELF]</code>）和回复文本 embedding（<code>[TEXT]</code>），保留流身份，而不是把两条长音轨简单相加。环境轨不是干净用户轨，还包含背景声与自己的回声，这反而更贴近真实部署。</li>
+          <li><b>动作预测：</b>在显式策略中，模型可以在每个块生成 <code>&lt;think&gt;</code> 保持等待/填补文本与语音速率差，生成 <code>&lt;shift&gt;</code> 切换听/说状态。动作是普通自回归输出，预测后立即进入下一块的条件上下文；合成器只消费内容 token，不朗读控制 token。</li>
+          <li><b>为什么“codec-free”容易误解：</b>它指主干词表不注入音频 codec token，而不是整个系统没有语音 token。合成器内部仍使用 token 做声学生成。理解这一点，才能正确评估它与 Moshi 的差别。</li>
+          <li><b>数据：</b>LibriSpeech/GigaSpeech 等 ASR 数据；Alpaca、WebQ、TriviaQA、SQuAD、NQ、VoiceAssistant、UltraChat 等构造 QA；多轮 Trivia/NQ；文本答案由 Llama3-8B-Instruct 生成，语音用 CosyVoice2 合成；另有多轮、语义打断与附和交互数据。</li>
+          <li><b>DPO：</b>用于偏好对话时机，而不仅是知识正确性；这与“内容相同、时机不同”的偏好对思路一致，适合提升让话与不抢话行为。</li>
+          <li><b>对你的意义：</b>最值得借鉴的整体路线：双流 embedding 交错、显式状态 token、周期性同步、合成器与 LLM 解耦。但 80ms 块、4 步缓冲等实现细节不能直接当成 100ms 控制钟。</li>
+        </ul>
+      </article>
+
+      <div class="note disclosed">
+        <span class="lbl">L2 小结</span>
+        如果把 L2 理解为“主干生成动作 token”，至少要同时设计三件事：<b>块/帧的时间基</b>、<b>动作词表与状态约束</b>、<b>动作对内容生成与播放的反馈</b>。只加几个 token 而没有时间对齐和反馈，模型仍会退化成普通的半双工对话模型。
+      </div>
+    </section>
+    <section id="extra">
+      <h2><span class="num">04</span>直接相关的补充工作</h2>
+      <p class="lead">下面这些系统不在综述最初的核心列表中，或是在综述之后出现。它们与“双流输入 + 主干动作 token + Qwen/LLM 复用”高度相关，因此单独列出；其中有的只公开了部分训练细节，不能按完整复现材料对待。</p>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head"><h3>BayLing-Duplex</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">多流序列 / 静音也生成</span>
+          <a class="ref" href="https://arxiv.org/abs/2606.14528" target="_blank" rel="noopener">arXiv 2606.14528 ↗</a></div>
+        <div class="meta">
+          <div><dt>基座</dt><dd>GLM-4-Voice：Whisper-large-v3 + VQ 12.5Hz + GLM4-9B + flow matching/HiFiGAN</dd></div>
+          <div><dt>布局</dt><dd>每块用户音频 N、助手文本 M、助手音频 N；<b>N:M:N = 10:5:10</b>，块长 0.8s</dd></div>
+          <div><dt>状态</dt><dd><code>[SILENCE]</code>、<code>[ASSISTANT]</code>、<code>[PAD]</code>、<code>[EPAD]</code></dd></div>
+          <div><dt>训练</dt><dd>约 20 万条 Alpaca/UltraChat 改写对话；SFT 1 epoch + DPO 200 步</dd></div>
+          <div><dt>交互</dt><dd>turn-taking 20 万 + interrupt 20 万，1:1；可做时机偏好学习</dd></div>
+          <div><dt>关键点</dt><dd>不说话时仍生成真实静音音频 token；中间打断需等下一块重新条件化</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>直接把“用户音频、助手文本、助手音频”排成一条多流序列，让语言模型按块生成；交互状态用文本样式 token 表达，不新增动作头。</li>
+          <li><b>因果对齐：</b>助手轨训练目标相对用户轨前移一个块（0.8s 因果偏移），避免用未来用户音频预测当前助手内容；在线推理时仍按块消费已经到达的输入。</li>
+          <li><b>为什么重要：</b>它清楚展示了“模型没说话时仍生成静音”——静音不是播放器把音量关掉，也不是完全不生成，而是语音 tokenizer 对真实静音波形编码出的 token。对你想弄清“不回答时音频是否还会生成”这个问题，这是最直接的证据。</li>
+          <li><b>动作与延迟：</b>块长 0.8s 使中间打断至少有一个块的反应延迟；它不是 100ms 级系统。DPO 负样本只改变时机（例如回答间隔变长、打断延后），内容保持不变，从而把偏好学习集中在动作而非语义上。</li>
+          <li><b>对你的意义：</b>如果想以较低结构改动先跑通双工，BayLing 的序列化和“静音 token”监督非常实用；若要低延迟打断，应缩短块长或采用事件触发式的异步控制。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head"><h3>DuplexSLA</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">双音轨 / 三通道 / 工具调用</span>
+          <a class="ref" href="https://arxiv.org/abs/2605.20755" target="_blank" rel="noopener">arXiv 2605.20755 ↗</a></div>
+        <div class="meta">
+          <div><dt>基座</dt><dd>Step-Audio 2 mini，约 7B</dd></div>
+          <div><dt>块长</dt><dd>160ms；用户 2 个 80ms 因果特征，助手 1 个文本锚点 + 4 个 40ms 音频 token</dd></div>
+          <div><dt>三通道</dt><dd>用户音频 / 助手文本-音频 / 动作文本</dd></div>
+          <div><dt>动作</dt><dd><code>response</code>、<code>interrupt</code>、<code>backchannel</code>，另可输出规划与工具调用 JSON</dd></div>
+          <div><dt>数据</dt><dd>约 50 万小时继续预训练（CPT）+ 5 万小时能力后训练</dd></div>
+          <div><dt>预算</dt><dd>动作通道每块最多 10 个文本 token；超出的部分顺延到后续块</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>把“助手说什么”和“助手现在采取什么交互动作”拆成两个语义通道，但仍在同一主干上自回归生成。动作通道可以承载显式标签、延迟转写、规划或工具调用。</li>
+          <li><b>动作预测：</b>每块输出一个助手语音单元和一个动作段；需要继续听时用 <code>&lt;vad_silence&gt;</code> / <code>&lt;tts_pad&gt;</code> 等锚点，需要让话时输出 <code>interrupt</code> 或 <code>backchannel</code>。动作与音频共享块时间戳，因此能精确定位工具调用和插话时刻。</li>
+          <li><b>数据与训练：</b>先做 CPT 让主干熟悉分块序列化，再做能力后训练学习打断、附和、停顿与工具调用。双轨 ASR 既提供时间对齐，也提供“何时说了什么”的监督。</li>
+          <li><b>代价：</b>每块 10 个动作 token 是实时预算约束，不是架构限制；动作通道会挤占解码预算。它更像是“研究型双工 Agent 接口”，而不是只做闲聊的轻量模型。</li>
+          <li><b>对你的意义：</b>如果你想保留历史文本、工具调用和可解释动作，三通道比二通道更合适；但要谨慎处理控制 token 与正常内容 token 的损失权重。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head"><h3>Lychee-FD</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">分层参数 / Control Head</span>
+          <a class="ref" href="https://arxiv.org/abs/2607.06540" target="_blank" rel="noopener">arXiv 2607.06540 ↗</a></div>
+        <div class="meta">
+          <div><dt>基座</dt><dd>StepAudio-2-mini + Whisper-v3-large 输入编码</dd></div>
+          <div><dt>声学</dt><dd>CosyVoice2 tokenizer，25Hz</dd></div>
+          <div><dt>结构</dt><dd>浅层共享 Transformer，深层分 Semantic / Acoustic / Control 三头</dd></div>
+          <div><dt>控制</dt><dd><code>&lt;Start&gt;</code>、<code>&lt;Stop&gt;</code> 等；控制头管理发声起止</dd></div>
+          <div><dt>数据</dt><dd>约 14 万条合成双工对话，含用户打断、用户附和、助手附和</dd></div>
+          <div><dt>动机</dt><dd>语义与声学梯度在深层冲突，分头避免语义能力被声学目标稀释</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>不是直接照搬 Thinker–Talker 的高延迟双模型，而是在同一主干中浅层共享、深层分参数：语义头保知识，声学头保音质，控制头保交互时机。</li>
+          <li><b>动作预测：</b>控制头输出开始/停止等控制 token，与文本、语音头并行监督。它与你“主干直接出动作”有相似之处，但严格说是<b>专门 Control Head</b>，不是单一 LM 词表里的普通 token。</li>
+          <li><b>数据：</b>约 14 万条合成双工对话，覆盖用户打断/附和和助手附和；这比纯双轨录音多了行为控制标签，但仍需要关注合成语音与真实噪声、回声分布差异。</li>
+          <li><b>对你的意义：</b>如果 Qwen 的 Talker 与 Thinker 在联合训练中出现语义退化，分层参数分离是值得借鉴的工程手段；但先尝试共享主干 + 轻量控制 token，避免过早把结构做复杂。</li>
+        </ul>
+      </article>
+      <article class="card model-card" data-level="l2">
+        <div class="card-head"><h3>PersonaPlex</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">三流 / 角色与音色条件</span>
+          <a class="ref" href="https://arxiv.org/abs/2602.06053" target="_blank" rel="noopener">arXiv 2602.06053 ↗</a></div>
+        <div class="meta">
+          <div><dt>流</dt><dd>用户音频、助手文本、助手音频；沿用 Moshi 式联合建模思路</dd></div>
+          <div><dt>条件</dt><dd>角色文本（system prompt）+ 参考声音，构成 Hybrid System Prompt</dd></div>
+          <div><dt>目标</dt><dd>在不额外增加动作分类器的前提下，控制角色、语气和声音身份</dd></div>
+          <div><dt>数据</dt><dd>服务场景与 QA 对话合成数据；发布模型加入约 1,217 小时 Fisher</dd></div>
+          <div><dt>意义</dt><dd>说明历史文本、角色和参考音频可以作为双流模型的条件</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>把“你是谁、用什么声音、当前扮演什么角色”编码为序列前缀条件，再让模型按用户音频和助手音频的联合分布生成回应。</li>
+          <li><b>动作：</b>没有专门的“插话/附和”控制器；交互时机仍由生成分布决定。它的贡献在条件化与数据构造，而不是新的全双工控制头。</li>
+          <li><b>对你的意义：</b>如果你要在 Qwen Omni 上保留历史文本与角色设定，可以把角色/历史放在双流序列之前，不要把文本都塞进某一条音轨的内部。</li>
+        </ul>
+      </article>
+
+      <article class="card model-card" data-level="l2">
+        <div class="card-head"><h3>F-Actor（ACL 2026 Findings）</h3><span class="tag tag-l2">L2</span><span class="tag tag-lit">行为可控 / 小模型</span>
+          <a class="ref" href="https://aclanthology.org/2026.findings-acl.242.pdf" target="_blank" rel="noopener">ACL 2026 Findings ↗</a></div>
+        <div class="meta">
+          <div><dt>结构</dt><dd>Llama3.2-1B-Instruct + 冻结 NanoCodec；12.5Hz</dd></div>
+          <div><dt>码本</dt><dd>每路 4 个独立码本；用户/助手使用独立 embedding，再按帧组合</dd></div>
+          <div><dt>控制</dt><dd>提示词控制主题、谁先说、附和/打断次数</dd></div>
+          <div><dt>数据</dt><dd>约 2,164 小时 Behavior-SD；过滤文本—语音不匹配样本</dd></div>
+          <div><dt>定位</dt><dd>研究交互行为的可控生成，不是完整低延迟运行时</dd></div>
+        </div>
+        <ul class="points">
+          <li><b>思想：</b>用很小的语言模型 + 冻结声学 tokenizer，在双人语音数据上学习“谁在何时以什么方式说话”，并通过提示词控制行为统计。</li>
+          <li><b>动作：</b>没有为每个动作单独增加分类器，行为通过语音生成体现；它可以响应“多附和/多打断”的控制，但“次数可控”不等于“每次附和都语义合适”。</li>
+          <li><b>对你的意义：</b>适合作为小规模消融：先验证双流数据、行为提示和声学 tokenizer 能否复现基本交互，再把结论迁移到 Qwen Omni。Behavior-SD 的字段与音频形态需要先核对，不能默认任意发布版本都含无损分轨。</li>
+        </ul>
+      </article>
+    </section>
+
+    <section id="action">
+      <h2><span class="num">05</span>动作预测：三类机制与闭环</h2>
+      <p class="lead">比较这些模型时，最容易混淆的是“动作”和“内容”。动作是交互状态（等待、接话、附和、夺话、结束），内容是实际说什么。一个系统可以先生成完整内容再决定何时播，也可以在生成过程中持续决定；两者对数据和延迟的要求完全不同。</p>
+
+      <h3>5.1 L1：隐藏状态分类</h3>
+      <pre><code>音频流 → 编码器 → LLM 主干 → h_t
+                                  ├─→ 内容头 / 文本解码
+                                  └─→ 动作预测器 → action_t
+                                                   ↓
+                                          状态机 / 调度器
+                                                   ↓
+                                      启动、暂停或取消语音生成</code></pre>
+      <p>MinMo 与 Freeze-Omni 都属于这一族。它们的共同优点是：可以用一个额外小网络快速试验动作标签；主干不需要学习新的控制词表。共同缺点是：动作预测器不直接改变主干的下一 token 分布，必须依赖外部状态机保证动作与内容一致。</p>
+      <p><b>预测后给谁：</b>给运行时控制器，而不是给语音合成器本身。控制器决定是否调用生成路径、是否停止当前 TTS、是否清空缓存。若分类器说“继续听”，通常不应启动新回复；论文没有统一规定是否仍保留一条静音生成流。</p>
+
+      <h3>5.2 L2 显式状态 token</h3>
+      <pre><code>块输入 = [ENV_t, SELF_{t-1}, 历史文本, 当前状态]
+                    ↓
+        LLM 自回归生成：CTRL_t → TEXT_t → SPEECH_t
+                    ↓
+        CTRL_t ∈ {WAIT, RESPOND, BACKCHANNEL, TAKE_FLOOR, YIELD}
+                    ↓
+        WAIT/YIELD → 不启动或取消播放；其余 → 内容进入合成与播放</code></pre>
+      <p>SALMONN-omni、Covo-Audio、DuplexSLA 属于这一族。动作 token 是生成序列的一部分，因此下一步生成可以看到它，形成闭环。需要额外设计的是：动作词表的约束（例如说话中不能无意义地产生 <code>RESPOND</code>）、动作 token 的损失权重，以及动作到播放队列的映射。</p>
+      <div class="note infer">
+        <span class="lbl">综合推断</span>
+        “动作 token 已生成”不等于“声音已经停止”。真正的停止还包括：取消尚未生成的后续 token、丢弃尚未播放的音频、处理设备缓冲区，以及决定历史中是否保留这段未播内容。论文通常只描述模型侧，工程实现必须显式补齐这些环节。
+      </div>
+
+      <h3>5.3 L2 隐式语音/静音</h3>
+      <pre><code>联合序列：用户语音 token ⊕ 助手语音 token ⊕ 助手文本 token
+                         ↓
+              按时间帧自回归预测下一帧
+                         ↓
+      助手帧为静音码本 → 听起来在听；为非静音 → 听起来在说
+                         ↓
+          外部无法直接读出“wait / backchannel / yield”</code></pre>
+      <p>Moshi 与 SyncLLM 更接近这种形式。它的优势是：不需要人工定义动作类别，双轨录音天然提供监督；语音和动作在同一个声学生成过程中学习，不会出现“分类器说要停但语音模型还在说”的接口不一致。它的劣势是：动作不可解释，难以为“主动纠错”单独加权，也难做细粒度的动作评估。</p>
+
+      <h3>5.4 三种机制对比</h3>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>问题</th><th>L1 隐藏状态头</th><th>L2 显式状态 token</th><th>L2 隐式语音/静音</th></tr></thead>
+          <tbody>
+            <tr><td>动作在哪里</td><td>主干表示之后</td><td>主干生成序列中</td><td>助手音频 token 分布中</td></tr>
+            <tr><td>是否改变后续生成</td><td>通过外部状态机间接改变</td><td>直接作为上下文改变</td><td>直接与声学生成耦合</td></tr>
+            <tr><td>可解释性</td><td>高（有明确类别）</td><td>高（动作可读）</td><td>低（只能从音频推断）</td></tr>
+            <tr><td>标注需求</td><td>需要动作标签或启发式标签</td><td>需要事件边界与动作类别</td><td>双轨对齐即可，语义标签较少</td></tr>
+            <tr><td>复用 Qwen Omni</td><td>最容易，先加头</td><td>需要扩词表与改序列布局</td><td>需要双轨 codec 与大规模联合训练</td></tr>
+            <tr><td>适合主动纠错研究</td><td>较适合，便于单独监督</td><td>很适合，可加动作权重</td><td>较难，难以分离策略与声学</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="pipeline">
+      <h2><span class="num">06</span>决策、生成、播放：三个时钟不要混在一起</h2>
+      <p class="lead">全双工系统的延迟不是一个数字，而是多个时钟串联的结果。很多论文报告“响应延迟 200ms/800ms”，指的是从用户说完到助手首个可听声音，或从用户插话到助手停止，并不等于模型每个控制步都按同样周期运行。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>时钟</th><th>典型值 / 作用</th><th>设计问题</th></tr></thead>
+          <tbody>
+            <tr><td><b>控制钟</b></td><td>80ms、100ms、160ms、800ms 等；决定多久重新判断一次动作</td><td>越短反应越快，但计算与标签成本越高；控制步不一定等于音频帧</td></tr>
+            <tr><td><b>声学帧钟</b></td><td>Mimi 80ms / 12.5Hz；CosyVoice 25Hz 等</td><td>动作每 100ms 一次时，25Hz 音频在 100ms 内是 2.5 个 token，不能简单取整</td></tr>
+            <tr><td><b>生成钟</b></td><td>文本 token、语音 token、码本的解码速度</td><td>控制动作产生后，内容生成可能还未完成；需要流式解码与背压</td></tr>
+            <tr><td><b>播放钟</b></td><td>声卡缓冲、网络抖动缓冲、取消延迟</td><td>即使模型停止，已进入设备缓冲的音频仍会播放；必须能清空队列</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>一次打断的完整路径</h3>
+      <ol>
+        <li><b>感知：</b>用户在助手说话时开始发声，环境流持续送入编码器；不能因为助手正在播报就关闭麦克风。</li>
+        <li><b>判断：</b>L1 预测器或 L2 动作 token 判断这是“继续听”“短附和”还是“需要让话”。判断必须使用当前及历史上下文，不能只看能量。</li>
+        <li><b>控制：</b>若让话，停止旧回复的后续生成，取消未播放的语音，更新对话状态；若只是附和，可以保持当前发言并可能插入短回应。</li>
+        <li><b>恢复：</b>在新用户话语结束后重新判断是否接话；不能让旧的半句话继续污染新的上下文。</li>
+      </ol>
+      <div class="note infer">
+        <span class="lbl">工程建议</span>
+        对话历史建议分成“已生成内容”和“已实际播放内容”两条时间线。训练时 teacher forcing 使用真实播放过的助手音频，而不是模型原本计划但被取消的内容；否则模型会学到用户从未听见的上下文。这个建议来自双工系统的因果结构，不是所有论文都明确实现。
+      </div>
+    </section>
+    <section id="data">
+      <h2><span class="num">07</span>数据：哪些能直接用，哪些必须自己构造</h2>
+      <p class="lead">“有 100ms 推理”不等于“有 100ms 人工动作标签”。真实双轨录音可以自动派生发声/静音边界，却不能自动告诉你“这次重叠是附和还是争抢话权”。因此，数据设计要分成声学对齐、时间事件、语义策略三层。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th style="width:130px">数据层</th><th>可直接获得的标签</th><th>典型来源</th><th>是否足够训练你的目标</th></tr></thead>
+          <tbody>
+            <tr><td><b>声学与听写</b></td><td>音频、转写、说话人、时间戳</td><td>ASR 语料、TTS 合成语音、公开语音对话</td><td>不足以学习“何时插话/让话”</td></tr>
+            <tr><td><b>时间事件</b></td><td>谁在何时发声、重叠、停顿、轮流边界</td><td>Fisher 等双通道数据；otoSpeech-104h 的分轨与 SRT</td><td>可训练基础双流节奏，但动作语义仍弱</td></tr>
+            <tr><td><b>交互策略</b></td><td>等待、接话、附和、夺话、主动纠错、让话</td><td>人工标注、规则/合成对照、偏好数据</td><td>必须专门构造；现有公开集无法完整覆盖</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>7.1 现成数据的正确用法</h3>
+      <div class="grid2">
+        <div class="box">
+          <h4>Fisher 双通道电话语音</h4>
+          <p>约 2,000 小时，天然包含双方同时说话的片段，适合学习轮替、停顿、重叠和声学附和。它不是“AI 助手与用户”的对话，也没有“应该主动纠正错误”的标签；且使用受 LDC 授权约束。([LDC2004S13](https://catalog.ldc.upenn.edu/LDC2004S13))</p>
+        </div>
+        <div class="box">
+          <h4>otoSpeech-full-duplex-turn-104h</h4>
+          <p>约 104.94 小时、420 段双人对话；目录内有 <code>speaker_1_audio.wav</code>、<code>speaker_2_audio.wav</code>、两份 <code>annotation_a.srt</code> 和 <code>metadata.json</code>，因此不只是 Viewer 展示的一个 <code>audio</code> 字段。适合事件级监督；当前为需申请的研究许可，声音克隆与商用需另核授权。</p>
+        </div>
+        <div class="box">
+          <h4>Behavior-SD</h4>
+          <p>官方描述约 108K 对话、2,164 小时，含说话人、起止时间、utterance 类型和行为统计。它可用于研究可控附和/打断，但<b>元数据能恢复事件时间线，不代表任意发布音频都是无损双轨</b>；有重叠时不能按时间裁剪假装拆轨。</p>
+        </div>
+        <div class="box">
+          <h4>通用 ASR / TTS / QA</h4>
+          <p>负责听说能力和知识内容，不负责交互策略。SALMONN-omni 与 OmniFlatten 都先用这类数据建立基础，再叠加双工布局与交互训练；直接把 QA 当双工数据会学到“只要用户停就回答”的伪策略。</p>
+        </div>
+      </div>
+
+      <h3>7.2 100ms 标签到底怎么来</h3>
+      <p>可以建立一个固定控制网格 <code>t = 0, 100ms, 200ms, ...</code>，每个格子记录：用户是否在发声、助手是否在发声、当前块是否属于话语结束、是否发生重叠、动作类别。前四项可由分轨、VAD 和强制对齐自动派生；<b>最后一项才是需要语义判断的标签</b>。</p>
+      <pre><code>t(ms)   0    100   200   300   400   500   600
+USER    ████████████████████░░░░░░░░░░░░░░░░
+ASSIST  ░░░░░░░░████████████████████████████
+EVENT           overlap_start              user_end
+ACTION  WAIT  BACKCHANNEL  CONTINUE  ...  YIELD</code></pre>
+      <p>注意：网格上的连续相同标签可以合并为事件区间，不必真的给每一格都人工写一遍。训练时可按事件边界生成标签，并对静音/等待类样本降采样或加权，避免模型只会输出 <code>WAIT</code>。</p>
+
+      <h3>7.3 最值得自建的四类对照数据</h3>
+      <ol>
+        <li><b>停顿 vs 结束：</b>同一句话在中间停顿 200–600ms，和真正说完后停顿；前者标 <code>WAIT</code> 或 <code>INCOMPLETE</code>，后者标 <code>RESPOND</code>。这是解决“用户只是换气，助手却抢答”的核心。</li>
+        <li><b>附和 vs 夺话：</b>用户在助手说话时发出“嗯/对/是的”与“等一下，这里不对”。声学上都是重叠，语义动作完全不同，必须成对构造。</li>
+        <li><b>相关纠错 vs 旁人闲聊：</b>用户指出助手事实错误，或背景中有人聊天。两者都可能触发人声，但前者应主动插话，后者应忽略。</li>
+        <li><b>回声与延迟：</b>把助手自己的播放声音以不同延迟和音量混入用户轨，训练模型不要把回声当成用户插话；同时保留真实的双讲场景。</li>
+      </ol>
+      <div class="note disclosed">
+        <span class="lbl">已有工作的证据</span>
+        MinMo 用 Fisher/AliMeeting/内部数据与启发式标签构造约 4k 小时双工数据；SALMONN-omni 构造多轮与语义打断数据；BayLing-Duplex 用内容相同、时机不同的 DPO 偏好对；DuplexSLA 用双轨 ASR 与时间对齐做 CPT，再做 5 万小时能力后训练。这些都说明<b>策略数据必须单独设计</b>，不是把 ASR 数据换个采样率就能得到。
+      </div>
+    </section>
+
+    <section id="matrix">
+      <h2><span class="num">08</span>覆盖矩阵：一眼比较</h2>
+      <p class="lead">下表把“结构”“动作机制”“数据规模”“是否真正输出语音”放在一起看。<b>“显式动作”指能读出动作类别；“隐式静音”指只能从音频/静音推断。</b>空白的单元格代表公开材料没有给出足够细节，而不是数值为零。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>模型</th><th>级别</th><th>主干 / 声学</th><th>动作机制</th><th>输出</th><th>双工数据</th><th>关键限制</th></tr></thead>
+          <tbody>
+            <tr><td><b>MinMo</b></td><td><span class="tag tag-l1">L1</span></td><td>Qwen2.5-7B + CosyVoice2</td><td>18M hidden-state predictor</td><td>文本 + 语音</td><td>约 4k h（3k 真实 + 1k 模拟）</td><td>依赖 VAD/AEC；未完整开源运行时</td></tr>
+            <tr><td><b>Freeze-Omni</b></td><td><span class="tag tag-l1">L1</span></td><td>冻结 Qwen2-7B</td><td>三状态分类头 + 多实例服务</td><td>文本 + 语音</td><td>内部 ASR/TTS + MOSS QA</td><td>动作不能反向改变主干分布</td></tr>
+            <tr><td><b>Moshi</b></td><td><span class="tag tag-l2">L2</span></td><td>Helium 7B + Mimi</td><td>助手音频/静音 token（隐式）</td><td>语音 + 文本</td><td>约 7M h 预训练 + Fisher</td><td>动作不可解释；训练成本高</td></tr>
+            <tr><td><b>OmniFlatten</b></td><td><span class="tag tag-l2">L2</span></td><td>Qwen2-0.5B + CosyVoice token</td><td>静音文本/语音 token</td><td>文本 + 语音</td><td>约 2k h 双流 + 大规模对齐</td><td>块内看不到未来输入；序列变长</td></tr>
+            <tr><td><b>SyncLLM</b></td><td><span class="tag tag-l2">L2</span></td><td>Llama3-8B + HuBERT</td><td>块级语音（隐式）+ 预测用户块</td><td>语音</td><td>约 212k h 合成 + Fisher</td><td>固定块；预测误差；时长恢复</td></tr>
+            <tr><td><b>Mini-Omni2</b></td><td><span class="tag tag-l2">L2</span></td><td>Qwen2-0.5B 级</td><td><code>irq</code>/<code>n-irq</code></td><td>文本 + 语音</td><td>命令式打断合成数据</td><td>主要验证关键词触发</td></tr>
+            <tr><td><b>SALMONN-omni</b></td><td><span class="tag tag-l2">L2</span></td><td>Mamba + Llama3-8B + CosyVoice2</td><td><code>&lt;think&gt;</code>/<code>&lt;shift&gt;</code>（显式/隐式）</td><td>文本 + 语音</td><td>公开 QA + 合成交互 + DPO</td><td>80ms 块；合成器仍用 codec token</td></tr>
+            <tr><td><b>Covo-Audio-FD</b></td><td><span class="tag tag-l2">L2</span></td><td>7B + Whisper-v3 + 25Hz</td><td><code>THINK</code>/<code>SHIFT</code>/<code>BREAK</code></td><td>文本 + 语音</td><td>半双工改造 + 打断附和</td><td>公开版本与 FD 版本需区分</td></tr>
+            <tr><td><b>DuplexMamba</b></td><td><span class="tag tag-l2">L2</span></td><td>ConMamba + 2.8B Mamba</td><td><code>response</code>/<code>incomplete</code>/<code>ignore</code></td><td>文本</td><td>QA + 截断 QA + 非交互语音</td><td>不生成助手音频</td></tr>
+            <tr><td><b>DuplexSLA</b></td><td><span class="tag tag-l2">L2</span></td><td>Step-Audio 2 mini</td><td>动作文本通道（response/interrupt/backchannel）</td><td>文本 + 语音 + 工具调用</td><td>500k h CPT + 50k h 后训练</td><td>160ms 块；动作预算 10 token</td></tr>
+            <tr><td><b>BayLing-Duplex</b></td><td><span class="tag tag-l2">L2</span></td><td>GLM-4-Voice</td><td>状态标记 + 静音音频 token</td><td>文本 + 语音</td><td>约 20 万条合成 + DPO</td><td>0.8s 块，打断延迟较大</td></tr>
+            <tr><td><b>Lychee-FD</b></td><td><span class="tag tag-l2">L2</span></td><td>StepAudio-2-mini</td><td>Control Head（Start/Stop）</td><td>文本 + 语音</td><td>约 14 万条合成双工</td><td>额外控制分支，不是单 LM 词表</td></tr>
+            <tr><td><b>F-Actor</b></td><td><span class="tag tag-l2">L2</span></td><td>Llama3.2-1B + NanoCodec</td><td>声学生成 + 提示控制</td><td>语音</td><td>约 2,164 h Behavior-SD</td><td>行为可控 ≠ 语义正确打断</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>从矩阵可以看到：<b>L1 的两个代表都把“决策”和“内容”分开，L2 则把控制嵌入序列或声学生成。</b> 你的 Qwen2.5-Omni 起点天然更接近“多流生成 + 声学头”，因此不必从头复制 Moshi 的大规模 codec 预训练，但仍需新增双流布局、动作监督和运行时取消机制。</p>
+    </section>
+    <section id="design">
+      <h2><span class="num">09</span>面向 Qwen2.5-Omni 的改造方案</h2>
+      <p class="lead">目标不是“把 Qwen Omni 改得和 Moshi 一模一样”，而是复用它已有的语音理解、文本推理和语音合成能力，补上“持续双轨感知 + 主干动作 token + 可取消播放”三块。下面方案是结合前述论文的综合设计，不是 Qwen2.5-Omni 原生支持的功能。</p>
+
+      <h3>9.1 推荐的第一版结构</h3>
+      <pre><code>用户麦克风 ──► 因果音频编码器 ──► [USER_t] ─┐
+                                             ├─► 交错/拼接层 ─► Omni 主干
+助手播放参考 ─► 因果音频编码器 ──► [SELF_t] ─┘        │
+                                                     ├─► 动作 token（WAIT/RESPOND/...）
+历史文本 / 角色 ─────────────────────────────────────┘   └─► 文本 token ─► Talker ─► 播放</code></pre>
+      <ul>
+        <li><b>保留主干：</b>先不动 Thinker 的语义能力，把新增预算放在输入适配、动作词表和双流布局上。这样可以把“语言能力退化”和“交互策略没学会”两个问题分开诊断。</li>
+        <li><b>双流输入：</b>用户与环境音轨、助手实际播放音轨分别编码，使用流类型 embedding 区分，再按时间块交错送入主干。推荐先做序列交错，不要未经训练就把两路 embedding 逐元素相加；相加会丢失流身份，也更难排查回声问题。</li>
+        <li><b>历史文本：</b>放在序列前部或作为每个块的前缀条件，明确标记“说的是谁、何时说、是否实际播放”。不要让历史文本和当前音频竞争同一个位置编码。</li>
+        <li><b>动作 token：</b>在主干词表中加入控制 token，动作生成后继续进入上下文；控制 token 不送 Talker 朗读。第一版可以先只做 <code>WAIT / RESPOND / YIELD</code>，稳定后再加 <code>BACKCHANNEL / TAKE_FLOOR</code>。</li>
+      </ul>
+
+      <h3>9.2 动作词表：建议与状态约束</h3>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>Token（建议命名）</th><th>含义</th><th>允许的当前状态</th><th>执行语义</th></tr></thead>
+          <tbody>
+            <tr><td><code>&lt;wait&gt;</code></td><td>继续听，用户可能没说完</td><td>助手静默或正在短附和</td><td>不启动新的正式回复；保持环境流输入</td></tr>
+            <tr><td><code>&lt;respond&gt;</code></td><td>接过已结束的轮次</td><td>用户话语结束，助手未在长发言</td><td>启动内容生成与语音合成</td></tr>
+            <tr><td><code>&lt;backchannel&gt;</code></td><td>短附和，不夺话</td><td>助手正在说，用户发出短反馈</td><td>可插入极短语音，不改变主发言计划</td></tr>
+            <tr><td><code>&lt;take_floor&gt;</code></td><td>主动插话/纠错</td><td>助手正在说，用户内容与当前话题相关且需纠正</td><td>停止或压低当前语音，转入新回复</td></tr>
+            <tr><td><code>&lt;continue&gt;</code></td><td>继续当前发言</td><td>助手正在说，用户未夺话</td><td>保持生成与播放</td></tr>
+            <tr><td><code>&lt;yield&gt;</code></td><td>停止并让出话权</td><td>任意助手发声状态</td><td>取消后续生成、清空未播放音频、回到监听</td></tr>
+            <tr><td><code>&lt;eob&gt;</code></td><td>时间块结束</td><td>每个块末尾</td><td>仅用于对齐，不朗读</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><b>建议而非论文标准：</b>这些名称是为了让动作可解释、可加权、可评测。真正训练时要固定 token 的语义与状态转移，避免同一个 token 在不同数据里含义漂移。</p>
+
+      <h3>9.3 100ms 设计要注意什么</h3>
+      <p>100ms 控制周期是合理的工程选择，但不能直接假设所有音频 tokenizer 都按 100ms 对齐。以 25Hz 语音 token 为例，100ms 只有 2.5 个 token；以 80ms 帧为例，100ms 不是整数帧。可选方案有三类：</p>
+      <ol>
+        <li><b>控制钟 100ms，声学钟独立：</b>每 100ms 做一次动作判断，声学 token 按自身帧率累计生成；动作只在块边界生效。实现简单，但动作与音频帧要维护映射表。</li>
+        <li><b>统一到 80ms 或 160ms：</b>采用与编码器/声学模型原生帧率一致的块长，减少取整误差。Covo/DuplexSLA 用 160ms，Moshi 用 80ms，都是这个思路。</li>
+        <li><b>事件驱动：</b>控制判断按 100ms 运行，但真正的停止由“动作 token + 声学事件”共同触发，不必等到下一个完整音频块。复杂度更高，需要严格处理因果性。</li>
+      </ol>
+      <div class="note warn">
+        <span class="lbl">不要混淆“控制粒度”与“可听延迟”</span>
+        100ms 推理一次，不代表用户 100ms 内一定能听到回应。编码器前视、主干计算、声学解码、网络与播放缓冲都会叠加。建议分别记录：动作决策延迟、首 token 延迟、首包音频延迟、可听首字延迟、打断后静音延迟。
+      </div>
+
+      <h3>9.4 训练路线</h3>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>阶段</th><th>目标</th><th>数据</th><th>损失 / 注意点</th></tr></thead>
+          <tbody>
+            <tr><td><b>Stage A：格式适配</b></td><td>让主干理解双流块、历史文本和静音</td><td>普通对话 + 合成双流 + 自动派生的发声/静音标签</td><td>先冻结大部分声学模块；动作只用少量类别，重点避免语言能力退化</td></tr>
+            <tr><td><b>Stage B：基础双工</b></td><td>学会等待、接话、被打断后停止</td><td>Fisher/otoSpeech 等双轨数据 + 合成的插话与停顿</td><td>联合动作 CE + 文本/语音生成损失；对 WAIT 降采样，给 YIELD 更高权重</td></tr>
+            <tr><td><b>Stage C：语义交互</b></td><td>附和、主动纠错、区分旁人语音</td><td>人工标注或高质量合成对照数据；噪声/回声增强</td><td>动作标签必须结合上下文；单看重叠率会奖励错误抢话</td></tr>
+            <tr><td><b>Stage D：偏好优化</b></td><td>改善时机与自然度</td><td>内容相同、动作/时机不同的偏好对</td><td>可参考 BayLing 的 DPO；不要让偏好模型只奖励“更长的回答”</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>训练时建议采用 teacher forcing 的真实历史：只把用户实际听见的助手音频放入上下文，未播出的内容不作为历史。否则模型会高估自己已经说过的内容，导致重复或逻辑跳步。</p>
+
+      <h3>9.5 评测不要只看回答质量</h3>
+      <div class="grid2">
+        <div class="box">
+          <h4>交互指标</h4>
+          <ul>
+            <li>误抢话率：用户尚未说完就接话的比例。</li>
+            <li>漏接话率：用户明确结束后仍不回应。</li>
+            <li>附和精确率/召回率：该附和与不该附和是否分开。</li>
+            <li>打断后残留播放时长：模型决定停止后还有多少声音。</li>
+            <li>相关打断正确率与不必要打断率。</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h4>声学与系统指标</h4>
+          <ul>
+            <li>首字延迟、打断响应延迟、端到端响应延迟。</li>
+            <li>回声下的误触发率、双讲时的识别质量。</li>
+            <li>语音自然度、语义一致性、长对话记忆保持。</li>
+            <li>不同块长与动作词表的消融结果。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note disclosed">
+        <span class="lbl">当前研究缺口</span>
+        2026 年的 <a href="https://arxiv.org/abs/2609.19596" target="_blank" rel="noopener">Full-Duplex Speech Models Take the Floor When Asked, Not When Needed</a> 报告了对五类模型的分析：被点名或静音更容易触发发言，而错误事实或危险内容并不稳定触发主动打断。这直接说明“能被打断”与“会在语义上必要时主动打断”是两种能力，你的纠错目标必须单独建数据和评测。
+      </div>
+    </section>
+
+    <section id="refs">
+      <h2><span class="num">10</span>参考链接</h2>
+      <p class="lead">优先给出论文与官方项目页，便于回到原文核对。“综述分类”请以 arXiv 2606.19453 为准；后续补充工作以其原论文为准。部分论文的代码、权重或双工数据并未完整公开，本文不把“论文描述”当成“可直接复现”的保证。</p>
+      <ul class="reflist">
+        <li><span class="rid">Survey</span><a href="https://arxiv.org/abs/2606.19453" target="_blank" rel="noopener">A Survey of Full-Duplex Spoken Dialogue Systems</a><span class="tag tag-lit">L0–L3 分级与模型清单</span></li>
+        <li><span class="rid">MinMo</span><a href="https://arxiv.org/abs/2501.06282" target="_blank" rel="noopener">MinMo: A Multimodal Large Language Model for Seamless Voice Interaction</a></li>
+        <li><span class="rid">Freeze-Omni</span><a href="https://arxiv.org/abs/2411.00774" target="_blank" rel="noopener">Freeze-Omni: A Smart and Low Latency Speech-to-speech Dialogue Model with Frozen LLM</a></li>
+        <li><span class="rid">dGSLM</span><a href="https://arxiv.org/abs/2203.16502" target="_blank" rel="noopener">Generative Spoken Dialogue Language Modeling</a></li>
+        <li><span class="rid">LSLM</span><a href="https://arxiv.org/abs/2408.02622" target="_blank" rel="noopener">Language Model Can Listen While Speaking</a></li>
+        <li><span class="rid">Moshi</span><a href="https://arxiv.org/abs/2410.00037" target="_blank" rel="noopener">Moshi: a speech-text foundation model for real-time dialogue</a></li>
+        <li><span class="rid">OmniFlatten</span><a href="https://arxiv.org/abs/2410.17799" target="_blank" rel="noopener">OmniFlatten: An End-to-end GPT Model for Seamless Voice Conversation</a></li>
+        <li><span class="rid">SyncLLM</span><a href="https://arxiv.org/abs/2409.15594" target="_blank" rel="noopener">SyncLLM: A Synchronized Large Language Model for Full-Duplex Speech Dialogue</a></li>
+        <li><span class="rid">Mini-Omni2</span><a href="https://arxiv.org/abs/2410.11190" target="_blank" rel="noopener">Mini-Omni2: Towards Open-source GPT-4o with Vision, Speech and Duplex Capabilities</a></li>
+        <li><span class="rid">Fun-Audio-Chat</span><a href="https://arxiv.org/abs/2512.20156" target="_blank" rel="noopener">Fun-Audio-Chat Technical Report</a></li>
+        <li><span class="rid">Covo-Audio</span><a href="https://arxiv.org/abs/2602.09823" target="_blank" rel="noopener">Covo-Audio Technical Report</a></li>
+        <li><span class="rid">DuplexMamba</span><a href="https://arxiv.org/abs/2502.11123" target="_blank" rel="noopener">DuplexMamba: A Duplex State Space Model for Speech Dialogue</a></li>
+        <li><span class="rid">SALMONN-omni</span><a href="https://arxiv.org/abs/2505.17060" target="_blank" rel="noopener">SALMONN-omni: A Standalone Speech LLM for Full-Duplex Dialogue</a></li>
+        <li><span class="rid">PersonaPlex</span><a href="https://arxiv.org/abs/2602.06053" target="_blank" rel="noopener">PersonaPlex: Voice and Role Control for Full-Duplex Dialogue</a></li>
+        <li><span class="rid">BayLing</span><a href="https://arxiv.org/abs/2606.14528" target="_blank" rel="noopener">BayLing-Duplex: Full-Duplex Spoken Dialogue with Text-Aligned Interaction</a></li>
+        <li><span class="rid">DuplexSLA</span><a href="https://arxiv.org/abs/2605.20755" target="_blank" rel="noopener">DuplexSLA: Dual-Stream Speech-Language-Action Modeling</a></li>
+        <li><span class="rid">Lychee-FD</span><a href="https://arxiv.org/abs/2607.06540" target="_blank" rel="noopener">Lychee-FD: Hierarchical Parameter Separation for Full-Duplex Speech</a></li>
+        <li><span class="rid">F-Actor</span><a href="https://aclanthology.org/2026.findings-acl.242.pdf" target="_blank" rel="noopener">F-Actor: Controllable Conversational Behaviour in Full-Duplex Models</a></li>
+        <li><span class="rid">Fisher</span><a href="https://catalog.ldc.upenn.edu/LDC2004S13" target="_blank" rel="noopener">Fisher English Training Speech Part 1</a><span class="tag tag-lit">LDC 授权</span></li>
+        <li><span class="rid">otoSpeech</span><a href="https://huggingface.co/datasets/otoearth/otoSpeech-full-duplex-turn-104h" target="_blank" rel="noopener">otoSpeech-full-duplex-turn-104h</a><span class="tag tag-lit">研究许可</span></li>
+        <li><span class="rid">Behavior-SD</span><a href="https://github.com/yhytoto12/Behavior-SD" target="_blank" rel="noopener">Behavior-SD dataset</a></li>
+        <li><span class="rid">Survey repo</span><a href="https://github.com/DuplexLM/DuplexSurvey" target="_blank" rel="noopener">DuplexLM / DuplexSurvey</a></li>
+      </ul>
+      <footer>
+        <p>说明：本页按“综述核心清单 + 后续直接相关工作”组织，不声称穷尽截至今天的所有全双工论文。论文未披露的模型参数、动作词表或数据配比以“未完整公开”标注，不用综述转述替代原论文证据。</p>
+        <p>页面内容整理于 2026-10-21。阅读顺序建议：先看第 1 节的判据，再看第 5 节的动作机制，最后结合第 9 节的设计做取舍。</p>
+      </footer>
+    </section>
+  </main>
+</div>
+</div>
+<script>
+(function(){
+  "use strict";
+  var root = document.documentElement;
+  var toggle = document.getElementById("themetoggle");
+  if (toggle) {
+    toggle.addEventListener("click", function(){
+      var current = root.getAttribute("data-theme") || "auto";
+      root.setAttribute("data-theme", current === "dark" ? "light" : "dark");
+    });
+  }
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("#filterbar button"));
+  var cards = Array.prototype.slice.call(document.querySelectorAll(".model-card"));
+  buttons.forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var f = btn.getAttribute("data-filter");
+      buttons.forEach(function(b){ b.setAttribute("aria-pressed", String(b === btn)); });
+      cards.forEach(function(card){
+        var show = f === "all" || card.getAttribute("data-level") === f;
+        card.classList.toggle("hidden", !show);
+      });
+    });
+  });
+  var links = Array.prototype.slice.call(document.querySelectorAll("nav.toc a[href^='#']"));
+  var sections = links.map(function(a){ return document.querySelector(a.getAttribute("href")); }).filter(Boolean);
+  if ("IntersectionObserver" in window) {
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if (!entry.isIntersecting) return;
+        links.forEach(function(a){
+          a.classList.toggle("active", a.getAttribute("href") === "#" + entry.target.id);
+        });
+      });
+    }, { rootMargin: "-15% 0px -70% 0px", threshold: 0 });
+    sections.forEach(function(s){ obs.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>鹈鹕骑行日</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; overflow: hidden; background: #f7eee1; color: #263646; }
+    .scene { width: min(1120px, 96vw); }
+    .frame { position: relative; overflow: hidden; border: 5px solid #263646; border-radius: 28px; background: #9ddbf0; box-shadow: 10px 12px 0 #263646; }
+    svg { display: block; width: 100%; height: auto; }
+    .caption { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 4px 0; }
+    h1 { margin: 0; font-size: clamp(1.25rem, 3vw, 2rem); letter-spacing: .04em; }
+    p { margin: 4px 0 0; color: #677685; font-size: .9rem; }
+    button { border: 3px solid #263646; border-radius: 999px; background: #ffd166; color: #263646; padding: 10px 18px; font: inherit; font-weight: 800; cursor: pointer; box-shadow: 3px 4px 0 #263646; transition: transform .15s, box-shadow .15s; }
+    button:hover { transform: translateY(-2px); box-shadow: 3px 6px 0 #263646; }
+    button:active { transform: translate(2px, 2px); box-shadow: 1px 2px 0 #263646; }
+    .pause .animated { animation-play-state: paused !important; }
+    @media (prefers-reduced-motion: reduce) { .animated { animation-play-state: paused !important; } }
+  </style>
+</head>
+<body>
+  <main class="scene">
+    <div class="frame" id="sceneFrame">
+      <svg viewBox="0 0 1120 630" role="img" aria-labelledby="title desc" xmlns="http://www.w3.org/2000/svg">
+        <title id="title">一只鹈鹕骑着自行车穿过海边</title>
+        <desc id="desc">手绘风格的2D SVG动画，鹈鹕踩着自行车沿着海边骑行，云朵、海浪和车轮持续运动。</desc>
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8bd6ee"/><stop offset="1" stop-color="#d9f3ee"/></linearGradient>
+          <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#50bccc"/><stop offset="1" stop-color="#248ba8"/></linearGradient>
+          <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="7" stdDeviation="5" flood-color="#1d4251" flood-opacity=".2"/></filter>
+          <pattern id="sandDots" width="42" height="26" patternUnits="userSpaceOnUse"><circle cx="7" cy="8" r="2" fill="#dba86b" opacity=".32"/><circle cx="28" cy="18" r="1.5" fill="#dba86b" opacity=".28"/></pattern>
+          <path id="wavePath" d="M0 392 Q 30 378 60 392 T120 392 T180 392 T240 392 T300 392 T360 392 T420 392 T480 392 T540 392 T600 392 T660 392 T720 392 T780 392 T840 392 T900 392 T960 392 T1020 392 T1080 392 T1140 392"/>
+        </defs>
+
+        <rect width="1120" height="630" fill="url(#sky)"/>
+        <circle cx="900" cy="115" r="58" fill="#ffe29a" opacity=".9"/>
+        <g class="animated" style="animation: drift 20s linear infinite">
+          <path d="M90 150c8-28 52-38 70-8 22-16 62-3 64 27H62c0-13 10-19 28-19z" fill="#fff" opacity=".82"/>
+          <path d="M770 190c8-23 42-31 58-7 19-14 49-2 51 24H746c0-10 9-17 24-17z" fill="#fff" opacity=".7"/>
+        </g>
+        <g opacity=".18" fill="#fff"><path d="M0 258 Q120 235 240 258T480 258T720 258T960 258T1200 258v85H0z"/><path d="M0 308 Q150 284 300 308T600 308T900 308T1200 308v55H0z"/></g>
+        <path d="M0 354 Q150 338 300 354T600 354T900 354T1200 354V454H0Z" fill="url(#sea)"/>
+        <g fill="none" stroke="#bdece5" stroke-width="6" stroke-linecap="round" opacity=".8">
+          <use href="#wavePath" transform="translate(0 0)"/>
+          <use href="#wavePath" transform="translate(-60 34) scale(1.15 1)" opacity=".6"/>
+          <use href="#wavePath" transform="translate(90 68) scale(.75 1)" opacity=".5"/>
+        </g>
+        <path d="M0 442 Q180 420 360 444T720 442T1120 446V630H0Z" fill="#f8d49c"/>
+        <path d="M0 442 Q180 420 360 444T720 442T1120 446V630H0Z" fill="url(#sandDots)"/>
+        <g fill="#376b61" opacity=".75"><path d="M74 455q12-62 35-87 4 49-7 83l25-42q14 20-3 55z"/><path d="M1014 472q8-45 34-68-1 31-12 62l29-29q8 18-14 40z"/></g>
+
+        <!-- shadow under the bicycle -->
+        <ellipse cx="565" cy="545" rx="245" ry="25" fill="#25566a" opacity=".18"/>
+
+        <!-- bicycle -->
+        <g id="bike" filter="url(#softShadow)">
+          <g class="animated" style="animation: spin 1.2s linear infinite" transform-origin="430px 505px">
+            <circle cx="430" cy="505" r="66" fill="none" stroke="#263646" stroke-width="9"/>
+            <circle cx="430" cy="505" r="8" fill="#ffd166" stroke="#263646" stroke-width="5"/>
+            <path d="M430 439v132M364 505h132M384 459l92 92M476 459l-92 92" stroke="#d85c4b" stroke-width="3" opacity=".85"/>
+          </g>
+          <g class="animated" style="animation: spin 1.2s linear infinite" transform-origin="720px 505px">
+            <circle cx="720" cy="505" r="66" fill="none" stroke="#263646" stroke-width="9"/>
+            <circle cx="720" cy="505" r="8" fill="#ffd166" stroke="#263646" stroke-width="5"/>
+            <path d="M720 439v132M654 505h132M674 459l92 92M766 459l-92 92" stroke="#d85c4b" stroke-width="3" opacity=".85"/>
+          </g>
+          <path d="M430 505 515 405 720 505 610 505 515 405M610 505 568 430" fill="none" stroke="#263646" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M515 405h-42M568 430l-12-28h32" fill="none" stroke="#263646" stroke-width="9" stroke-linecap="round"/>
+          <path d="M515 405 610 505" stroke="#ee6c4d" stroke-width="7"/>
+          <circle cx="610" cy="505" r="18" fill="#ffd166" stroke="#263646" stroke-width="6"/>
+          <path d="M596 491l30 28M626 491l-30 28" stroke="#263646" stroke-width="5" stroke-linecap="round"/>
+          <path d="M548 397q-16-18-32-3M552 397q16-18 30-3" fill="none" stroke="#263646" stroke-width="7" stroke-linecap="round"/>
+        </g>
+
+        <!-- pelican -->
+        <g class="animated" style="animation: rideBob .6s ease-in-out infinite" transform-origin="575px 370px">
+          <!-- torso and tail -->
+          <path d="M500 270 Q550 225 631 260 Q669 278 676 339 Q680 398 625 415 Q544 433 497 375 Q477 333 500 270Z" fill="#f8f4e8" stroke="#263646" stroke-width="7"/>
+          <path d="M508 366q-49 22-76 7 21 31 68 28" fill="#e9dfcc" stroke="#263646" stroke-width="7" stroke-linejoin="round"/>
+          <path d="M552 277q35 23 64 81-42-2-75-34z" fill="#c5d6d7" stroke="#263646" stroke-width="6"/>
+          <!-- wing -->
+          <path class="animated" style="animation: flap .9s ease-in-out infinite" d="M543 278q-47-72-84-32 25 17 42 48-33-16-52 1 34 28 85 48z" fill="#d3e2df" stroke="#263646" stroke-width="7" stroke-linejoin="round" transform-origin="550px 300px"/>
+          <path d="M499 292q-22-22-38-17M510 306q-28-17-43-8" fill="none" stroke="#8eaeb1" stroke-width="4" stroke-linecap="round"/>
+          <!-- neck and head -->
+          <path d="M607 291q-29-36-18-82 10-40 49-51 47-12 69 25 20 35-1 71-27 42-78 37z" fill="#f8f4e8" stroke="#263646" stroke-width="7"/>
+          <path d="M646 211q19-38 58-22 14 7 9 19-6 15-29 22z" fill="#f2b357" stroke="#263646" stroke-width="7" stroke-linejoin="round"/>
+          <path d="M668 228q45 6 61 28-32 26-77 4z" fill="#e68c4f" stroke="#263646" stroke-width="7"/>
+          <circle cx="676" cy="192" r="7" fill="#263646"/>
+          <path d="M693 171q13-12 26-3" fill="none" stroke="#263646" stroke-width="6" stroke-linecap="round"/>
+          <!-- legs and feet -->
+          <g class="animated" style="animation: pedal .6s linear infinite" transform-origin="574px 404px">
+            <path d="M570 395l40 110M610 505l33 4" fill="none" stroke="#e68c4f" stroke-width="9" stroke-linecap="round"/>
+            <path d="M608 508l29 13" fill="none" stroke="#263646" stroke-width="7" stroke-linecap="round"/>
+          </g>
+          <g class="animated" style="animation: pedal .6s linear infinite reverse" transform-origin="574px 404px">
+            <path d="M602 397l-26 80M576 477l-30 25" fill="none" stroke="#e68c4f" stroke-width="9" stroke-linecap="round"/>
+            <path d="M548 501l-27 3" fill="none" stroke="#263646" stroke-width="7" stroke-linecap="round"/>
+          </g>
+          <path d="M579 404q-12 2-19 11" fill="none" stroke="#263646" stroke-width="7" stroke-linecap="round"/>
+        </g>
+
+        <g fill="#263646" font-family="inherit" font-weight="800">
+          <text x="60" y="82" font-size="24" opacity=".75">SEASIDE EXPRESS</text>
+          <text x="60" y="113" font-size="14" opacity=".55" letter-spacing="3">PELICAN ON TOUR</text>
+        </g>
+        <g class="animated" style="animation: twinkle 1.8s ease-in-out infinite" fill="#fff" opacity=".85"><circle cx="820" cy="78" r="4"/><circle cx="850" cy="96" r="2.5"/><circle cx="245" cy="228" r="3"/></g>
+      </svg>
+    </div>
+    <div class="caption">
+      <div><h1>鹈鹕骑行日</h1><p>一段由 SVG 绘制的海边小动画 · 点击按钮暂停 / 播放</p></div>
+      <button id="toggle" type="button" aria-pressed="false">暂停动画</button>
+    </div>
+  </main>
+  <script>
+    const frame = document.querySelector('#sceneFrame');
+    const toggle = document.querySelector('#toggle');
+    toggle.addEventListener('click', () => {
+      const paused = frame.classList.toggle('pause');
+      toggle.textContent = paused ? '继续动画' : '暂停动画';
+      toggle.setAttribute('aria-pressed', String(paused));
+    });
+  </script>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pedal { 0% { transform: rotate(-12deg); } 50% { transform: rotate(12deg); } 100% { transform: rotate(-12deg); } }
+    @keyframes rideBob { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-7px) rotate(1deg); } }
+    @keyframes flap { 0%, 100% { transform: rotate(4deg); } 50% { transform: rotate(-17deg); } }
+    @keyframes drift { from { transform: translateX(-140px); } to { transform: translateX(160px); } }
+    @keyframes twinkle { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  </style>
+</body>
+</html>

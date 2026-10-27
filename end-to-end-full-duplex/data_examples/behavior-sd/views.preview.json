@@ -1,0 +1,553 @@
+{
+  "format": "inspection_preview_v2",
+  "role_policy": {
+    "assistant_may_interrupt_user": false,
+    "assistant_may_backchannel": true,
+    "user_may_interrupt_assistant": true,
+    "both_speakers_have_explicit_interruptions": "exclude_entire_conversation",
+    "role_selection_scope": "entire_conversation_not_just_preview_window",
+    "unlabeled_main_utterance_overlap": "requires_separate_timing_audit_before_training"
+  },
+  "notes": [
+    "Proposed inspection format, not the original dataset schema or final model tensors.",
+    "Time spans are original annotations, not measured frame-level VAD.",
+    "Backchannels belong to the opposite speaker of the containing utterance in these verified two-speaker samples.",
+    "No full narrative, future transcript, or future behavior event may be passed as causal model input.",
+    "Keep original splits; the normal-turn example is from test and must not be used for training.",
+    "Training audio-codec frame rate and causal input/output delay remain model-design choices.",
+    "Only user-initiated interruptions are allowed; assistant backchannels remain allowed.",
+    "Explicit interrupt labels constrain roles over the entire conversation, not only the selected window.",
+    "Silence after an interruption is an audio target, not a fabricated zero-latency STOP label."
+  ],
+  "views": [
+    {
+      "view_id": "normal_turn",
+      "source_id": "0000000005",
+      "original_split": "test",
+      "shard": "test/0000.tar",
+      "audio_member": "0000000005.flac",
+      "json_member": "0000000005.json",
+      "sample_rate": 22050,
+      "user_channel": 0,
+      "assistant_channel": 1,
+      "allowed_assistant_channels_by_explicit_interrupt_labels": [
+        0,
+        1
+      ],
+      "role_policy": "user_only_interruptions_assistant_backchannels_allowed",
+      "speaker_names": [
+        "Carlyn",
+        "Brion"
+      ],
+      "window_seconds": [
+        4.4,
+        5.8
+      ],
+      "history_completed_events_at_window_start": [],
+      "events_for_inspection_only": [
+        {
+          "speaker_idx": 0,
+          "kind": "utterance",
+          "start": 0.0,
+          "end": 4.609160997732427,
+          "text": "Hi, Brion. It’s surprising we’ve never met before.",
+          "source": "utterances[0]"
+        },
+        {
+          "speaker_idx": 1,
+          "kind": "utterance",
+          "start": 4.946802721088435,
+          "end": 12.420770975056689,
+          "text": "Hi, Carlyn. It is surprising, especially since we live in the same town. I feel like I’ve heard your name a few times.",
+          "source": "utterances[1]"
+        }
+      ],
+      "frames_100ms_for_inspection_only": [
+        {
+          "start": 4.4,
+          "end": 4.5,
+          "source_sample_range": [
+            97020,
+            99225
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 4.5,
+          "end": 4.6,
+          "source_sample_range": [
+            99225,
+            101430
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 4.6,
+          "end": 4.7,
+          "source_sample_range": [
+            101430,
+            103635
+          ],
+          "user_annotated_span_fraction": 0.0916,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 4.7,
+          "end": 4.8,
+          "source_sample_range": [
+            103635,
+            105840
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 4.8,
+          "end": 4.9,
+          "source_sample_range": [
+            105840,
+            108045
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 4.9,
+          "end": 5.0,
+          "source_sample_range": [
+            108045,
+            110250
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 0.532
+        },
+        {
+          "start": 5.0,
+          "end": 5.1,
+          "source_sample_range": [
+            110250,
+            112455
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.1,
+          "end": 5.2,
+          "source_sample_range": [
+            112455,
+            114660
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.2,
+          "end": 5.3,
+          "source_sample_range": [
+            114660,
+            116865
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.3,
+          "end": 5.4,
+          "source_sample_range": [
+            116865,
+            119070
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.4,
+          "end": 5.5,
+          "source_sample_range": [
+            119070,
+            121275
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.5,
+          "end": 5.6,
+          "source_sample_range": [
+            121275,
+            123480
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.6,
+          "end": 5.7,
+          "source_sample_range": [
+            123480,
+            125685
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 5.7,
+          "end": 5.8,
+          "source_sample_range": [
+            125685,
+            127890
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        }
+      ]
+    },
+    {
+      "view_id": "assistant_backchannel",
+      "source_id": "0000000001",
+      "original_split": "train",
+      "shard": "train/0000.tar",
+      "audio_member": "0000000001.flac",
+      "json_member": "0000000001.json",
+      "sample_rate": 22050,
+      "user_channel": 0,
+      "assistant_channel": 1,
+      "allowed_assistant_channels_by_explicit_interrupt_labels": [
+        1
+      ],
+      "role_policy": "user_only_interruptions_assistant_backchannels_allowed",
+      "speaker_names": [
+        "Rylea",
+        "Shavon"
+      ],
+      "window_seconds": [
+        15.5,
+        16.8
+      ],
+      "history_completed_events_at_window_start": [
+        {
+          "role": "user",
+          "text": "Hey Shavon, I noticed you're looking a bit down today. What's wrong?",
+          "end": 4.829750566893424
+        },
+        {
+          "role": "assistant",
+          "text": "I appreciate you asking, Rylea.",
+          "end": 7.302585034013606
+        },
+        {
+          "role": "assistant",
+          "text": "I'm just having a hard time with everything going on lately. It's like... there's so much happening that I don't know where to start.",
+          "end": 14.692562358276644
+        }
+      ],
+      "events_for_inspection_only": [
+        {
+          "speaker_idx": 0,
+          "kind": "utterance",
+          "start": 14.692562358276644,
+          "end": 20.546802721088437,
+          "text": "I'm sorry to hear that. If you want, I'm more than happy to listen and help if I can.",
+          "source": "utterances[3]"
+        },
+        {
+          "speaker_idx": 1,
+          "kind": "backchannel",
+          "start": 15.796190476190477,
+          "end": 16.45578231292517,
+          "text": "Mhm.",
+          "source": "utterances[3].backchannels[0]"
+        }
+      ],
+      "frames_100ms_for_inspection_only": [
+        {
+          "start": 15.5,
+          "end": 15.6,
+          "source_sample_range": [
+            341775,
+            343980
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 15.6,
+          "end": 15.7,
+          "source_sample_range": [
+            343980,
+            346185
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 15.7,
+          "end": 15.8,
+          "source_sample_range": [
+            346185,
+            348390
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0381
+        },
+        {
+          "start": 15.8,
+          "end": 15.9,
+          "source_sample_range": [
+            348390,
+            350595
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 15.9,
+          "end": 16.0,
+          "source_sample_range": [
+            350595,
+            352800
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 16.0,
+          "end": 16.1,
+          "source_sample_range": [
+            352800,
+            355005
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 16.1,
+          "end": 16.2,
+          "source_sample_range": [
+            355005,
+            357210
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 16.2,
+          "end": 16.3,
+          "source_sample_range": [
+            357210,
+            359415
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 16.3,
+          "end": 16.4,
+          "source_sample_range": [
+            359415,
+            361620
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 16.4,
+          "end": 16.5,
+          "source_sample_range": [
+            361620,
+            363825
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.5578
+        },
+        {
+          "start": 16.5,
+          "end": 16.6,
+          "source_sample_range": [
+            363825,
+            366030
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 16.6,
+          "end": 16.7,
+          "source_sample_range": [
+            366030,
+            368235
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 16.7,
+          "end": 16.8,
+          "source_sample_range": [
+            368235,
+            370440
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        }
+      ]
+    },
+    {
+      "view_id": "assistant_is_interrupted",
+      "source_id": "0000000003",
+      "original_split": "train",
+      "shard": "train/0000.tar",
+      "audio_member": "0000000003.flac",
+      "json_member": "0000000003.json",
+      "sample_rate": 22050,
+      "user_channel": 0,
+      "assistant_channel": 1,
+      "allowed_assistant_channels_by_explicit_interrupt_labels": [
+        1
+      ],
+      "role_policy": "user_only_interruptions_assistant_backchannels_allowed",
+      "speaker_names": [
+        "Danna",
+        "Mattea"
+      ],
+      "window_seconds": [
+        7.2,
+        8.3
+      ],
+      "history_completed_events_at_window_start": [],
+      "events_for_inspection_only": [
+        {
+          "speaker_idx": 1,
+          "kind": "utterance",
+          "start": 0.0,
+          "end": 7.87156462585034,
+          "text": "I'm thinking about ways we can improve our team collaboration to boost productivity. We need to focus on",
+          "source": "utterances[0]"
+        },
+        {
+          "speaker_idx": 0,
+          "kind": "interrupt",
+          "start": 7.419047619047619,
+          "end": 13.04421768707483,
+          "text": "Communication strategies that ensure everyone is on the same page and understands their roles clearly.",
+          "source": "utterances[1]"
+        }
+      ],
+      "frames_100ms_for_inspection_only": [
+        {
+          "start": 7.2,
+          "end": 7.3,
+          "source_sample_range": [
+            158760,
+            160965
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 7.3,
+          "end": 7.4,
+          "source_sample_range": [
+            160965,
+            163170
+          ],
+          "user_annotated_span_fraction": 0.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 7.4,
+          "end": 7.5,
+          "source_sample_range": [
+            163170,
+            165375
+          ],
+          "user_annotated_span_fraction": 0.8095,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 7.5,
+          "end": 7.6,
+          "source_sample_range": [
+            165375,
+            167580
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 7.6,
+          "end": 7.7,
+          "source_sample_range": [
+            167580,
+            169785
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 7.7,
+          "end": 7.8,
+          "source_sample_range": [
+            169785,
+            171990
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 1.0
+        },
+        {
+          "start": 7.8,
+          "end": 7.9,
+          "source_sample_range": [
+            171990,
+            174195
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.7156
+        },
+        {
+          "start": 7.9,
+          "end": 8.0,
+          "source_sample_range": [
+            174195,
+            176400
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 8.0,
+          "end": 8.1,
+          "source_sample_range": [
+            176400,
+            178605
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 8.1,
+          "end": 8.2,
+          "source_sample_range": [
+            178605,
+            180810
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        },
+        {
+          "start": 8.2,
+          "end": 8.3,
+          "source_sample_range": [
+            180810,
+            183015
+          ],
+          "user_annotated_span_fraction": 1.0,
+          "assistant_annotated_span_fraction": 0.0
+        }
+      ]
+    }
+  ]
+}

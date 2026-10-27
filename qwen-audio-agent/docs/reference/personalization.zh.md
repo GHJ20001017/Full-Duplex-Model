@@ -36,9 +36,24 @@ QWEN_AUDIO_AGENT_ASSISTANT_PROFILE_PATH=/absolute/path/to/ASSISTANT.md
 
 ## 可选偏好学习
 
-默认只保存明确要求。设置 `QWEN_AUDIO_PREFERENCE_LEARNING=on` 后，默认记忆 Provider 还会在会话结束时观察少量特征，跨会话确认后写入 `USER.md` 的“观察推断”段。
+基础画像学习默认关闭。设置 `QWEN_AUDIO_PREFERENCE_LEARNING=on` 后，默认记忆 Provider 还会在会话结束时观察职业、技能、回答长短与风格，跨会话确认后写入 `USER.md` 的“观察推断”段。
 
 此功能默认关闭，会额外调用文本模型。明确要求优先于推断；不需要的推断可在文件中删除。算法与阈值见[偏好学习机制](preference-learning.zh.md)。
+
+相处偏好学习默认随 Gateway 启动，让助手逐渐适应个人的倾诉支持方式、玩笑边界和聊天中的
+关心方式，无需手动设置环境变量。如需关闭，可独立设置后重启 Gateway：
+
+```dotenv
+QWEN_AUDIO_COMPANIONSHIP_LEARNING=off
+```
+
+此项需要自动记忆使用的文本模型凭据。重复的具体反馈经过不同会话、至少 24 小时
+的确认才会成为推断偏好；“今天别开玩笑”不变成永久设置。明确的长期要求仍可直接说，例如
+“以后我倾诉时先听我说”。当前请求始终优先，不会因为你平时喜欢玩笑就在严肃倾诉时打趣。
+关心方式仅影响正在聊天时的自然回应，不会定时插话或在会话外主动联系。
+
+关闭开关不删除已保存的偏好。查看、更正、删除仍使用现有[记忆管理方式](memory.zh.md)；
+完整的取值、证据校验和级联语音边界见[相处偏好学习](preference-learning.zh.md#相处偏好学习)。
 
 ## 隐私与其他实现
 

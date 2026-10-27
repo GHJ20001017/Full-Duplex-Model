@@ -13,6 +13,8 @@
 // - Failures are silent: extraction must never delay or break session close,
 //   and must never produce speech.
 
+import { companionshipFieldsInText, isStandingCompanionshipDirective } from './companionship-preferences.mjs'
+
 const MEMORY_DOCUMENTS = new Set(['user', 'memory'])
 const MAX_OPS_PER_RUN = 5
 const MAX_PATCH_CHARS = 1000
@@ -51,6 +53,7 @@ const EXTRACTOR_SYSTEM_PROMPT = [
   '',
   '规则：',
   '- user 只保存用户本人明确提出、会直接改变未来交互方式的长期指令：称呼、关系、助手在该用户面前的名称、语言、表达风格和默认做法。不得推测。',
+  '- 安慰方式、玩笑边界、关心频率也属于 user，但仅在用户本人明确提出长期要求时记录到「## 用户明确要求」。今天、本次、现在等临时要求不保存；普通反馈留给独立的偏好观察器。',
   '- memory 只保存用户本人明确陈述、稳定且具有跨会话价值的非交互事实与决定：所在地、习惯、兴趣、人际关系事实、项目、长期目标或计划。不得推测。',
   // 别在这条规则上再加「不要把对话原话当 old_text」之类的强调 —— 试过了，
   // A/B 各 15 轮同时段交替发起：edit 误用率 73% → 73%，一点没降，只是把写入
@@ -119,6 +122,7 @@ function containsSensitiveContent(value) {
 
 function belongsToUserPreferences(value) {
   return USER_PREFERENCE_PATTERNS.some(pattern => pattern.test(value))
+    || companionshipFieldsInText(value).length > 0
 }
 
 function hasExplicitUserDirective(lines) {
@@ -131,6 +135,24 @@ function hasExplicitUserDirective(lines) {
     /(?:我希望|我想让你|请你|你要).{0,40}(?:叫|称呼|回复|回答|说|表达|使用|加|带)/,
     /(?:回复|回答|说话|表达).{0,20}(?:简短|简洁|详细|正式|随意|温柔|慢一点|快一点)/,
   ].some(pattern => pattern.test(userText))
+    || lines.filter(line => line.startsWith('用户:')).some(line => (
+      companionshipFieldsInText(line).some(field => isStandingCompanionshipDirective(line, field))
+    ))
+}
+
+function placeExplicitCompanionshipAppend(change, current) {
+  if (change.document !== 'user' || !companionshipFieldsInText(change.append).length) return change
+  const append = change.append.includes('## 用户明确要求')
+    ? change.append : `## 用户明确要求\n${change.append}`
+  // Appending after the observed section would silently relabel an explicit
+  // instruction as an inference. Insert a distinct explicit block before it.
+  const heading = '## 观察推断'
+  if (countOccurrences(current, heading) === 1
+    && !change.edits.some(edit => edit.old_text.includes(heading))) {
+    return { ...change, append: '', edits: [...change.edits,
+      { old_text: heading, new_text: `${append}\n\n${heading}` }] }
+  }
+  return { ...change, append }
 }
 
 function cleanPatch(value) {
@@ -207,8 +229,8 @@ export class MemoryExtractor {
     llmCall = null,
     logger = console,
     now = () => Date.now(),
-    debounceMs = 30 * 60_000,
-    minUserMessages = 4,
+    debounceMs = 0,
+    minUserMessages = 1,
     maxTranscriptChars = 6000,
   } = {}) {
     this.memoryService = memoryService
@@ -221,6 +243,7 @@ export class MemoryExtractor {
     this.minUserMessages = minUserMessages
     this.maxTranscriptChars = maxTranscriptChars
     this.lastRunAt = new Map()
+    this.pendingOwners = new Map()
   }
 
   enabled() {
@@ -248,7 +271,13 @@ export class MemoryExtractor {
     if (userMessages.length < this.minUserMessages) return null
     batch.consume()
     this.lastRunAt.set(safeOwnerId, this.now())
-    return this.run({ ownerId: safeOwnerId, messages, isCurrent: batch.isCurrent }).catch(error => {
+    // Fresh batches from overlapping sessions must reconcile against each
+    // other's committed facts, not race on the same stale snapshot.
+    const previous = this.pendingOwners.get(safeOwnerId)
+    const run = () => batch.isCurrent()
+      ? this.run({ ownerId: safeOwnerId, messages, isCurrent: batch.isCurrent })
+      : undefined
+    const pending = (previous ? previous.then(run) : Promise.resolve(run())).catch(error => {
       this.audit?.record({
         op: 'error',
         ownerId: safeOwnerId,
@@ -258,12 +287,17 @@ export class MemoryExtractor {
         error: String(error?.message || error),
       })
     })
+    this.pendingOwners.set(safeOwnerId, pending)
+    void pending.finally(() => {
+      if (this.pendingOwners.get(safeOwnerId) === pending) this.pendingOwners.delete(safeOwnerId)
+    })
+    return pending
   }
 
-  async run({ ownerId, messages, isCurrent = () => true }) {
+  async run({ ownerId, messages, isCurrent = () => true, retries = 1 }) {
     const lines = transcriptLines(messages, this.maxTranscriptChars)
     if (!lines.length) return
-    const existing = this.memoryService.list(ownerId)
+    const existing = this.memoryService.listForLearning?.(ownerId) || this.memoryService.list(ownerId)
     const documents = new Map(existing.map(document => [document.scope, document]))
     const user = [
       '## 当前 USER.md',
@@ -328,6 +362,17 @@ export class MemoryExtractor {
       this.audit?.record({ op: 'skip', ownerId, reason: 'no_applicable_change' })
       return
     }
+    const userTurns = lines.filter(line => line.startsWith('用户:'))
+    const unsupportedCompanionship = applicable.some(change => {
+      const additions = [...change.edits.map(edit => edit.new_text), change.append].join('\n')
+      return companionshipFieldsInText(additions).some(field => (
+        !userTurns.some(line => isStandingCompanionshipDirective(line, field))
+      ))
+    })
+    if (unsupportedCompanionship) {
+      this.audit?.record({ op: 'skip', ownerId, reason: 'companionship_directive_not_explicit' })
+      return
+    }
     const invalidBoundary = applicable.some(change => {
       const additions = [
         ...change.edits.map(edit => edit.new_text),
@@ -350,7 +395,7 @@ export class MemoryExtractor {
       return
     }
     const prepared = applicable.map(change => ({
-      ...change,
+      ...placeExplicitCompanionshipAppend(change, documents.get(change.document)?.content || ''),
       expectedRevision: documents.get(change.document)?.revision || '',
     }))
     try {
@@ -384,6 +429,9 @@ export class MemoryExtractor {
         changed: result.changed,
       })
     } catch (error) {
+      if (error?.code === 'stale_document' && retries > 0 && isCurrent()) {
+        return this.run({ ownerId, messages, isCurrent, retries: retries - 1 })
+      }
       this.audit?.record({
         op: 'error',
         ownerId,

@@ -125,3 +125,23 @@ test('an explicit edit invalidates in-flight observation before preference promo
   assert.equal(promotions, 0)
   assert.equal(sync.list(context).length, 1)
 })
+
+test('capacity maintenance waits for extraction and promotion and remains silent', async () => {
+  const extracting = Promise.withResolvers()
+  const calls = []
+  const observer = new MemorySessionObserver({ conversationSync: freshConversation(),
+    memoryExtractor: { maybeRun: () => { calls.push('extract'); return extracting.promise } },
+    profileObserver: { maybeRun: () => calls.push('observe') },
+    preferencePromoter: { run: () => calls.push('promote') },
+    memoryCompactor: { maybeRun: ({ ownerId, isCurrent }) => {
+      assert.equal(ownerId, context.ownerId)
+      assert.equal(isCurrent(), true)
+      calls.push('compact')
+    } },
+  })
+  const pending = observer.onSessionClosed(context)
+  assert.deepEqual(calls, ['extract', 'observe', 'promote'])
+  extracting.resolve()
+  await pending
+  assert.deepEqual(calls, ['extract', 'observe', 'promote', 'compact'])
+})

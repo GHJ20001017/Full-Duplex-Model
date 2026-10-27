@@ -282,12 +282,12 @@ test('accepts a valid JSON patch followed by provider commentary', async () => {
   assert.equal(events.at(-1).reason, 'no_change')
 })
 
-test('stays disabled without a model, skips quiet sessions and debounces runs', async () => {
+test('stays disabled without a model, skips empty sessions and consumes each batch once', async () => {
   const disabled = extractor({ llmCall: null })
   assert.equal(disabled.instance.maybeRun({ ownerId: OWNER, sessionId: SESSION }), null)
   let calls = 0
   const quiet = extractor({
-    turns: 2,
+    turns: 0,
     llmCall: async () => {
       calls += 1
       return '{"changes":[]}'
@@ -315,4 +315,74 @@ test('survives provider and malformed-output failures without throwing', async (
     await instance.maybeRun({ ownerId: OWNER, sessionId: SESSION })
     assert.equal(events.at(-1).op, 'error')
   }
+})
+
+test('a single user correction updates an old fact rather than appending its contradiction', async () => {
+  const { instance, memoryStore } = extractor({ turns: 1, userText: '更正，我现在搬到苏州了',
+    llmCall: async payload => {
+      assert.match(payload.user, /用户住在杭州/)
+      return JSON.stringify({ changes: [{ document: 'memory',
+        edits: [{ old_text: '- 用户住在杭州。', new_text: '- 用户现在住在苏州。' }], append: '' }] })
+    },
+  })
+  memoryStore.edit(OWNER, { append: '- 用户住在杭州。' })
+  await instance.maybeRun({ ownerId: OWNER, sessionId: SESSION })
+  assert.match(memoryStore.readRaw(OWNER), /苏州/)
+  assert.doesNotMatch(memoryStore.readRaw(OWNER), /杭州/)
+})
+
+test('back-to-back short sessions learn without a time debounce and reconcile in owner order', async () => {
+  const deferred = Promise.withResolvers()
+  const seen = []
+  const { instance, memoryStore } = extractor({ turns: 1, llmCall: async payload => {
+    seen.push(payload)
+    if (seen.length === 1) return deferred.promise
+    assert.match(payload.user, /每天早上跑步/)
+    return JSON.stringify({ changes: [{ document: 'memory', edits: [], append: '- 用户周末骑车。' }] })
+  } })
+  const first = instance.maybeRun({ ownerId: OWNER, sessionId: SESSION })
+  instance.conversationSync.record({ ownerId: OWNER, sessionId: 'next-session', id: 'new',
+    role: 'user', content: '我周末会骑车', source: 'voice-user' })
+  const second = instance.maybeRun({ ownerId: OWNER, sessionId: 'next-session' })
+  assert.equal(seen.length, 1)
+  deferred.resolve(JSON.stringify({ changes: [{ document: 'memory', edits: [], append: '- 用户每天早上跑步。' }] }))
+  await Promise.all([first, second])
+  assert.equal(seen.length, 2)
+  assert.match(memoryStore.readRaw(OWNER), /跑步[\s\S]*骑车/)
+})
+
+test('a revision changed by silent learning is reread once before applying extraction', async () => {
+  const deferred = Promise.withResolvers()
+  let calls = 0
+  const { instance, memoryStore } = extractor({ turns: 1, llmCall: async payload => {
+    calls++
+    if (calls === 1) return deferred.promise
+    assert.match(payload.user, /周末骑车/)
+    return JSON.stringify({ changes: [{ document: 'memory', edits: [], append: '- 用户每天早上跑步。' }] })
+  } })
+  memoryStore.edit(OWNER, { append: '- 用户喜欢运动。' })
+  const pending = instance.maybeRun({ ownerId: OWNER, sessionId: SESSION })
+  memoryStore.edit(OWNER, { append: '- 用户周末骑车。' })
+  deferred.resolve(JSON.stringify({ changes: [{ document: 'memory', edits: [], append: '- 用户每天早上跑步。' }] }))
+  await pending
+  assert.equal(calls, 2)
+  assert.match(memoryStore.readRaw(OWNER), /骑车[\s\S]*跑步/)
+})
+
+test('incremental extraction can correct facts beyond a truncated injection snapshot', async () => {
+  const { instance, memoryStore } = extractor({ turns: 1, userText: '我已经搬到苏州了',
+    llmCall: async payload => {
+      assert.match(payload.user, /用户住在杭州/)
+      return JSON.stringify({ changes: [{ document: 'memory', append: '',
+        edits: [{ old_text: '- 用户住在杭州。', new_text: '- 用户住在苏州。' }] }] })
+    },
+  })
+  memoryStore.onWarning = () => {}
+  memoryStore.edit(OWNER, { append: `- ${'用户喜欢周末跑步。'.repeat(30)}\n- 用户住在杭州。` })
+  memoryStore.maxChars = 80
+  assert.doesNotMatch(memoryStore.list(OWNER)[0].content, /杭州/)
+  await instance.maybeRun({ ownerId: OWNER, sessionId: SESSION })
+  assert.match(memoryStore.readRaw(OWNER), /苏州/)
+  assert.match(memoryStore.readRaw(OWNER), /跑步/)
+  assert.doesNotMatch(memoryStore.readRaw(OWNER), /杭州/)
 })

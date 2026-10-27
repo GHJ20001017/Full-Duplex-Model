@@ -1,0 +1,805 @@
+{
+  "source_root": "/gpu3/guhj/Full-Duplex_Model/end-to-end-full-duplex/data/behavior-sd",
+  "cases": [
+    {
+      "id": "0000000001",
+      "shard": "train/0000.tar",
+      "audio": {
+        "sample_rate": 22050,
+        "channels": 2,
+        "frames": 2032751,
+        "duration_seconds": 92.18825396825397,
+        "channel_probes": [
+          {
+            "speaker_idx": 0,
+            "start": 0.15,
+            "end": 1.15,
+            "channel_rms": [
+              0.113437,
+              0.0
+            ]
+          },
+          {
+            "speaker_idx": 1,
+            "start": 5.3684580498866215,
+            "end": 6.3684580498866215,
+            "channel_rms": [
+              0.0,
+              0.163658
+            ]
+          }
+        ],
+        "backchannel_probes": [
+          {
+            "host_speaker_idx": 0,
+            "text": "Mhm.",
+            "start": 15.796190476190477,
+            "end": 16.45578231292517,
+            "channel_rms": [
+              0.031379,
+              0.133737
+            ]
+          }
+        ]
+      },
+      "raw": {
+        "file_name": "0000000001.flac",
+        "soda_split": "train",
+        "soda_index": 1,
+        "narrative": "Rylea sat down with Shavon and asked him what was wrong. Shavon told Rylea that he was having a hard time and needed someone to talk to. Rylea said that he would be happy to be there for his friend.",
+        "speakers": [
+          "Rylea",
+          "Shavon"
+        ],
+        "behaviors": [
+          {
+            "utterance_length": 2,
+            "filler_words": 0,
+            "backchannels": 0,
+            "interruptions": 1
+          },
+          {
+            "utterance_length": 1,
+            "filler_words": 0,
+            "backchannels": 1,
+            "interruptions": 0
+          }
+        ],
+        "num_turns": 10,
+        "utterances": [
+          {
+            "uttr_idx": 0,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "Hey Shavon, I noticed you're looking a bit down today. What's wrong?",
+            "dur_samples": 106496,
+            "start_time": 0.0,
+            "end_time": 4.829750566893424,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 1,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "I appreciate you asking, Rylea.",
+            "dur_samples": 45955,
+            "start_time": 5.218458049886621,
+            "end_time": 7.302585034013606,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 2,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "I'm just having a hard time with everything going on lately. It's like... there's so much happening that I don't know where to start.",
+            "dur_samples": 162949,
+            "start_time": 7.302585034013606,
+            "end_time": 14.692562358276644,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 3,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "I'm sorry to hear that. If you want, I'm more than happy to listen and help if I can.",
+            "dur_samples": 129086,
+            "start_time": 14.692562358276644,
+            "end_time": 20.546802721088437,
+            "backchannels": [
+              {
+                "bc_idx": 0,
+                "tts_text": "Mhm.",
+                "start_time": 15.796190476190477,
+                "end_time": 16.45578231292517
+              }
+            ]
+          },
+          {
+            "uttr_idx": 4,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "Sometimes discussing every little detail can provide clarity and relief.",
+            "dur_samples": 117248,
+            "start_time": 20.546802721088437,
+            "end_time": 25.86417233560091,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 5,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "Thanks, Rylea.",
+            "dur_samples": 20486,
+            "start_time": 26.59219954648526,
+            "end_time": 27.52126984126984,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 6,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "I think I just need someone to talk to and maybe throw around some ideas on how to approach things. I've been feeling overwhelmed by work pressure,",
+            "dur_samples": 198144,
+            "start_time": 27.52126984126984,
+            "end_time": 36.507392290249435,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 7,
+            "uttr_type": "interrupt",
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "Absolutely, then talking might really help sort through those thoughts.",
+            "dur_samples": 88963,
+            "start_time": 36.147074829931974,
+            "end_time": 40.18167800453515,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 8,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "Work can be incredibly demanding, especially when it feels like everything's happening all at once.",
+            "dur_samples": 136704,
+            "start_time": 40.18167800453515,
+            "end_time": 46.38140589569161,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 9,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "That's exactly it.",
+            "dur_samples": 24264,
+            "start_time": 46.613015873015875,
+            "end_time": 47.71342403628118,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 10,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "It's like deadlines keep piling up, and no matter how much I try, I can't seem to keep up. And on top of that, some personal issues are making it harder to focus.",
+            "dur_samples": 256794,
+            "start_time": 47.71342403628118,
+            "end_time": 59.359410430839006,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 11,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "Balancing personal life and work is challenging. Sometimes, it helps to prioritize tasks and tackle them one at a time. Would you consider making a list to organize everything?",
+            "dur_samples": 229763,
+            "start_time": 59.85995464852608,
+            "end_time": 70.28004535147392,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 12,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "I like the sound of that.",
+            "dur_samples": 31668,
+            "start_time": 70.43097505668935,
+            "end_time": 71.86716553287982,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 13,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "Maybe if I see everything laid out, I’ll feel less tangled up and more... composed.",
+            "dur_samples": 124160,
+            "start_time": 71.86716553287982,
+            "end_time": 77.49800453514739,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 14,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "That sounds like a good plan.",
+            "dur_samples": 38019,
+            "start_time": 77.68639455782314,
+            "end_time": 79.41061224489796,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 15,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Rylea",
+            "tts_text": "Plus, don't hesitate to lean on friends like me whenever you need some support or even just a break. We're here.",
+            "dur_samples": 180992,
+            "start_time": 79.41061224489796,
+            "end_time": 87.61886621315193,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 16,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Shavon",
+            "tts_text": "I really appreciate that, Rylea. It's reassuring to know I'm not in this alone.",
+            "dur_samples": 95944,
+            "start_time": 87.837052154195,
+            "end_time": 92.18825396825397,
+            "backchannels": []
+          }
+        ],
+        "tts_speaker_ids": [
+          "0000409830_0",
+          "0000471459_1"
+        ],
+        "tts_genders": [
+          "female",
+          "female"
+        ],
+        "statistics": {
+          "num_utterances": [
+            5,
+            5
+          ],
+          "num_turntaking": [
+            4,
+            5
+          ],
+          "durations": [
+            46.58825396825396,
+            43.553922902494335
+          ],
+          "num_interruptions": [
+            1,
+            0
+          ],
+          "num_backchannels": [
+            0,
+            1
+          ],
+          "num_filler_words": [
+            3,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "0000000003",
+      "shard": "train/0000.tar",
+      "audio": {
+        "sample_rate": 22050,
+        "channels": 2,
+        "frames": 2130330,
+        "duration_seconds": 96.61360544217688,
+        "channel_probes": [
+          {
+            "speaker_idx": 0,
+            "start": 22.51580498866213,
+            "end": 23.453106575963716,
+            "channel_rms": [
+              0.091593,
+              0.0
+            ]
+          },
+          {
+            "speaker_idx": 1,
+            "start": 0.15,
+            "end": 1.15,
+            "channel_rms": [
+              0.0,
+              0.204587
+            ]
+          }
+        ],
+        "backchannel_probes": []
+      },
+      "raw": {
+        "file_name": "0000000003.flac",
+        "soda_split": "train",
+        "soda_index": 3,
+        "narrative": "Danna always shares Mattea's point of view because he is loyal to his friend. Danna never questions Mattea's decisions and always stands by his side, no matter what the situation is.",
+        "speakers": [
+          "Danna",
+          "Mattea"
+        ],
+        "behaviors": [
+          {
+            "utterance_length": 2,
+            "filler_words": 0,
+            "backchannels": 0,
+            "interruptions": 2
+          },
+          {
+            "utterance_length": 1,
+            "filler_words": 0,
+            "backchannels": 0,
+            "interruptions": 0
+          }
+        ],
+        "num_turns": 10,
+        "utterances": [
+          {
+            "uttr_idx": 0,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "I'm thinking about ways we can improve our team collaboration to boost productivity. We need to focus on",
+            "dur_samples": 173568,
+            "start_time": 0.0,
+            "end_time": 7.87156462585034,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 1,
+            "uttr_type": "interrupt",
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "Communication strategies that ensure everyone is on the same page and understands their roles clearly.",
+            "dur_samples": 124035,
+            "start_time": 7.419047619047619,
+            "end_time": 13.04421768707483,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 2,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "Yes, exactly.",
+            "dur_samples": 32393,
+            "start_time": 13.544172335600907,
+            "end_time": 15.013242630385488,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 3,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "If we can ensure every team member is aligned with our goals, it would make a big difference.",
+            "dur_samples": 157696,
+            "start_time": 15.013242630385488,
+            "end_time": 22.16498866213152,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 4,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "Absolutely, Mattea.",
+            "dur_samples": 26180,
+            "start_time": 22.36580498866213,
+            "end_time": 23.553106575963717,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 5,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "It's crucial to have alignment. One idea is to hold weekly meetings where we could discuss each member's progress and challenges they're facing. It would help us keep track of everything.",
+            "dur_samples": 266240,
+            "start_time": 23.553106575963717,
+            "end_time": 35.627482993197276,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 6,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "That could work well.",
+            "dur_samples": 33729,
+            "start_time": 36.166167800453515,
+            "end_time": 37.69582766439909,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 7,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "Another thought is to use tools that allow for more transparent project management, so everyone knows what's happening at all times.",
+            "dur_samples": 181504,
+            "start_time": 37.69582766439909,
+            "end_time": 45.927301587301585,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 8,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "Definitely.",
+            "dur_samples": 14916,
+            "start_time": 46.24362811791383,
+            "end_time": 46.920090702947846,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 9,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "Implementing such tools can provide visibility into the tasks and deadlines, which is essential for efficient project management. It would also help in identifying bottlenecks early on.",
+            "dur_samples": 235008,
+            "start_time": 46.920090702947846,
+            "end_time": 57.578049886621315,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 10,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "Right, and once we address these, the workflow should become smoother. We should also consider providing feedback sessions so",
+            "dur_samples": 261588,
+            "start_time": 57.661133786848076,
+            "end_time": 69.52453514739229,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 11,
+            "uttr_type": "interrupt",
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "Everyone has an opportunity to voice their opinions and contribute to improving the process.",
+            "dur_samples": 96324,
+            "start_time": 69.1069387755102,
+            "end_time": 73.47537414965987,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 12,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "Yes, I believe regular feedback sessions would foster a more open environment.",
+            "dur_samples": 129211,
+            "start_time": 73.9950566893424,
+            "end_time": 79.85496598639456,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 13,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Mattea",
+            "tts_text": "It might encourage innovation from within the team.",
+            "dur_samples": 76288,
+            "start_time": 79.85496598639456,
+            "end_time": 83.31473922902494,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 14,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "Precisely, Mattea. Encouraging team members to share their ideas can lead to creative solutions and keep everyone motivated.",
+            "dur_samples": 182091,
+            "start_time": 83.78117913832199,
+            "end_time": 92.03927437641724,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 15,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Danna",
+            "tts_text": "It's an integral part of building a dynamic and forward-thinking team.",
+            "dur_samples": 100864,
+            "start_time": 92.03927437641724,
+            "end_time": 96.61360544217688,
+            "backchannels": []
+          }
+        ],
+        "tts_speaker_ids": [
+          "0000409830_0",
+          "0001024622_0"
+        ],
+        "tts_genders": [
+          "female",
+          "female"
+        ],
+        "statistics": {
+          "num_utterances": [
+            5,
+            5
+          ],
+          "num_turntaking": [
+            5,
+            4
+          ],
+          "durations": [
+            47.4221315192744,
+            47.43659863945577
+          ],
+          "num_interruptions": [
+            2,
+            0
+          ],
+          "num_backchannels": [
+            0,
+            0
+          ],
+          "num_filler_words": [
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "0000000005",
+      "shard": "test/0000.tar",
+      "audio": {
+        "sample_rate": 22050,
+        "channels": 2,
+        "frames": 974676,
+        "duration_seconds": 44.202993197278914,
+        "channel_probes": [
+          {
+            "speaker_idx": 0,
+            "start": 0.15,
+            "end": 1.15,
+            "channel_rms": [
+              0.084915,
+              0.0
+            ]
+          },
+          {
+            "speaker_idx": 1,
+            "start": 5.0968027210884355,
+            "end": 6.0968027210884355,
+            "channel_rms": [
+              0.0,
+              0.118529
+            ]
+          }
+        ],
+        "backchannel_probes": []
+      },
+      "raw": {
+        "file_name": "0000000005.flac",
+        "soda_split": "test",
+        "soda_index": 5,
+        "narrative": "Carlyn was surprised to learn that he had never met Brion. He had assumed that they had met before, since they lived in the same town. However, upon further reflection, Carlyn realized that he had never actually seen Brion before.",
+        "speakers": [
+          "Carlyn",
+          "Brion"
+        ],
+        "behaviors": [
+          {
+            "utterance_length": 0,
+            "filler_words": 0,
+            "backchannels": 0,
+            "interruptions": 0
+          },
+          {
+            "utterance_length": 1,
+            "filler_words": 0,
+            "backchannels": 0,
+            "interruptions": 0
+          }
+        ],
+        "num_turns": 8,
+        "utterances": [
+          {
+            "uttr_idx": 0,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Carlyn",
+            "tts_text": "Hi, Brion. It’s surprising we’ve never met before.",
+            "dur_samples": 101632,
+            "start_time": 0.0,
+            "end_time": 4.609160997732427,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 1,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "Hi, Carlyn. It is surprising, especially since we live in the same town. I feel like I’ve heard your name a few times.",
+            "dur_samples": 164801,
+            "start_time": 4.946802721088435,
+            "end_time": 12.420770975056689,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 2,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Carlyn",
+            "tts_text": "Same here. I assumed we had met at some point.",
+            "dur_samples": 74564,
+            "start_time": 12.966530612244897,
+            "end_time": 16.3481179138322,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 3,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "Yeah, I’ve thought the same. It’s strange how you just assume these things sometimes. Have you always lived here?",
+            "dur_samples": 158083,
+            "start_time": 16.791655328798186,
+            "end_time": 23.96095238095238,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 4,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Carlyn",
+            "tts_text": "Yes, born and raised.",
+            "dur_samples": 31044,
+            "start_time": 24.181133786848072,
+            "end_time": 25.58902494331066,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 5,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Carlyn",
+            "tts_text": "Haven't moved out.",
+            "dur_samples": 34530,
+            "start_time": 25.58902494331066,
+            "end_time": 27.15501133786848,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 6,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "Wow, me too!",
+            "dur_samples": 23764,
+            "start_time": 27.15501133786848,
+            "end_time": 28.232743764172337,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 7,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "We must’ve crossed paths somewhere, but I guess not officially.",
+            "dur_samples": 121088,
+            "start_time": 28.232743764172337,
+            "end_time": 33.724263038548756,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 8,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "Small world, huh?",
+            "dur_samples": 32512,
+            "start_time": 33.724263038548756,
+            "end_time": 35.19873015873016,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 9,
+            "uttr_type": null,
+            "speaker_idx": 0,
+            "speaker": "Carlyn",
+            "tts_text": "Very small. Nice meeting you at last.",
+            "dur_samples": 62720,
+            "start_time": 35.781360544217684,
+            "end_time": 38.62580498866213,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 10,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "Nice to meet you too, Carlyn.",
+            "dur_samples": 34435,
+            "start_time": 39.25120181405896,
+            "end_time": 40.812879818594105,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 11,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "Here’s to more crossing paths!",
+            "dur_samples": 42752,
+            "start_time": 40.812879818594105,
+            "end_time": 42.75174603174603,
+            "backchannels": []
+          },
+          {
+            "uttr_idx": 12,
+            "uttr_type": null,
+            "speaker_idx": 1,
+            "speaker": "Brion",
+            "tts_text": "[laughter]",
+            "dur_samples": 32000,
+            "start_time": 42.75174603174603,
+            "end_time": 44.202993197278914,
+            "backchannels": []
+          }
+        ],
+        "tts_speaker_ids": [
+          "0000805189_1",
+          "0000153035_1"
+        ],
+        "tts_genders": [
+          "male",
+          "female"
+        ],
+        "statistics": {
+          "num_utterances": [
+            4,
+            4
+          ],
+          "num_turntaking": [
+            3,
+            4
+          ],
+          "durations": [
+            13.809070294784586,
+            27.638775510204084
+          ],
+          "num_interruptions": [
+            0,
+            0
+          ],
+          "num_backchannels": [
+            0,
+            0
+          ],
+          "num_filler_words": [
+            1,
+            3
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -765,8 +765,8 @@ test('leaves a single-sentence quote untouched', async () => {
   assert.equal(slot.evidence[0].quote, '我平时主要写 Rust', '单句 quote 不该被改动')
 })
 
-test('skips a session with too few user turns', () => {
-  const { observer, calls } = harness({ messages: transcript(['一', '二', '三']) })
+test('skips a session without fresh user turns', () => {
+  const { observer, calls } = harness({ messages: [] })
   assert.equal(observer.maybeRun({ ownerId: 'u1', sessionId: 's1' }), null)
   assert.equal(calls.length, 0)
 })
@@ -850,6 +850,7 @@ test('discarding recorded evidence invalidates an in-flight observation before i
 
 test('fresh user turns accumulate below the threshold without consuming or reusing older batches', async () => {
   const { observer, calls } = harness({ messages: transcript(['新一', '新二', '新三']) })
+  observer.minUserMessages = 4
   const scope = { ownerId: 'u1', sessionId: 's1' }
   assert.equal(observer.maybeRun(scope), null)
   observer.conversationSync.record({

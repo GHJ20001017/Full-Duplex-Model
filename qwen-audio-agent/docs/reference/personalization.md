@@ -36,9 +36,30 @@ Changes made through conversation apply immediately. Direct file edits apply in 
 
 ## Optional Preference Learning
 
-By default, preferences come from explicit requests. Set `QWEN_AUDIO_PREFERENCE_LEARNING=on` to let the default memory provider observe a few characteristics after sessions and write cross-session confirmations into the inferred section of `USER.md`.
+Base profile learning is off by default. Set `QWEN_AUDIO_PREFERENCE_LEARNING=on` to let the default memory provider observe occupation, skills, reply length, and reply style after sessions and write cross-session confirmations into the inferred section of `USER.md`.
 
 This is off by default and makes additional text-model calls. Explicit preferences take precedence over inferences. You can delete unwanted inferences from the file. See [Preference Learning](preference-learning.md) for thresholds and implementation details.
+
+Companionship preference learning starts automatically with the Gateway by default,
+adapting support style, humor boundaries, and contextual check-ins to a particular
+user. No environment setting is needed. To disable it, set this and restart the Gateway:
+
+```dotenv
+QWEN_AUDIO_COMPANIONSHIP_LEARNING=off
+```
+
+This needs the automatic-memory text-model credentials.
+Repeated concrete feedback must span different sessions and at least 24 hours
+before becoming an inference. Temporary requests are not standing preferences.
+Explicit long-term requests still use ordinary memory, and the current request
+always takes precedence. Humor is contextual, not appropriate during distress
+just because the user usually enjoys jokes. Check-in preferences affect replies
+in an ongoing conversation, not timed interruptions or out-of-session outreach.
+
+Turning learning off does not erase saved preferences. Use the existing
+[memory controls](memory.md) to inspect, correct, or delete them. See
+[Companionship Preferences](preference-learning.md#companionship-preferences)
+for values, evidence guards, and cascaded-speech limitations.
 
 ## Privacy and Other Providers
 

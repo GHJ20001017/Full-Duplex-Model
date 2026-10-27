@@ -600,21 +600,33 @@ export const config = {
     runtimeEnvironment.stateDirectory,
     'memory-audit.jsonl',
   ),
+  memoryCompactionEnabled: String(
+    process.env.QWEN_AUDIO_MEMORY_COMPACTION || 'on',
+  ).toLowerCase() !== 'off',
+  userCompactionThresholdChars: numberSetting(
+    process.env.QWEN_AUDIO_USER_COMPACTION_THRESHOLD_CHARS, 4500, { min: 512, max: 6000 },
+  ),
+  memoryCompactionThresholdChars: numberSetting(
+    process.env.QWEN_AUDIO_MEMORY_COMPACTION_THRESHOLD_CHARS, 6000, { min: 512, max: 8000 },
+  ),
   // 偏好自更新：从对话里观察反复出现的表达偏好，攒够跨会话确认后写入 USER.md
   // 的观察推断段。默认关闭 —— 它会自动改写用户档案，先让愿意尝试的用户显式开启。
   // 复用 memoryModel / memoryBaseUrl / memoryApiKey，不额外要一套凭据。
   preferenceLearningEnabled: String(
     process.env.QWEN_AUDIO_PREFERENCE_LEARNING || 'off',
   ).toLowerCase() === 'on',
+  // Start companionship learning with the Gateway unless explicitly disabled.
+  companionshipLearningEnabled: String(
+    process.env.QWEN_AUDIO_COMPANIONSHIP_LEARNING || 'on',
+  ).toLowerCase() === 'on',
   preferenceCandidatePath: resolve(
     runtimeEnvironment.stateDirectory,
     'preference-candidates.json',
   ),
-  // 会话摘要：每场会话结束时记一条「聊了哪些话题 + 一句要点」，供用户日后问
-  // 「前几天我们聊的那个」时用 recall 工具查。默认关闭 —— 它留存的是
-  // 对话内容的概括，属于需要用户显式同意的一档。只存话题与一句要点，不存转写。
+  // Episodic summaries start with the Gateway; explicit off remains respected.
+  // Recall retrieves relevant summaries without injecting the entire archive.
   sessionDigestEnabled: String(
-    process.env.QWEN_AUDIO_SESSION_DIGEST || 'off',
+    process.env.QWEN_AUDIO_SESSION_DIGEST || 'on',
   ).toLowerCase() === 'on',
   sessionDigestPath: resolve(
     runtimeEnvironment.stateDirectory,

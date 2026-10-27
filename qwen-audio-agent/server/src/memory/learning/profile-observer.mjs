@@ -18,8 +18,14 @@
 
 import { PROFILE_FIELDS } from './preference-candidates.mjs'
 import { containsSensitiveContent } from '../../core/sensitive-content.mjs'
+import {
+  COMPANIONSHIP_FIELDS, COMPANIONSHIP_GUIDE, companionshipEvidenceRejection,
+  companionshipFieldsInText,
+} from './companionship-preferences.mjs'
 
 const MAX_OBSERVATIONS_PER_RUN = 5
+// One answer per field, with room for three separate special_skills rows.
+const MAX_COMPANIONSHIP_OBSERVATIONS_PER_RUN = Object.keys(PROFILE_FIELDS).length + 2
 const MAX_VALUE_CHARS = 120
 const MAX_QUOTE_CHARS = 50
 // 与 preference-candidates 的 MAX_BASIS_CHARS 同值：判据要说明「凭什么从这句话
@@ -102,7 +108,7 @@ const OBSERVER_SYSTEM_PROMPT = [
   '针对每个字段回答一个问题。答不出来就填 unknown —— 这是完全正当的答案，',
   '大多数对话里多数字段本来就该是 unknown。',
   '',
-  '要回答的四个问题：',
+  '要回答的字段问题：',
   FIELD_GUIDE,
   '',
   '只输出一个 JSON 对象，不要输出任何其他文字：',
@@ -115,10 +121,11 @@ const OBSERVER_SYSTEM_PROMPT = [
   '- contradict：和画像里记的冲突（老师 → 程序员）',
   '',
   '规则：',
-  '- 四个字段都要出现。答不出的填 value: "unknown"，此时 quote、basis、vs_known 都留空字符串。',
+  '- 启用的字段都要出现。答不出的填 value: "unknown"，此时 quote、basis、vs_known 都留空字符串。',
   '- quote 必须逐字照抄用户原话里的一段连续文字，不要改写、不要合并两句话。',
   '- basis 要说明推理依据。如果 basis 写起来很勉强、要绕好几步，说明这个字段该答 unknown。',
   '- response_length 与 response_style 讲的是【助手该怎么回话】。用户在说题目、文档、代码的长短详略，不算。',
+  '- 安慰倾诉、玩笑边界、关心频率不放入 response_style；只在相应的相处字段启用时观察，否则忽略。',
   '- special_skills 只填用户【已经掌握】的，不填他正在问的、正在学的、说自己不懂的。多项用「、」分隔。',
   '- 绝不提取：密码、密钥、验证码、令牌、证件号码、详细住址、健康与医疗信息。',
 ].join('\n')
@@ -161,7 +168,7 @@ function buildTranscript(messages, maxChars) {
     used += line.length
     userParts.unshift(content)
   }
-  return { lines, userText: userParts.join('\n') }
+  return { lines, userText: userParts.join('\n'), userTurns: userParts }
 }
 
 function firstJsonObject(value) {
@@ -226,7 +233,7 @@ const VS_KNOWN_TO_RELATION = new Map([
   ['contradict', 'contradict'],
 ])
 
-function parseObservations(text) {
+function parseObservations(text, maxObservations = MAX_OBSERVATIONS_PER_RUN) {
   const raw = String(text || '').trim()
   const unfenced = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
   const parsed = JSON.parse(firstJsonObject(unfenced))
@@ -237,7 +244,7 @@ function parseObservations(text) {
     : (Array.isArray(parsed?.observations) ? parsed.observations : null)
   if (!rows) throw new Error('observer output has no answers array')
   return rows
-    .slice(0, MAX_OBSERVATIONS_PER_RUN)
+    .slice(0, maxObservations)
     .map(item => ({
       field: String(item?.field || '').trim(),
       value: clean(item?.value, MAX_VALUE_CHARS),
@@ -285,7 +292,7 @@ export class ProfileObserver {
     audit = null,
     llmCall = null,
     logger = console,
-    minUserMessages = 4,
+    minUserMessages = 1,
     maxTranscriptChars = 6000,
   } = {}) {
     this.candidatePool = candidatePool
@@ -307,6 +314,7 @@ export class ProfileObserver {
     const slots = this.candidatePool.list(ownerId) || []
     const lines = []
     for (const field of Object.keys(PROFILE_FIELDS)) {
+      if (!this.candidatePool.allows(field)) continue
       // 【只放 active】。tentative 是还在攒确认的候选，不是画像 —— 把它当已知
       // 报给模型，模型就不再报同一个值，confirm 卡在 1 永远攒不够（实测：明明
       // 三场都说「我用 Rust」，四轮里只有一轮攒够）。让候选对模型隐形，用户
@@ -322,8 +330,7 @@ export class ProfileObserver {
 
   // 会话关闭钩子。刻意不做 debounce：门槛要求跨 ≥2 个会话，而桌面用户可能
   // 短时间内连开几场；用抽取器那样的 30 分钟防抖会直接吃掉这些会话的证据，
-  // 让跨会话条件更难达成。少于 minUserMessages 轮的会话本来就推不准，
-  // 已经被下面这道门挡掉，实际调用量不大。
+  // 让跨会话条件更难达成。短会话也观察，但晋升仍须满足证据和跨会话门槛。
   maybeRun({ ownerId, sessionId }) {
     if (!this.enabled()) return null
     const safeOwnerId = String(ownerId || '')
@@ -355,7 +362,7 @@ export class ProfileObserver {
   }
 
   async run({ ownerId, sessionId, messages, isCurrent = () => true }) {
-    const { lines, userText } = buildTranscript(messages, this.maxTranscriptChars)
+    const { lines, userText, userTurns } = buildTranscript(messages, this.maxTranscriptChars)
     if (!lines.length) return []
     const user = [
       '## 当前已知画像',
@@ -365,12 +372,22 @@ export class ProfileObserver {
       lines.join('\n'),
     ].join('\n')
 
-    const response = await this.llmCall({ system: OBSERVER_SYSTEM_PROMPT, user })
+    const companionship = this.candidatePool.companionshipEnabled
+    const guide = [this.candidatePool.profileLearningEnabled ? FIELD_GUIDE : '',
+      companionship ? COMPANIONSHIP_GUIDE : ''].filter(Boolean).join('\n')
+    const system = [OBSERVER_SYSTEM_PROMPT.replace(FIELD_GUIDE, guide), companionship ? [
+      '相处偏好只从指向助手的用户反馈或具体请求中提取，不从情绪、沉默、继续聊天、时长或助手行为推断。',
+      '今天、现在、本次等临时要求填 unknown；以后、默认等明确长期要求由显式记忆处理，这里也填 unknown。',
+      '“这样好多了”等指代不明的反馈填 unknown；任务内容、第三方说法、引用和角色台词不算用户偏好。',
+      '三个相处字段各最多一项；没有清楚支持该枚举值的用户原话就填 unknown。',
+    ].join('\n') : ''].filter(Boolean).join('\n')
+    const response = await this.llmCall({ system, user })
     if (!isCurrent()) {
       this.audit?.record({ op: 'skip', ownerId, reason: 'stale_observation' })
       return []
     }
-    const observations = parseObservations(response)
+    const observations = parseObservations(response, companionship
+      ? MAX_COMPANIONSHIP_OBSERVATIONS_PER_RUN : MAX_OBSERVATIONS_PER_RUN)
     if (!observations.length) {
       this.audit?.record({ op: 'skip', ownerId, reason: 'no_observation' })
       return []
@@ -378,13 +395,17 @@ export class ProfileObserver {
 
     const bareUserText = bareText(userText)
     const accepted = []
+    const seenCompanionship = new Set()
     for (const raw of observations) {
       // 先把拼接的 quote 拆回能支撑这个值的那一段（见 quoteForValue），再走校验。
       const observation = {
         ...raw,
-        quote: quoteForValue(raw.value, raw.quote, bareUserText),
+        quote: COMPANIONSHIP_FIELDS[raw.field]
+          ? raw.quote : quoteForValue(raw.value, raw.quote, bareUserText),
       }
-      const reason = this.rejectionReason(observation, bareUserText)
+      const reason = this.rejectionReason(observation, bareUserText, userTurns)
+        || (COMPANIONSHIP_FIELDS[raw.field] && seenCompanionship.has(raw.field)
+          ? 'duplicate_companionship_field' : null)
       if (reason) {
         this.audit?.record({
           op: 'skip',
@@ -394,6 +415,7 @@ export class ProfileObserver {
         })
         continue
       }
+      if (COMPANIONSHIP_FIELDS[raw.field]) seenCompanionship.add(raw.field)
       const slot = this.candidatePool.observe({
         ownerId,
         sessionId,
@@ -438,17 +460,23 @@ export class ProfileObserver {
   }
 
   // 返回拒收原因，null 表示通过。审计里能直接看出模型在哪一步不听话。
-  rejectionReason(observation, bareUserText) {
+  rejectionReason(observation, bareUserText, userTurns = []) {
     const definition = PROFILE_FIELDS[observation.field]
     if (!definition) return 'unknown_field'
+    if (!this.candidatePool.allows(observation.field)) return 'field_disabled'
+    if (observation.field === 'response_style'
+      && companionshipFieldsInText(observation.value).length) return 'companionship_wrong_field'
     if (!observation.value) return 'empty_value'
     if (!observation.quote) return 'missing_quote'
-    if (containsSensitiveContent(`${observation.value}\n${observation.quote}`)) {
+    if (containsSensitiveContent(`${observation.value}\n${observation.quote}\n${observation.basis || ''}`)) {
       return 'sensitive'
     }
     // 第一道：证据必须真的来自用户发言
     const bareQuote = bareText(observation.quote)
     if (!bareQuote || !bareUserText.includes(bareQuote)) return 'quote_not_from_user'
+    if (COMPANIONSHIP_FIELDS[observation.field]) {
+      return companionshipEvidenceRejection(observation, userTurns)
+    }
     // 第二道：从这条证据推得出这个结论吗（见 valueAnchoredInQuote 的注释）
     // 交互偏好必须由指向助手的话产生，与值是枚举还是自由文本无关。
     if (INTERACTION_FIELDS.has(observation.field)

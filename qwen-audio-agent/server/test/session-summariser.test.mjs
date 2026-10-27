@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { SessionDigestPool } from '../src/conversation/session-digest.mjs'
 import { SessionSummariser } from '../src/conversation/session-summariser.mjs'
+import { ConversationSync } from '../src/conversation/conversation-sync.mjs'
 
 const OWNER = 'user_personal'
 
@@ -24,9 +25,12 @@ function harness({
 } = {}) {
   const digests = new SessionDigestPool({ now: () => Date.parse('2026-08-25T12:00:00Z') })
   const calls = []
+  const sync = new ConversationSync()
+  messages.forEach((message, index) => sync.record({ ownerId: OWNER, sessionId: 's_a',
+    ...message, id: `message-${index}`, source: message.role === 'user' ? 'voice-user' : 'voice-assistant' }))
   const summariser = new SessionSummariser({
     digestPool: digests,
-    conversationSync: { list: () => messages },
+    conversationSync: sync,
     audit: { record: entry => audit.push(entry) },
     llmCall: async payload => {
       calls.push(payload)
@@ -35,7 +39,7 @@ function harness({
     logger: { warn() {}, debug() {} },
     listSessionWork,
   })
-  return { digests, summariser, calls, audit }
+  return { digests, summariser, calls, audit, sync }
 }
 
 test('summarises a session into topics and a gist', async () => {
@@ -62,10 +66,10 @@ test('sends both roles to the model but counts only user turns', async () => {
   assert.match(calls[0].user, /用户: 帮我看看这个/)
 })
 
-test('skips a session that is too short to summarise', async () => {
-  const { summariser, calls } = harness({ messages: transcript(['一', '二']) })
+test('skips a session without new user messages', async () => {
+  const { summariser, calls } = harness({ messages: [] })
   assert.equal(await summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' }), null)
-  assert.equal(calls.length, 0, '短会话不该白花一次模型调用')
+  assert.equal(calls.length, 0)
 })
 
 test('skips a session it already recorded', async () => {
@@ -176,4 +180,63 @@ test('works without a work collector at all', async () => {
   const { summariser } = harness()
   const digest = await summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' })
   assert.deepEqual(digest.work, [])
+})
+
+test('a single fresh user message can produce a bounded experience summary', async () => {
+  const { summariser, digests } = harness({
+    messages: transcript(['我今天参加了项目面试，约好下周二复试']),
+    reply: JSON.stringify({ topics: ['项目面试'], gist: '约好复试',
+      summary: '用户今天参加项目面试，约好下周二复试。' }),
+  })
+  await summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' })
+  assert.match(digests.search({ ownerId: OWNER, keyword: '复试' })[0].summary, /下周二/)
+})
+
+test('restored history is never treated as new summary input', async () => {
+  const { summariser, sync, calls } = harness({ messages: [] })
+  sync.restore({ ownerId: OWNER, sessionId: 's_a', messages: [
+    { id: 'old', role: 'user', content: '过去经历', source: 'voice-user' },
+  ] })
+  assert.equal(summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' }), null)
+  assert.equal(calls.length, 0)
+})
+
+test('concurrent duplicate closes summarize each fresh batch once', async () => {
+  const deferred = Promise.withResolvers()
+  const { summariser, calls } = harness({ reply: () => deferred.promise })
+  const first = summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' })
+  assert.equal(summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' }), null)
+  deferred.resolve('{"topics":["项目面试"],"gist":"约好复试","summary":"用户准备复试。"}')
+  await first
+  assert.equal(calls.length, 1)
+})
+
+test('fresh messages update the existing session summary with its old context', async () => {
+  const { summariser, calls, sync, digests } = harness({ messages: transcript(['周二复试']),
+    reply: '{"topics":["复试"],"gist":"复试时间","summary":"用户的复试在周二。"}' })
+  await summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' })
+  sync.record({ ownerId: OWNER, sessionId: 's_a', id: 'correction', role: 'user',
+    content: '更正，是周三复试', source: 'voice-user' })
+  summariser.llmCall = async payload => {
+    calls.push(payload)
+    return '{"topics":["复试"],"gist":"复试时间已更正","summary":"用户的复试已改为周三。"}'
+  }
+  await summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' })
+  assert.equal(digests.count(OWNER), 1)
+  assert.match(calls[1].user, /本场旧摘要[\s\S]*周二/)
+  assert.match(calls[1].user, /新对话转写\n用户: 更正，是周三复试/)
+  const saved = digests.get({ ownerId: OWNER, sessionId: 's_a' })
+  assert.equal(saved.turns, 2)
+  assert.match(saved.summary, /周三/)
+})
+
+test('a successful explicit edit invalidates an in-flight experience summary', async () => {
+  const deferred = Promise.withResolvers()
+  const { summariser, sync, digests } = harness({ reply: () => deferred.promise })
+  const pending = summariser.maybeRun({ ownerId: OWNER, sessionId: 's_a' })
+  await Promise.resolve()
+  sync.discardRecorded(OWNER)
+  deferred.resolve('{"topics":["旧经历"],"gist":"旧记录","summary":"不可重新写回的旧经历"}')
+  await pending
+  assert.equal(digests.count(OWNER), 0)
 })

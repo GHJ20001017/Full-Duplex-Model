@@ -1,22 +1,6 @@
-// 会话摘要 —— 「你记得前几天我们聊的 xxx 吗」的唯一数据来源。
-//
-// 现状是这个问题一个字都答不上：ConversationSync 纯内存、会话结束即失，
-// ConversationSync 的本场镜像在会话结束时就丢掉了。这里补上那一层。
-//
-// ★ 只存档 1，不存档 2。
-// 每场只留 topics + 一句 gist（硬上限 MAX_GIST_CHARS），刻意不存完整摘要。
-// 会话关闭后的摘要同样遵循这条纪律：留下完整摘要等于
-// 「悄悄开启每场会话长期留存」，那需要用户显式同意。所以本模块绝不接受
-// 完整摘要作为 gist —— 那种文本长度不受这里控制。
-//
-// ★ 不注入 instructions，只通过工具按需查。
-// 这类数据每场会话都不一样，注进 instructions 等于让 prompt 前缀每场都变，
-// 前缀缓存会大面积失效 —— 而前缀稳定性优先于注入量。USER.md / MEMORY.md
-// 能静态注入是因为它们相对稳定，会话摘要不是。
-//
-// 检索刻意做得很浅：去标点后子串匹配，没有分词、没有 BM25、没有向量。
-// 前端该记的会话量天然有界（每 owner 上限 MAX_SESSIONS_PER_OWNER），
-// 记忆量 ÷ 可返回条数 ≈ 1，不需要排序召回。要更深的检索就该丢给后端 Agent。
+// Bounded episodic memory, separate from both durable profile documents and
+// the conversation-recovery journal. Existing topic/gist-only entries remain
+// valid. Recall ranks lexical matches; the archive is never injected wholesale.
 
 import { containsSensitiveContent } from '../core/sensitive-content.mjs'
 import { JsonSnapshotStore } from '../core/json-snapshot-store.mjs'
@@ -27,6 +11,7 @@ const MAX_OWNERS = 200
 const MAX_TOPICS = 5
 const MAX_TOPIC_CHARS = 16
 const MAX_GIST_CHARS = 50
+const MAX_SUMMARY_CHARS = 400
 const MAX_WORK_ITEMS = 5
 const MAX_WORK_OBJECTIVE_CHARS = 40
 const RETENTION_MS = 90 * 24 * 60 * 60_000
@@ -43,6 +28,33 @@ function text(value, maxChars) {
 // 是「LOCOMO、压缩评测」，带标点做子串匹配会漏。
 function bare(value) {
   return String(value || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
+const STOP_TERMS = new Set(['的话', '话题', '那次', '上次', '之前', '前几', '几天',
+  '我们', '那个', '这个', '记得', '还记', '时候', '怎么', '事情', '关于', '最近',
+  '一下', '一场', '聊过', '聊的', '一次', '后来', '用户', '助手'])
+
+function terms(value) {
+  const tokens = new Set()
+  for (const match of String(value || '').toLowerCase().matchAll(/[\p{Script=Han}]+|[\p{L}\p{N}_-]+/gu)) {
+    const word = match[0]
+    if (/^\p{Script=Han}+$/u.test(word) && word.length > 1) {
+      for (let index = 0; index < word.length - 1; index++) tokens.add(word.slice(index, index + 2))
+    } else tokens.add(word)
+  }
+  return new Set([...tokens].filter(token => !STOP_TERMS.has(token)))
+}
+
+function relevance(query, needle, value) {
+  const normalized = bare(value)
+  if (!normalized) return 0
+  if (normalized.includes(needle)) return 2
+  const candidates = terms(value)
+  const shared = [...query].filter(token => candidates.has(token)).length
+  // Partial overlap is useful for natural questions, but a single common
+  // character/bigram must not make unrelated experiences look like memories.
+  return shared >= Math.min(2, query.size) && shared / query.size >= 0.25
+    ? shared / query.size : 0
 }
 
 // 取用户本地时区下的日历日：用服务器时区算「今天/昨天」跨时区就错一天。
@@ -169,9 +181,11 @@ export class SessionDigestPool {
     const at = Number(digest?.at)
     if (!session || !Number.isFinite(at) || at <= 0) return null
     const gist = text(digest?.gist, MAX_GIST_CHARS)
+    const summary = text(digest?.summary, MAX_SUMMARY_CHARS)
     const topics = normaliseTopics(digest?.topics)
     const work = normaliseWork(digest?.work)
-    if (!gist && !topics.length && !work.length) return null
+    if (!gist && !summary && !topics.length && !work.length) return null
+    if (containsSensitiveContent(`${gist}\n${summary}`)) return null
     const turns = Number(digest?.turns)
     return {
       session,
@@ -179,6 +193,7 @@ export class SessionDigestPool {
       turns: Number.isFinite(turns) && turns > 0 ? Math.floor(turns) : 0,
       topics,
       gist,
+      ...(summary ? { summary } : {}),
       work,
     }
   }
@@ -194,7 +209,7 @@ export class SessionDigestPool {
 
   // 记一场会话。同一 sessionId 重复记录时覆盖而不是追加 —— 一场会话只该有
   // 一条摘要，重连产生的第二次调用不能把列表灌满。
-  record({ ownerId, sessionId, topics, gist, turns, work } = {}) {
+  record({ ownerId, sessionId, topics, gist, summary, turns, work } = {}) {
     this.load()
     const safeOwnerId = String(ownerId || '')
     const digest = this.sanitise({
@@ -202,6 +217,7 @@ export class SessionDigestPool {
       at: this.now(),
       topics,
       gist,
+      summary,
       turns,
       work,
     })
@@ -240,10 +256,15 @@ export class SessionDigestPool {
     return digests.some(digest => digest.session === String(sessionId || ''))
   }
 
-  // keyword 为空时返回最近若干场；否则按 topics、gist 与派出去的活做子串匹配。
-  // 命中 topics 的排在前面 —— 用户说出口的那个词更可能是话题名。
-  // work 里的 objective 也要参与匹配：用户问「上次让你跑的压缩评测」，那个词
-  // 可能只出现在任务目标里，没被摘进 topics。
+  get({ ownerId, sessionId } = {}) {
+    this.load()
+    this.prune()
+    return (this.owners.get(String(ownerId || '')) || [])
+      .find(digest => digest.session === String(sessionId || '')) || null
+  }
+
+  // Empty queries return recent sessions. Otherwise rank exact/partial lexical
+  // overlap across topics, dispatched work and the bounded experience summary.
   search({ ownerId, keyword = '', limit = DEFAULT_LIMIT } = {}) {
     this.load()
     this.prune()
@@ -251,16 +272,17 @@ export class SessionDigestPool {
     const size = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT)
     const needle = bare(keyword)
     if (!needle) return digests.slice(0, size)
+    const queryTerms = terms(keyword)
     const scored = []
     for (const digest of digests) {
-      const inTopics = digest.topics.some(topic => bare(topic).includes(needle))
-      const inWork = digest.work.some(item => bare(item.objective).includes(needle))
-      const inGist = bare(digest.gist).includes(needle)
-      if (!inTopics && !inWork && !inGist) continue
-      scored.push({ digest, rank: inTopics ? 0 : (inWork ? 1 : 2) })
+      const topicScore = Math.max(0, ...digest.topics.map(topic => relevance(queryTerms, needle, topic)))
+      const workScore = Math.max(0, ...digest.work.map(item => relevance(queryTerms, needle, item.objective)))
+      const bodyScore = relevance(queryTerms, needle, `${digest.gist} ${digest.summary || ''}`)
+      const score = topicScore * 3 + workScore * 2 + bodyScore
+      if (score) scored.push({ digest, score })
     }
     return scored
-      .sort((left, right) => (left.rank - right.rank) || (right.digest.at - left.digest.at))
+      .sort((left, right) => (right.score - left.score) || (right.digest.at - left.digest.at))
       .slice(0, size)
       .map(item => item.digest)
   }
@@ -282,6 +304,7 @@ export const SESSION_DIGEST_LIMITS = Object.freeze({
   MAX_TOPICS,
   MAX_TOPIC_CHARS,
   MAX_GIST_CHARS,
+  MAX_SUMMARY_CHARS,
   MAX_WORK_ITEMS,
   MAX_WORK_OBJECTIVE_CHARS,
   MAX_SESSIONS_PER_OWNER,
